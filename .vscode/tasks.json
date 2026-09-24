@@ -1,0 +1,51 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Maven: Package (Build JAR)",
+            "type": "shell",
+            "command": "mvn package",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": ["$javac"]
+        },
+        {
+            "label": "Maven: Clean & Package",
+            "type": "shell",
+            "command": "mvn clean package",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": ["$javac"]
+        },
+        {
+            "label": "Maven: Compile",
+            "type": "shell",
+            "command": "mvn compile",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": ["$javac"]
+        },
+        {
+            "label": "Maven: Run JSatTrak",
+            "type": "shell",
+            "command": "mvn exec:java",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        }
+    ]
+}
