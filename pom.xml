@@ -16,41 +16,41 @@
         <maven.compiler.release>8</maven.compiler.release>
     </properties>
 
+    <repositories>
+        <!-- In-project repository for legacy/custom artifacts not in Maven Central -->
+        <repository>
+            <id>project-local-repo</id>
+            <url>file://${project.basedir}/repo</url>
+        </repository>
+    </repositories>
+
     <dependencies>
-        <!-- Beanshell -->
+        <!-- Beanshell (custom seg build) -->
         <dependency>
             <groupId>org.beanshell</groupId>
             <artifactId>bsh</artifactId>
             <version>2.0b4-seg</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/Beanshell/bsh-2.0b4_seg.jar</systemPath>
         </dependency>
 
-        <!-- Jama (Matrix Library) -->
+        <!-- Jama (Matrix Library) - Maven Central -->
         <dependency>
             <groupId>gov.nist.math</groupId>
             <artifactId>jama</artifactId>
             <version>1.0.2</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/Jama/Jama-1.0.2.jar</systemPath>
         </dependency>
 
-        <!-- Java Media Framework (JMF) -->
+        <!-- Java Media Framework (JMF) - Maven Central -->
         <dependency>
             <groupId>javax.media</groupId>
             <artifactId>jmf</artifactId>
             <version>2.1.1e</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/Java_Media_Framework/jmf.jar</systemPath>
         </dependency>
 
-        <!-- JGoodies Looks -->
+        <!-- JGoodies Looks - Maven Central -->
         <dependency>
             <groupId>com.jgoodies</groupId>
             <artifactId>looks</artifactId>
             <version>2.2.1</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/JGoodies-Looks/looks-2.2.1.jar</systemPath>
         </dependency>
 
         <!-- JOGL / GlueGen -->
@@ -58,22 +58,16 @@
             <groupId>net.java.dev.gluegen</groupId>
             <artifactId>gluegen-rt</artifactId>
             <version>1.0b06</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/JOGL/gluegen-rt.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>net.java.dev.jogl</groupId>
             <artifactId>jogl</artifactId>
             <version>1.1.1</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/JOGL/jogl.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>net.java.dev.jogl</groupId>
             <artifactId>joglutils</artifactId>
             <version>1.0</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/JOGLUTILS/JOGLUTILS.jar</systemPath>
         </dependency>
 
         <!-- Netscape / Plugin -->
@@ -81,17 +75,13 @@
             <groupId>netscape</groupId>
             <artifactId>plugin</artifactId>
             <version>1.0</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/Netscape_JavaScript/plugin.jar</systemPath>
         </dependency>
 
-        <!-- Swing Layout -->
+        <!-- Swing Layout - Maven Central -->
         <dependency>
             <groupId>org.swinglabs</groupId>
             <artifactId>swing-layout</artifactId>
             <version>1.0.3</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/Swing Layout Extensions/swing-layout-1.0.3.jar</systemPath>
         </dependency>
 
         <!-- Substance Look and Feel -->
@@ -99,50 +89,36 @@
             <groupId>org.pushingpixels</groupId>
             <artifactId>substance</artifactId>
             <version>7.2.1</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/substance/substance-7.2.1.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>org.pushingpixels</groupId>
             <artifactId>substance-swingx</artifactId>
             <version>7.2.1</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/substance/substance-swingx-7.2.1.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>org.pushingpixels</groupId>
             <artifactId>trident</artifactId>
             <version>7.2.1</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/substance/trident-7.2.1.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>org.pushingpixels</groupId>
             <artifactId>trident-base</artifactId>
             <version>7.2.1</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/substance/trident-7.2.1-base.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>org.pushingpixels</groupId>
             <artifactId>trident-swing</artifactId>
             <version>7.2.1</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/substance/trident-7.2.1-swing.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>org.pushingpixels</groupId>
             <artifactId>laf-plugin</artifactId>
             <version>7.2.1</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/substance/laf-plugin-7.2.1.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>org.pushingpixels</groupId>
             <artifactId>laf-widget</artifactId>
             <version>7.2.1</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/substance/laf-widget-7.2.1.jar</systemPath>
         </dependency>
 
         <!-- NASA WorldWind -->
@@ -150,24 +126,18 @@
             <groupId>gov.nasa</groupId>
             <artifactId>worldwind</artifactId>
             <version>0.6.0</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/worldwind/worldwind.jar</systemPath>
         </dependency>
 
-        <!-- XStream and XPP3 -->
+        <!-- XStream and XPP3 - Maven Central -->
         <dependency>
             <groupId>com.thoughtworks.xstream</groupId>
             <artifactId>xstream</artifactId>
             <version>1.3</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/xstream/xstream-1.3.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>xpp3</groupId>
             <artifactId>xpp3_min</artifactId>
             <version>1.1.4c</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/Required_Libraries/xstream/xpp3_min-1.1.4c.jar</systemPath>
         </dependency>
     </dependencies>
 
@@ -218,7 +188,6 @@
                         </goals>
                         <configuration>
                             <outputDirectory>${project.build.directory}/lib</outputDirectory>
-                            <includeScope>system</includeScope>
                         </configuration>
                     </execution>
                 </executions>
