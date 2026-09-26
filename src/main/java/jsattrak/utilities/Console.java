@@ -34,15 +34,16 @@ public class Console extends FilterOutputStream
 {
 
     private static ArrayList<ConsoleListener> registeredListeners = new ArrayList<ConsoleListener>();
+    public static final PrintStream originalOut = System.out;
+    public static final PrintStream originalErr = System.err;
 
     static
     {
-        // On its first use. Install the Console Listener
+        // Tee stdout and stderr so logs appear in both the GUI console and terminal
         PrintStream printStream =
                 new PrintStream(
-                new Console(new ByteArrayOutputStream()));
+                new Console(new ByteArrayOutputStream()), true);
         System.setOut(printStream);
-        // send errors to the console -- 23 March 2009 -- for web start debugging
         System.setErr(printStream);
     }
 
@@ -54,6 +55,7 @@ public class Console extends FilterOutputStream
     /* Override Ancestor method */
     public void write(byte b[]) throws IOException
     {
+        originalOut.write(b);
         String str = new String(b);
         logMessage(str);
     }
@@ -61,6 +63,7 @@ public class Console extends FilterOutputStream
     /* Override Ancestor method */
     public void write(byte b[], int off, int len) throws IOException
     {
+        originalOut.write(b, off, len);
         String str = new String(b, off, len);
         logMessage(str);
     }
@@ -68,6 +71,7 @@ public class Console extends FilterOutputStream
     /* Override Ancestor method */
     public void write(int b) throws IOException
     {
+        originalOut.write(b);
         String str = new String(new char[]{(char) b});
         logMessage(str);
     }

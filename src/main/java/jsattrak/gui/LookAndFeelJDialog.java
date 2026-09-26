@@ -20,11 +20,11 @@
 
 package jsattrak.gui;
 
-import com.jgoodies.looks.plastic.PlasticLookAndFeel;
-import com.jgoodies.looks.plastic.PlasticXPLookAndFeel;
-import com.jgoodies.looks.plastic.theme.ExperienceBlue;
-import com.jgoodies.looks.plastic.theme.ExperienceGreen;
-import com.jgoodies.looks.plastic.theme.Silver;
+import com.formdev.flatlaf.FlatDarculaLaf;
+import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatIntelliJLaf;
+import com.formdev.flatlaf.FlatLaf;
+import com.formdev.flatlaf.FlatLightLaf;
 import java.awt.Window;
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
@@ -72,7 +72,7 @@ public class LookAndFeelJDialog extends javax.swing.JDialog
         setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
         setTitle("Look and Feel Selector");
 
-        jButton1.setText("Nimbus (java 1.6.10)");
+        jButton1.setText("Nimbus");
         jButton1.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButton1ActionPerformed(evt);
@@ -93,28 +93,28 @@ public class LookAndFeelJDialog extends javax.swing.JDialog
             }
         });
 
-        jButton4.setText("Plastic - Experience Blue");
+        jButton4.setText("FlatLaf Light");
         jButton4.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButton4ActionPerformed(evt);
             }
         });
 
-        jButton5.setText("Plastic - Experience Green");
+        jButton5.setText("FlatLaf Dark");
         jButton5.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButton5ActionPerformed(evt);
             }
         });
 
-        jButton6.setText("Plastic - Silver");
+        jButton6.setText("FlatLaf IntelliJ");
         jButton6.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButton6ActionPerformed(evt);
             }
         });
 
-        jButton9.setText("Plastic - XP");
+        jButton9.setText("FlatLaf Darcula");
         jButton9.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButton9ActionPerformed(evt);
@@ -129,13 +129,13 @@ public class LookAndFeelJDialog extends javax.swing.JDialog
         });
 
         LafList.setModel(new javax.swing.AbstractListModel() {
-            String[] strings = { "Business", "BusinessBlueSteel", "BusinessBlackSteel", "Creme", "CremeCoffee", "Sahara", "Moderate", "OfficeSilver2007", "OfficeBlue2007", "Nebula", "NebulaBrickWall", "Autumn", "MistSilver", "MistAqua", "RavenGraphite", "RavenGraphiteGlass", "Raven", "Magma", "ChallengerDeep", "EmeraldDusk" };
+            String[] strings = { "FlatLaf Light", "FlatLaf Dark", "FlatLaf IntelliJ", "FlatLaf Darcula" };
             public int getSize() { return strings.length; }
             public Object getElementAt(int i) { return strings[i]; }
         });
         jScrollPane1.setViewportView(LafList);
 
-        jButton7.setText("Substance Look and Feel");
+        jButton7.setText("Apply Selected Theme");
         jButton7.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButton7ActionPerformed(evt);
@@ -252,100 +252,89 @@ private void jButton3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRS
 }//GEN-LAST:event_jButton3ActionPerformed
 
 private void jButton4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton4ActionPerformed
-    
-     //LafChanger.changeLaf(parent, "com.sun.java.swing.plaf.motif.MotifLookAndFeel");
     try
     {
-        PlasticLookAndFeel.setPlasticTheme(new ExperienceBlue());
-        PlasticLookAndFeel.setTabStyle("Metal"); // makes tabes look much better
-        UIManager.setLookAndFeel(new PlasticLookAndFeel());
-
-        SwingUtilities.updateComponentTreeUI(parent); // apply look and feel over current L&F (otherwise nimbus shows up in correctly)
+        FlatLightLaf.setup();
+        FlatLaf.updateUI();
     }
     catch(Exception ex)
     {
+        ex.printStackTrace();
     }
 }//GEN-LAST:event_jButton4ActionPerformed
 
 private void jButton5ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton5ActionPerformed
-
-    // LafChanger.changeLaf(parent, "com.sun.java.swing.plaf.motif.MotifLookAndFeel");
     try
     {
-        PlasticLookAndFeel.setPlasticTheme(new ExperienceGreen());
-        PlasticLookAndFeel.setTabStyle("Metal"); // makes tabes look much better
-        UIManager.setLookAndFeel(new PlasticLookAndFeel());
-
-        SwingUtilities.updateComponentTreeUI(parent); // apply look and feel over current L&F (otherwise nimbus shows up in correctly)
+        FlatDarkLaf.setup();
+        FlatLaf.updateUI();
     }
     catch(Exception ex)
     {
+        ex.printStackTrace();
     }
 }//GEN-LAST:event_jButton5ActionPerformed
 
 private void jButton6ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton6ActionPerformed
-
-     //LafChanger.changeLaf(parent, "com.sun.java.swing.plaf.motif.MotifLookAndFeel");
     try
     {
-        PlasticLookAndFeel.setPlasticTheme(new Silver());
-        PlasticLookAndFeel.setTabStyle("Metal"); // makes tabes look much better
-        UIManager.setLookAndFeel(new PlasticLookAndFeel());
-
-        SwingUtilities.updateComponentTreeUI(parent); // apply look and feel over current L&F (otherwise nimbus shows up in correctly)
+        FlatIntelliJLaf.setup();
+        FlatLaf.updateUI();
     }
     catch(Exception ex)
     {
+        ex.printStackTrace();
     }
 }//GEN-LAST:event_jButton6ActionPerformed
 
 private void jButton9ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton9ActionPerformed
-
-     //LafChanger.changeLaf(parent, "com.sun.java.swing.plaf.motif.MotifLookAndFeel");
     try
     {
-        UIManager.setLookAndFeel(new PlasticXPLookAndFeel());
-
-        SwingUtilities.updateComponentTreeUI(parent); // apply look and feel over current L&F (otherwise nimbus shows up in correctly)
+        FlatDarculaLaf.setup();
+        FlatLaf.updateUI();
     }
     catch(Exception ex)
     {
-        System.err.println("err:"+ex.toString());
+        ex.printStackTrace();
     }
 }//GEN-LAST:event_jButton9ActionPerformed
 
 private void jButton10ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton10ActionPerformed
-
     LafChanger.changeLaf(parent, "com.sun.java.swing.plaf.motif.MotifLookAndFeel");
-//    try
-//    {
-//        UIManager.setLookAndFeel("com.sun.java.swing.plaf.motif.MotifLookAndFeel");
-//
-//        SwingUtilities.updateComponentTreeUI(parent); // apply look and feel over current L&F (otherwise nimbus shows up in correctly)
-//    }
-//    catch(Exception ex)
-//    {
-//        System.err.println("err:"+ex.toString());
-//    }
 }//GEN-LAST:event_jButton10ActionPerformed
 
 private void jButton7ActionPerformed(java.awt.event.ActionEvent evt)//GEN-FIRST:event_jButton7ActionPerformed
 {//GEN-HEADEREND:event_jButton7ActionPerformed
-    //String laf = "org.jvnet.substance.skin.Substance" + LafList.getSelectedValue().toString() + "LookAndFeel";
-    // SEG v4.1.4 - update to newer version of substnace api
-    String laf = "org.pushingpixels.substance.api.skin.Substance" + LafList.getSelectedValue().toString() + "LookAndFeel";
+    Object selected = LafList.getSelectedValue();
+    if (selected == null)
+    {
+        return;
+    }
+    String selStr = selected.toString();
     try
     {
-        LafChanger.changeLaf(parent, laf);
+        if ("FlatLaf Dark".equals(selStr))
+        {
+            FlatDarkLaf.setup();
+        }
+        else if ("FlatLaf IntelliJ".equals(selStr))
+        {
+            FlatIntelliJLaf.setup();
+        }
+        else if ("FlatLaf Darcula".equals(selStr))
+        {
+            FlatDarculaLaf.setup();
+        }
+        else
+        {
+            FlatLightLaf.setup();
+        }
+        FlatLaf.updateUI();
     }
     catch (Throwable t)
     {
-        javax.swing.JOptionPane.showMessageDialog(this,
-            "Substance Look and Feel is not supported on this Java version.\n" + t.getMessage(),
-            "Theme Unsupported",
-            javax.swing.JOptionPane.WARNING_MESSAGE);
+        t.printStackTrace();
     }
-
 }//GEN-LAST:event_jButton7ActionPerformed
 
     /**

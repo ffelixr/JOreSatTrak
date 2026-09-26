@@ -24,15 +24,13 @@ import java.awt.Component;
 import java.util.Hashtable;
 import javax.swing.Icon;
 import javax.swing.JTree;
-//import org.jvnet.substance.api.renderers.SubstanceDefaultTreeCellRenderer;
-// SEG v4.1.4 - update to newer version of substnace api
-import org.pushingpixels.substance.api.renderers.SubstanceDefaultTreeCellRenderer;
+import javax.swing.tree.DefaultTreeCellRenderer;
 
 /**
  *
  * @author sgano
  */
-public class IconTreeTableNodeRenderer extends SubstanceDefaultTreeCellRenderer //DefaultTreeCellRenderer // to work with Substance LAF
+public class IconTreeTableNodeRenderer extends DefaultTreeCellRenderer
 {
     
     

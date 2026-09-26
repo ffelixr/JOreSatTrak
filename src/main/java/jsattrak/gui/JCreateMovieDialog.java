@@ -38,15 +38,15 @@ import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.TimeZone;
 import java.util.Vector;
-import javax.media.MediaLocator;
+import javax.imageio.ImageIO;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.JTextField;
 import javax.swing.SwingWorker;
 import jsattrak.utilities.J3DEarthComponent;
-import jsattrak.utilities.JpegImagesToMovie;
 import name.gano.astro.time.Time;
 import name.gano.file.SaveImageFile;
+import org.jcodec.api.awt.AWTSequenceEncoder;
 
 /**
  *
@@ -415,11 +415,14 @@ public class JCreateMovieDialog extends javax.swing.JDialog
         
         // ASK WHERE TO SAVE MOVIE!!!!!!
         //    	Create a file chooser
-        String outputMoviePath = "test.mov"; // default output
+        String outputMoviePath = "test.mp4"; // default output
         
         final JFileChooser fc = new JFileChooser();
+        jsattrak.utilities.CustomFileFilter mp4Filter = new jsattrak.utilities.CustomFileFilter("mp4", "*.mp4");
         jsattrak.utilities.CustomFileFilter movFilter = new jsattrak.utilities.CustomFileFilter("mov", "*.mov");
+        fc.addChoosableFileFilter(mp4Filter);
         fc.addChoosableFileFilter(movFilter);
+        fc.setFileFilter(mp4Filter);
 
         int returnVal = fc.showSaveDialog(this);
 
@@ -427,7 +430,7 @@ public class JCreateMovieDialog extends javax.swing.JDialog
         {
             File file = fc.getSelectedFile();
 
-            String fileExtension = "mov"; // default
+            String fileExtension = "mp4"; // default
             if (fc.getFileFilter() == movFilter)
             {
                 fileExtension = "mov";
@@ -445,7 +448,7 @@ public class JCreateMovieDialog extends javax.swing.JDialog
             //System.out.println("path="+file.getAbsolutePath());
             }
             
-            outputMoviePath = "file:" + file.getAbsolutePath();
+            outputMoviePath = file.getAbsolutePath();
 
         }
         else
@@ -514,42 +517,35 @@ public class JCreateMovieDialog extends javax.swing.JDialog
                         // stuff to do afterwards
                         
                          // create movie =========
-                        // get size
-                        int width;
-                        int height;
-                        if(movieMode == 0)
+                        // create movie =========
+                        File outFile = new File(outputMoviePathFinal);
+                        AWTSequenceEncoder encoder = null;
+                        try
                         {
-                            width = threeDpanel.getWwdWidth();
-                            height = threeDpanel.getWwdHeight();
+                            encoder = AWTSequenceEncoder.createSequenceEncoder(outFile, playbackFPS);
+                            for (int i = 0; i < inputFiles.size(); i++)
+                            {
+                                File imgFile = new File(inputFiles.get(i));
+                                if (imgFile.exists())
+                                {
+                                    BufferedImage bi = ImageIO.read(imgFile);
+                                    if (bi != null)
+                                    {
+                                        encoder.encodeImage(bi);
+                                    }
+                                }
+                            }
+                            encoder.finish();
                         }
-                        else if(movieMode == 1)
+                        catch (Exception encErr)
                         {
-                            int[] twoDinfo = calculate2DMapSizeAndScreenLoc(twoDpanel);
-                            width = twoDinfo[0];
-                            height = twoDinfo[1];
-                        }
-                        else
-                        {
-                            width = otherPanel.getWidth();
-                            height = otherPanel.getHeight();
-                        }
-
-                        // Generate the output media locators.
-                        MediaLocator oml;
-
-                        if ((oml = createMediaLocator(outputMoviePathFinal)) == null)
-                        {
-                            JOptionPane.showMessageDialog(null, "ERROR Creating Output File (check permissions)", "ERROR", JOptionPane.ERROR_MESSAGE);
-                            System.err.println("Cannot build media locator from: " + outputMoviePathFinal);
-                            
-                            //movieStatusBar.setIndeterminate(false);
+                            System.err.println("Error encoding video: " + encErr.getMessage());
+                            encErr.printStackTrace();
+                            JOptionPane.showMessageDialog(null, "ERROR Creating Output File: " + encErr.getMessage(), "ERROR", JOptionPane.ERROR_MESSAGE);
                             publish(0);
                             movieStatusBar.setString("ERROR!");
                             return inputFiles;
                         }
-
-                        JpegImagesToMovie imageToMovie = new JpegImagesToMovie();
-                        imageToMovie.doIt(width, height, playbackFPS, inputFiles, oml);
 
                         // clean up ============
                         boolean cleanSuccess = deleteDirectory(tempDirStr);
@@ -845,28 +841,6 @@ public class JCreateMovieDialog extends javax.swing.JDialog
             System.out.println("ERROR SCREEN CAPTURE:" + e4.toString());
         }
     } // createScreenCapture
-        
-    /**
-     * Create a media locator from the given string.
-     */
-    static MediaLocator createMediaLocator(String url) {
-
-	MediaLocator ml;
-
-	if (url.indexOf(":") > 0 && (ml = new MediaLocator(url)) != null)
-	    return ml;
-
-	if (url.startsWith(File.separator)) {
-	    if ((ml = new MediaLocator("file:" + url)) != null)
-		return ml;
-	} else {
-	    String file = "file:" + System.getProperty("user.dir") + File.separator + url;
-	    if ((ml = new MediaLocator(file)) != null)
-		return ml;
-	}
-
-	return null;
-    } // createMediaLocator
     
     
     // calculate actualy 2D map size and location on screen

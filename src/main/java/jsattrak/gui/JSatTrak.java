@@ -26,8 +26,7 @@ package jsattrak.gui;
 import bsh.Interpreter;
 import bsh.util.JConsole;
 import bsh.util.NameCompletionTable;
-import com.jgoodies.looks.plastic.PlasticLookAndFeel;
-import com.jgoodies.looks.plastic.theme.ExperienceBlue;
+import com.formdev.flatlaf.FlatLightLaf;
 import jsattrak.objects.GroundStation;
 import jsattrak.about.AboutDialog;
 import com.thoughtworks.xstream.XStream;
@@ -202,54 +201,23 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     {
         boolean usingNimbus = false; // flag for updating nimbus
 
-        // setup look and feel first        
+        // setup modern FlatLaf look and feel
         try
         {
-            // Substance 7.2.1 relies on legacy Sun internal APIs (com.sun.awt.AWTUtilities)
-            // which were removed in Java 9+. Only use Substance on Java 8 or earlier.
-            if (getJavaMajorVersion() <= 8)
+            if (!FlatLightLaf.setup())
             {
-                String laf = "org.pushingpixels.substance.api.skin.SubstanceRavenLookAndFeel";
-                LafChanger.changeLaf(this, laf);
-            }
-            else
-            {
-                // On Java 9+, use the native System Look and Feel (or Nimbus)
-                try
-                {
-                    UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-                }
-                catch (Throwable t)
-                {
-                    UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");
-                    usingNimbus = true;
-                }
+                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
             }
         }
-        catch (Throwable ex2)
+        catch (Throwable t)
         {
             try
             {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            } catch (Throwable ex1)
+            }
+            catch (Throwable fallbackErr)
             {
-                try
-                {
-                    UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");
-                    usingNimbus = true;
-                } catch (Throwable exNimbus)
-                {
-                    PlasticLookAndFeel.setPlasticTheme(new ExperienceBlue());
-                    PlasticLookAndFeel.setTabStyle("Metal"); // makes tabes look much better
-
-                    try
-                    {
-                        UIManager.setLookAndFeel(new PlasticLookAndFeel());
-                    } catch (Throwable ex)
-                    {
-                        ex.printStackTrace();
-                    }
-                }
+                fallbackErr.printStackTrace();
             }
         }
  
@@ -3863,15 +3831,23 @@ private void lookFeelMenuItemActionPerformed(java.awt.event.ActionEvent evt) {//
         // no command line arguments
         if(args.length == 0)
         {
-
-
            java.awt.EventQueue.invokeLater(new Runnable()
             {
                 public void run()
                 {
-
-                    new JSatTrak().setVisible(true);
-
+                    try
+                    {
+                        System.out.println("[JSatTrak] Starting JSatTrak initialization...");
+                        JSatTrak app = new JSatTrak();
+                        System.out.println("[JSatTrak] Setting frame visible...");
+                        app.setVisible(true);
+                        System.out.println("[JSatTrak] Application window shown.");
+                    }
+                    catch (Throwable t)
+                    {
+                        System.err.println("[JSatTrak] Uncaught exception during startup:");
+                        t.printStackTrace();
+                    }
                 } // run
             });
         }
