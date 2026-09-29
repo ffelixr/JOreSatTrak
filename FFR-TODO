@@ -1,0 +1,82 @@
+Integrate Orekit as the official orbit propagation engine
+
+
+Viewed AbstractSatellite.java:1-140
+Viewed SatelliteTleSGP4.java:35-140
+Viewed SatelliteTleSGP4.java:141-250
+Viewed CustomSatellite.java:1-120
+Viewed PropogatorNode.java:1-60
+Viewed JSatTrak.java:170-230
+Viewed JTrackingPanel.java:20-60
+Viewed pom.xml:14-18
+
+To integrate **Orekit** (Space Dynamics Library) as the official orbit propagation engine instead of the custom legacy calculations (`name.gano.astro.propogators.sgp4_cssi`, `solvers`, etc.), several classes need modification, along with a few new integration classes.
+
+Here is the structured breakdown of the affected classes and the exact nature of the required changes.
+
+---
+
+### 1. Architectural Impact Summary
+
+Orekit relies on its own unified context:
+- **Orekit Data Context**: Requires geophysical data (`orekit-data.zip` containing UTC-TAI leap seconds, IERS Earth Orientation Parameters, gravity field models).
+- **Time System**: `org.orekit.time.AbsoluteDate` and `TimeScalesFactory` (UTC, TT, TAI).
+- **Frames**: `FramesFactory.getTEME()`, `FramesFactory.getEME2000()`, `FramesFactory.getITRF(...)`.
+- **Propagator Interface**: `org.orekit.propagation.Propagator` (specifically `org.orekit.propagation.analytical.tle.TLEPropagator` for TLE/SGP4, and `org.orekit.propagation.numerical.NumericalPropagator` for custom numerical propagation).
+
+---
+
+### 2. Classes Requiring Modification & Required Changes
+
+#### A. Data & Startup Initialization
+| Class | Nature of Changes |
+|---|---|
+| [`jsattrak.gui.JSatTrak`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/gui/JSatTrak.java) | **Initialize Orekit Data Context on startup**: <br>• In the constructor or `main()` method, configure Orekit's `DataContext.getDefault()` using `DataProvidersManager` to load `orekit-data.zip` (placed in `data/` or extracted classpath). <br>• Without this initialization, any Orekit call (dates, frames, celestial bodies) throws an `OrekitException`. |
+
+---
+
+#### B. Primary Domain & Satellite Models (`jsattrak.objects`)
+
+| Class | Nature of Changes |
+|---|---|
+| [`SatelliteTleSGP4`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/objects/SatelliteTleSGP4.java) | **Replace internal SGP4 with Orekit's `TLEPropagator`**: <br>• Replace `SGP4SatData`, `SGP4unit`, and `SGP4utils` with `org.orekit.propagation.analytical.tle.TLEPropagator` and `org.orekit.propagation.analytical.tle.TLE`. <br>• In constructor / `updateTleData(TLE)`: Instantiate `org.orekit.propagation.analytical.tle.TLE(line1, line2)` and `TLEPropagator.selectExtrapolator(orekitTLE)`. <br>• In `propogate2JulDate(double julDate)`: Convert `julDate` to `AbsoluteDate` via `AbsoluteDate.createJDDate(...)`, call `propagator.propagate(targetDate)`. <br>• Extract PV coordinates (`TimeStampedPVCoordinates`) directly in TEME, EME2000 (J2000), and ITRF (Earth-fixed for Latitude/Longitude/Altitude), replacing manual matrix transformations (`J2kCoordinateConversion.teme_j2k(...)` and `GeoFunctions.GeodeticLLA(...)`). |
+| [`AbstractSatellite`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/objects/AbstractSatellite.java) | **Interface alignment & type modernization**: <br>• Currently, the propagation methods accept `double julDate` or `Time`. Keep these signatures for backward compatibility with UI/renders, but add overload support for `AbsoluteDate` (or an Orekit `SpacecraftState` accessor). <br>• Ensure `getPVCoordinates(Frame frame)` can be served directly from Orekit. |
+| [`CustomSatellite`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/objects/CustomSatellite.java) | **Replace custom numerical ODE solver with Orekit `NumericalPropagator`**: <br>• Currently uses custom vector integration (`LagrangeInterp`, `RungeKutta4`, `RungeKutta78`). <br>• Replace with Orekit's `NumericalPropagator` using Hipparchus ODE integrators (`DormandPrince853Integrator`). <br>• Attach Orekit force models: Earth gravity field (`HolmesFeatherstoneAttractionModel`), Third-body attractions (Sun, Moon), atmospheric drag, and Solar Radiation Pressure. |
+
+---
+
+#### C. Mission Designer & Solver Nodes (`jsattrak.customsat`)
+
+| Class | Nature of Changes |
+|---|---|
+| [`PropogatorNode`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/customsat/PropogatorNode.java) | **Replace custom force equations and solvers**: <br>• Replace implementations of `OrbitProblem` (`RungeKutta4`, `RungeKutta78`, `ApsisStopCond`) with Orekit force models and `org.orekit.propagation.events.EventDetector` (e.g., `ApsideDetector`, `NodeDetector`, `AltitudeDetector` for stopping conditions). |
+| [`InitialConditionsNode`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/customsat/InitialConditionsNode.java) | **Map initial conditions to Orekit `Orbit`**: <br>• Map Keplerian elements and Cartesian state vectors into `org.orekit.orbits.KeplerianOrbit` or `org.orekit.orbits.CartesianOrbit`. |
+
+---
+
+#### D. Time, Frame, & Utility Bridges
+
+| Class | Nature of Changes |
+|---|---|
+| [`name.gano.astro.time.Time`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/name/gano/astro/time/Time.java) & [`JulianDay`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/name/gano/astro/JulianDay.java) | **Time adapter / conversion bridge**: <br>• Add helper methods `toAbsoluteDate(TimeScale scale)` and factory `fromAbsoluteDate(AbsoluteDate date)` to allow smooth interop between JSatTrak's Julian Day structures and Orekit's epoch handling. |
+| [`jsattrak.utilities.TLE`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/utilities/TLE.java) | **Add adapter to Orekit TLE**: <br>• Add `toOrekitTLE()` returning `org.orekit.propagation.analytical.tle.TLE`. |
+| `name.gano.astro.propogators.sgp4_cssi.*` | **Deprecation / Phase-out**: <br>• The files `SGP4unit.java`, `SGP4utils.java`, and `SGP4SatData.java` become obsolete and can be marked `@Deprecated` or superseded by `org.orekit.propagation.analytical.tle`. |
+
+---
+
+#### E. Ground Stations & Tracking Look Angles (Optional / Secondary Phase)
+
+| Class | Nature of Changes |
+|---|---|
+| [`GroundStation`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/objects/GroundStation.java) | **Topocentric Frame Integration**: <br>• Can optionally create an internal `org.orekit.frames.TopocentricFrame` attached to an `EarthShape` (`OneAxisEllipsoid`), allowing Orekit to directly calculate elevation, azimuth, and range rate (Doppler) instead of JSatTrak's manual `AER.java` formulas. |
+| [`JTrackingPanel`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/gui/JTrackingPanel.java) | **Pass Prediction & Visibility Events**: <br>• Can optionally leverage Orekit's `ElevationDetector` for highly accurate AOS (Acquisition of Signal), LOS (Loss of Signal), and culmination detection. |
+
+---
+
+### 3. Recommended Phased Implementation Strategy
+
+1. **Step 1 — Orekit Data Bootstrap**: Add `orekit-data.zip` to `data/` and initialize Orekit in [`JSatTrak`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/gui/JSatTrak.java).
+2. **Step 2 — Bridge Adapter**: Add a conversion utility (`Time` $\leftrightarrow$ `AbsoluteDate`).
+3. **Step 3 — Refactor [`SatelliteTleSGP4`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/objects/SatelliteTleSGP4.java)**: Swap the SGP4 engine first. Since >90% of objects in JSatTrak use TLEs, this provides immediate Orekit propagation across both 2D and 3D views while keeping existing UI code intact.
+4. **Step 4 — Refactor Custom Satellite Propagation**: Transition `CustomSatellite` and `PropogatorNode` to Orekit's `NumericalPropagator`.
+Track space debris 

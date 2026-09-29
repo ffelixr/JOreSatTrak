@@ -19,6 +19,8 @@
  *   limitations under the License.
  * =====================================================================
  *        
+ * Modifications:
+ * - 2026: Modernized Look and Feel with FlatLaf, cleaned up legacy UI dependencies.
  */
 
 package jsattrak.gui;

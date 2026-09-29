@@ -1,0 +1,71 @@
+JOreSatTrak (JSatTrak Fork with Orekit)
+Copyright 2007-2018 Shawn E. Gano
+Copyright 2026 Fernando Felix-Redondo and contributors
+
+This product is an independent fork of JSatTrak, originally created by
+Shawn E. Gano, and integrates the Orekit space dynamics library.
+
+===============================================================================
+JSatTrak
+===============================================================================
+Copyright 2007-2018 Shawn E. Gano
+Licensed under the Apache License, Version 2.0.
+Original project website: http://www.gano.name/shawn/JSatTrak
+
+===============================================================================
+Orekit
+===============================================================================
+This software includes the Orekit library developed by CS GROUP and contributors.
+Copyright 2002-2026 CS GROUP
+Licensed under the Apache License, Version 2.0.
+Project website: https://www.orekit.org/
+
+Orekit relies on and includes attribution for:
+- Hipparchus (Copyright 2015-2026 Hipparchus project, Apache License 2.0)
+- Apache Commons Math (Copyright 2001-2016 The Apache Software Foundation)
+
+===============================================================================
+NASA WorldWind Java SDK
+===============================================================================
+Copyright (C) 2001, 2006 United States Government as represented by the
+Administrator of the National Aeronautics and Space Administration.
+All Rights Reserved.
+Licensed under the NASA Open Source Agreement (NOSA), Version 1.3.
+
+===============================================================================
+JOGL and GlueGen (Java Binding for OpenGL)
+===============================================================================
+Copyright (c) 2003-2006 Sun Microsystems, Inc. All Rights Reserved.
+Licensed under BSD 2-Clause / BSD 3-Clause licenses.
+
+===============================================================================
+FlatLaf Look and Feel
+===============================================================================
+Copyright 2019-2024 FormDev Software GmbH
+Licensed under the Apache License, Version 2.0.
+
+===============================================================================
+JCodec
+===============================================================================
+Copyright 2011-2020 JCodec project
+Licensed under FreeBSD License (2-clause BSD).
+
+===============================================================================
+JAMA (A Java Matrix Package)
+===============================================================================
+Developed by The MathWorks and the National Institute of Standards and
+Technology (NIST).
+Released into the Public Domain.
+
+===============================================================================
+BeanShell
+===============================================================================
+Copyright (C) Pat Niemeyer.
+Licensed under the Apache License, Version 2.0 and Sun Public License.
+
+===============================================================================
+XStream & XPP3
+===============================================================================
+XStream: Copyright (c) 2003-2006, Joe Walnes; Copyright (c) 2006-2020, XStream Committers.
+Licensed under 3-Clause BSD License.
+XPP3: Extreme! Lab Software License (BSD-style), Indiana University.

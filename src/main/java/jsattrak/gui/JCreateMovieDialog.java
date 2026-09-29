@@ -23,6 +23,8 @@
  * update 29 April 2008: Shawn Gano
  * - fixed to allow other types of windows besides just 3d WWJ, using a "mode" variable to allow 3dWWJ, 2D, or other
  * 
+ * Modifications:
+ * - 2026: Migrated video encoding from legacy JMF to pure-Java JCodec MP4 encoder.
  */
 
 package jsattrak.gui;

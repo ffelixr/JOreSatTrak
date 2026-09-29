@@ -16,6 +16,9 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  * =====================================================================
+ *
+ * Modifications:
+ * - 2026: Modernized Look and Feel switcher using FlatLaf themes.
  */
 
 package jsattrak.gui;
