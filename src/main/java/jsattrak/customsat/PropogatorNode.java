@@ -46,6 +46,44 @@ import name.gano.astro.propogators.solvers.StoppingCondition;
 import name.gano.astro.time.Time;
 import name.gano.swingx.treetable.CustomTreeTableNode;
 
+// Orekit and Hipparchus imports
+import org.hipparchus.geometry.euclidean.threed.Vector3D;
+import org.hipparchus.ode.AbstractIntegrator;
+import org.hipparchus.ode.nonstiff.ClassicalRungeKuttaIntegrator;
+import org.hipparchus.ode.nonstiff.DormandPrince853Integrator;
+import org.orekit.bodies.CelestialBodyFactory;
+import org.orekit.bodies.OneAxisEllipsoid;
+import org.orekit.forces.ForceModel;
+import org.orekit.forces.drag.DragForce;
+import org.orekit.forces.drag.DragSensitive;
+import org.orekit.forces.drag.IsotropicDrag;
+import org.orekit.forces.gravity.HolmesFeatherstoneAttractionModel;
+import org.orekit.forces.gravity.ThirdBodyAttraction;
+import org.orekit.forces.gravity.potential.GravityFieldFactory;
+import org.orekit.forces.gravity.potential.NormalizedSphericalHarmonicsProvider;
+import org.orekit.forces.radiation.IsotropicRadiationSingleCoefficient;
+import org.orekit.forces.radiation.RadiationSensitive;
+import org.orekit.forces.radiation.SolarRadiationPressure;
+import org.orekit.frames.Frame;
+import org.orekit.frames.FramesFactory;
+import org.orekit.models.earth.atmosphere.HarrisPriester;
+import org.orekit.orbits.CartesianOrbit;
+import org.orekit.orbits.Orbit;
+import org.orekit.orbits.OrbitType;
+import org.orekit.propagation.SpacecraftState;
+import org.orekit.propagation.events.ApsideDetector;
+import org.orekit.propagation.events.handlers.StopOnDecreasing;
+import org.orekit.propagation.events.handlers.StopOnIncreasing;
+import org.orekit.propagation.numerical.NumericalPropagator;
+import org.orekit.propagation.sampling.OrekitFixedStepHandler;
+import org.orekit.propagation.sampling.StepHandlerMultiplexer;
+import org.orekit.time.AbsoluteDate;
+import org.orekit.time.TimeScalesFactory;
+import org.orekit.utils.Constants;
+import org.orekit.utils.IERSConventions;
+import org.orekit.utils.PVCoordinates;
+import org.orekit.utils.TimeStampedPVCoordinates;
+
 /**
  *
  * @author sgano
@@ -153,113 +191,146 @@ public class PropogatorNode extends CustomTreeTableNode implements OrbitProblem
         boolean propSuccess = false;
         
         // time parameters that are shared
-        JD_TT0 = lastState.state[0]; // last time !!!! IS THIS TT 
-        double dt = stepSize; // in seconds
+        JD_TT0 = lastState.state[0];
+        double dt = stepSize; // output and initial step size in seconds
 
-        int nSteps = (int) Math.ceil(popogateTimeLen/dt); // number of steps to integrate
-        
-        // run correct propogator
-        if(propogator == PropogatorNode.HPROP4)
-        {
-            
-            // use seconds as integration time (start at 0.0)
-            RungeKutta4 integrator = new RungeKutta4(0.0, dt, pos, vel, nSteps, this);
-            
-            // Add stopping conditions
-            if(stopOnApogee)
-            {
-                StoppingCondition sc = new ApsisStopCond(ApsisStopCond.APOAPSIS,ephemeris);
-                integrator.addStoppingCondition(sc);
+        try {
+            // Coordinate frame: EME2000 (J2000)
+            Frame j2000 = FramesFactory.getEME2000();
+            Frame itrf = FramesFactory.getITRF(IERSConventions.IERS_2010, true);
+
+            // Initial date from TT Julian Date
+            AbsoluteDate startDate = new AbsoluteDate(
+                    AbsoluteDate.JULIAN_EPOCH,
+                    JD_TT0 * 86400.0,
+                    TimeScalesFactory.getTT());
+
+            // Initial orbit
+            PVCoordinates initialPV = new PVCoordinates(
+                    new Vector3D(pos[0], pos[1], pos[2]),
+                    new Vector3D(vel[0], vel[1], vel[2]));
+            Orbit initialOrbit = new CartesianOrbit(initialPV, j2000, startDate, Constants.WGS84_EARTH_MU);
+
+            // Configure ODE Integrator
+            AbstractIntegrator integrator;
+            if (propogator == PropogatorNode.HPROP4) {
+                // Fixed-step 4th order Runge-Kutta
+                integrator = new ClassicalRungeKuttaIntegrator(dt);
+            } else {
+                // Dormand-Prince 8(5,3) adaptive integrator for HPROP8 and HPROP78
+                double[][] tol = NumericalPropagator.tolerances(
+                        relAccuracy,
+                        initialOrbit,
+                        OrbitType.CARTESIAN);
+                DormandPrince853Integrator dp853 = new DormandPrince853Integrator(
+                        minStepSize,
+                        maxStepSize,
+                        tol[0],
+                        tol[1]);
+                dp853.setInitialStepSize(dt);
+                integrator = dp853;
             }
-            if(stopOnPerigee)
-            {
-                StoppingCondition sc = new ApsisStopCond(ApsisStopCond.PERIAPSIS,ephemeris);
-                integrator.addStoppingCondition(sc);
+
+            NumericalPropagator numPropagator = new NumericalPropagator(integrator);
+            numPropagator.setOrbitType(OrbitType.CARTESIAN);
+            numPropagator.setInitialState(new SpacecraftState(initialOrbit, mass));
+
+            // Earth shape for gravity, drag, and solar radiation pressure
+            OneAxisEllipsoid earth = new OneAxisEllipsoid(
+                    Constants.WGS84_EARTH_EQUATORIAL_RADIUS,
+                    Constants.WGS84_EARTH_FLATTENING,
+                    itrf);
+
+            // 1. Earth Gravity Field
+            int degree = Math.min(n_max, 120);
+            int order = Math.min(m_max, 120);
+            NormalizedSphericalHarmonicsProvider gravityProvider =
+                    GravityFieldFactory.getNormalizedProvider(degree, order);
+            ForceModel holmesFeatherstone = new HolmesFeatherstoneAttractionModel(itrf, gravityProvider);
+            numPropagator.addForceModel(holmesFeatherstone);
+
+            // 2. Third-Body Attractions (Sun and Moon)
+            if (includeSunPert) {
+                numPropagator.addForceModel(new ThirdBodyAttraction(CelestialBodyFactory.getSun()));
             }
-            
-            long ms = integrator.solve();
+            if (includeLunarPert) {
+                numPropagator.addForceModel(new ThirdBodyAttraction(CelestialBodyFactory.getMoon()));
+            }
 
-            //	System.out.println("RK4 Solver took: " + ms + " ms");
-            //guiApp.addMessagetoLog("RK4 Solver took: " + ms / 1000.0 + " sec (" + name + ")");
+            // 3. Solar Radiation Pressure
+            if (includeSolRadPress) {
+                RadiationSensitive spacecraft = new IsotropicRadiationSingleCoefficient(area, CR);
+                ForceModel srp = new SolarRadiationPressure(
+                        CelestialBodyFactory.getSun(),
+                        earth,
+                        spacecraft);
+                numPropagator.addForceModel(srp);
+            }
 
-            // finish
+            // 4. Atmospheric Drag
+            if (includeAtmosDrag) {
+                HarrisPriester atmosphere = new HarrisPriester(CelestialBodyFactory.getSun(), earth);
+                DragSensitive spacecraft = new IsotropicDrag(area, CD);
+                ForceModel drag = new DragForce(atmosphere, spacecraft);
+                numPropagator.addForceModel(drag);
+            }
+
+            // Stopping conditions
+            if (stopOnApogee) {
+                numPropagator.addEventDetector(
+                        new ApsideDetector(initialOrbit).withHandler(new StopOnDecreasing()));
+            }
+            if (stopOnPerigee) {
+                numPropagator.addEventDetector(
+                        new ApsideDetector(initialOrbit).withHandler(new StopOnIncreasing()));
+            }
+
+            // Step handler: record ephemeris points at stepSize intervals
+            numPropagator.getMultiplexer().add(dt, new OrekitFixedStepHandler() {
+                @Override
+                public void handleStep(SpacecraftState currentState) {
+                    AbsoluteDate d = currentState.getDate();
+                    double jdTT = d.durationFrom(AbsoluteDate.JULIAN_EPOCH) / 86400.0;
+                    PVCoordinates pv = currentState.getPVCoordinates(FramesFactory.getEME2000());
+                    Vector3D p = pv.getPosition();
+                    Vector3D v = pv.getVelocity();
+
+                    StateVector sv = new StateVector(new double[] {
+                            jdTT,
+                            p.getX(), p.getY(), p.getZ(),
+                            v.getX(), v.getY(), v.getZ()
+                    });
+                    ephemeris.add(sv);
+                }
+            });
+
+            // Target propagation date
+            AbsoluteDate targetDate = startDate.shiftedBy(popogateTimeLen);
+
+            // Execute propagation
+            SpacecraftState finalState = numPropagator.propagate(targetDate);
+
+            // Ensure last state is recorded
+            PVCoordinates finalPV = finalState.getPVCoordinates(FramesFactory.getEME2000());
+            double finalJdTT = finalState.getDate().durationFrom(AbsoluteDate.JULIAN_EPOCH) / 86400.0;
+            StateVector finalSv = new StateVector(new double[] {
+                    finalJdTT,
+                    finalPV.getPosition().getX(), finalPV.getPosition().getY(), finalPV.getPosition().getZ(),
+                    finalPV.getVelocity().getX(), finalPV.getVelocity().getY(), finalPV.getVelocity().getZ()
+            });
+
+            if (ephemeris.isEmpty() || Math.abs(ephemeris.lastElement().state[0] - finalJdTT) > 1e-12) {
+                ephemeris.add(finalSv);
+            }
+
             propSuccess = true;
-        } // RK 4
-        else if(propogator == PropogatorNode.HPROP8)
-        {
-            
-            
-            // 8th order test
-            boolean adaptive = false; // not adaptive
-            double iniStep = dt; // real value
-            double relErrorTol = relAccuracy;  // hmm not set by user for this method??  set in RK7-8??
-            
-            RungeKutta78 text = new RungeKutta78(0.0, popogateTimeLen, pos, vel, this, minStepSize, maxStepSize, iniStep, relErrorTol, adaptive);
-   
-            // Add stopping conditions
-            if(stopOnApogee)
-            {
-                StoppingCondition sc = new ApsisStopCond(ApsisStopCond.APOAPSIS,ephemeris);
-                text.addStoppingCondition(sc);
-            }
-            if(stopOnPerigee)
-            {
-                StoppingCondition sc = new ApsisStopCond(ApsisStopCond.PERIAPSIS,ephemeris);
-                text.addStoppingCondition(sc);
-            }
-            
-            long simt = text.solve();
-            
-            double minStep = text.getMinStep();
-            double maxStep = text.getMaxStep();
-            int ns = text.getNumSteps();
-            
-            //guiApp.addMessagetoLog("RK8 Solver took: " + simt / 1000.0 + " sec (" + name + ")");
+        } catch (Exception e) {
+            System.err.println("Orekit Numerical Propagation error: " + e.getMessage());
+            e.printStackTrace();
+        }
 
-            propSuccess = true;
-        } // RK8
-        else if(propogator == PropogatorNode.HPROP78)
-        {
-            // 8th order test
-            boolean adaptive = true; // is adaptive
-
-            // get parameter values
-            double iniStep = dt; // real value
-            double relErrorTol = relAccuracy;
-            
-            RungeKutta78 text = new RungeKutta78(0.0, popogateTimeLen, pos, vel, this, minStepSize, maxStepSize, iniStep, relErrorTol, adaptive);
-            
-             // Add stopping conditions
-            if(stopOnApogee)
-            {
-                StoppingCondition sc = new ApsisStopCond(ApsisStopCond.APOAPSIS,ephemeris);
-                text.addStoppingCondition(sc);
-            }
-            if(stopOnPerigee)
-            {
-                StoppingCondition sc = new ApsisStopCond(ApsisStopCond.PERIAPSIS,ephemeris);
-                text.addStoppingCondition(sc);
-            }
-            
-            long simt = text.solve();
-            
-            double minStep = text.getMinStep();
-            double maxStep = text.getMaxStep();
-            int ns = text.getNumSteps();
-            
-            //guiApp.addMessagetoLog("RK7-8 Solver took: : " + simt / 1000.0 + " sec (" + name + "), Number of Steps: " + ns + ", Min/Max Step Sizes: " + minStep + "/" + maxStep);
-
-            propSuccess = true;
-            
-        } // RK78
-        
-        
         // copy final ephemeris state:
         lastStateVector = ephemeris.lastElement();
-        
-        // copy internal ephemeris to the external ephemeris, making conversion from TT to UT??
-        // nope Custom sat internal time is TT not UTC
-        
     }// execute
     
     

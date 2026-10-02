@@ -26,6 +26,11 @@ import java.io.Serializable;
 import jsattrak.utilities.TLE;
 import name.gano.worldwind.modelloader.WWModel3D_new;
 
+import org.orekit.frames.Frame;
+import org.orekit.propagation.SpacecraftState;
+import org.orekit.time.AbsoluteDate;
+import org.orekit.utils.TimeStampedPVCoordinates;
+
 /**
  *
  * @author sgano
@@ -130,6 +135,37 @@ public abstract class AbstractSatellite implements Serializable
     public abstract boolean isShowName2D();
 
     public abstract void propogate2JulDate(double julDate);
+
+    /**
+     * Propagate the satellite directly using Orekit's AbsoluteDate.
+     * Default implementation delegates to propogate2JulDate for backward compatibility.
+     *
+     * @param date target AbsoluteDate
+     */
+    public void propagate(AbsoluteDate date) {
+        double julDate = date.durationFrom(AbsoluteDate.JULIAN_EPOCH) / 86400.0;
+        propogate2JulDate(julDate);
+    }
+
+    /**
+     * Gets the latest SpacecraftState from the Orekit propagator.
+     *
+     * @return current SpacecraftState or null if not supported
+     */
+    public SpacecraftState getCurrentState() {
+        return null;
+    }
+
+    /**
+     * Gets position and velocity coordinates in any requested Orekit frame.
+     *
+     * @param frame target reference frame
+     * @return TimeStampedPVCoordinates in the requested frame, or null if state is unavailable
+     */
+    public TimeStampedPVCoordinates getPVCoordinates(Frame frame) {
+        SpacecraftState state = getCurrentState();
+        return (state != null) ? state.getPVCoordinates(frame) : null;
+    }
 
     public abstract void setFillFootPrint(boolean fillFootPrint);
 
