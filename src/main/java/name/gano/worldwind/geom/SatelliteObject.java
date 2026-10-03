@@ -24,7 +24,7 @@
 
 package name.gano.worldwind.geom;
 
-import com.sun.opengl.util.texture.Texture;
+import com.jogamp.opengl.util.texture.Texture;
 import gov.nasa.worldwind.awt.WorldWindowGLCanvas;
 import gov.nasa.worldwind.geom.Angle;
 import gov.nasa.worldwind.geom.LatLon;
@@ -35,7 +35,8 @@ import gov.nasa.worldwind.render.SurfaceCircle;
 import gov.nasa.worldwind.util.Logging;
 import java.awt.Color;
 import java.util.Vector;
-import javax.media.opengl.GL;
+import com.jogamp.opengl.GL;
+import com.jogamp.opengl.GL2;
 import name.gano.worldwind.texture.TextureUtils;
 
 /**
@@ -131,14 +132,13 @@ public class SatelliteObject  implements Renderable
             foilTex = TextureUtils.loadTexture("textures/goldfoil.png");
         }
 
-        javax.media.opengl.GL gl = dc.getGL();
+        GL2 gl = dc.getGL().getGL2();
         
         gl.glEnable(GL.GL_TEXTURE_2D);
                 
-        gl.glPushAttrib(javax.media.opengl.GL.GL_TEXTURE_BIT | javax.media.opengl.GL.GL_ENABLE_BIT | javax.media.opengl.GL.GL_CURRENT_BIT);
+        gl.glPushAttrib(GL2.GL_TEXTURE_BIT | GL2.GL_ENABLE_BIT | GL2.GL_CURRENT_BIT);
         
-        
-        gl.glMatrixMode(javax.media.opengl.GL.GL_MODELVIEW);
+        gl.glMatrixMode(GL2.GL_MODELVIEW);
         
         
         
@@ -239,9 +239,9 @@ public class SatelliteObject  implements Renderable
         // color for solar arrays
      //   gl.glColor3d( solarArrayColor.getRed()/255.0 , solarArrayColor.getGreen()/255.0 , solarArrayColor.getBlue()/255.0 ); // COLOR 
 
-        solarPanelTex.bind();
+        solarPanelTex.bind(gl);
         
-        gl.glBegin(GL.GL_QUADS);
+        gl.glBegin(GL2.GL_QUADS);
             gl.glNormal3f(0,0,1.0f);
             gl.glTexCoord2f(0f,0f);
             gl.glVertex3f(  (-0.4f*satSize),  (-3.5f*satSize), 0f );
@@ -268,11 +268,11 @@ public class SatelliteObject  implements Renderable
     } //render
     
     
-    private void drawCube(GL gl, float satSize)
+    private void drawCube(GL2 gl, float satSize)
     {
-        foilTex.bind();
+        foilTex.bind(gl);
         
-        gl.glBegin(GL.GL_QUADS);
+        gl.glBegin(GL2.GL_QUADS);
         // Front face
         gl.glNormal3f(0,0,1.0f);
         gl.glTexCoord2d(0,0);

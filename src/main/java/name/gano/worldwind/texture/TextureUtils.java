@@ -24,10 +24,10 @@
 
 package name.gano.worldwind.texture;
 
-import com.sun.opengl.util.texture.Texture;
-import com.sun.opengl.util.texture.TextureIO;
+import com.jogamp.opengl.util.texture.Texture;
+import com.jogamp.opengl.util.texture.TextureIO;
 import java.io.File;
-import javax.media.opengl.GL;
+import com.jogamp.opengl.GL;
 
 /**
  *
@@ -43,8 +43,6 @@ public class TextureUtils
         try
         {
             tex = TextureIO.newTexture( new File(fileName), false);
-            tex.setTexParameteri(GL.GL_TEXTURE_MAG_FILTER, GL.GL_NEAREST);
-            tex.setTexParameteri(GL.GL_TEXTURE_MIN_FILTER, GL.GL_NEAREST);
         }
         catch(Exception e)
         { 

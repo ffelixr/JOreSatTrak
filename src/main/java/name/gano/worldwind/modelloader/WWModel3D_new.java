@@ -29,7 +29,8 @@ import gov.nasa.worldwind.geom.Position;
 import gov.nasa.worldwind.geom.Vec4;
 import gov.nasa.worldwind.render.DrawContext;
 import gov.nasa.worldwind.render.Renderable;
-import javax.media.opengl.GL;
+import com.jogamp.opengl.GL;
+import com.jogamp.opengl.GL2;
 import jsattrak.objects.AbstractSatellite;
 import name.gano.astro.AstroConst;
 import name.gano.astro.MathUtils;
@@ -168,7 +169,7 @@ public class WWModel3D_new implements Renderable
     // draw this layer
     protected void draw(DrawContext dc, WWModel3D_new model) 
     {
-        GL gl = dc.getGL();
+        GL2 gl = dc.getGL().getGL2();
         Position pos = model.getPosition();
         Vec4 loc = dc.getGlobe().computePointFromPosition(pos);
         double localSize = this.computeSize(dc, loc);
@@ -255,15 +256,15 @@ public class WWModel3D_new implements Renderable
 //                gl.glVertex3d(0, 0, 0);
 //            gl.glEnd();
             
-            //gl.glClear(GL.GL_COLOR_BUFFER_BIT);
+            //gl.glClear(GL2.GL_COLOR_BUFFER_BIT);
             gl.glLineWidth(0.0f);
             //gl.glColor3d(1, 1, 1); // COLOR 
             gl.glColor4d(1, 1, 1, 0);
             
             // add lights?
-            //gl.glLightModelfv(GL.GL_LIGHT_MODEL_AMB IENT, model_ambient, 0);
+            //gl.glLightModelfv(GL2.GL_LIGHT_MODEL_AMBIENT, model_ambient, 0);
             float[] model_ambient = {1.0f, 1.0f, 1.0f, 1.0f};
-            gl.glLightModelfv(GL.GL_LIGHT_MODEL_AMBIENT, model_ambient, 1);
+            gl.glLightModelfv(GL2.GL_LIGHT_MODEL_AMBIENT, model_ambient, 1);
             
             float lightPosition[] = { 0, 50000000, 0, 1.0f };
             float[] lightAmbient = {0.9f, 0.9f, 0.9f, 1.0f};
@@ -274,24 +275,24 @@ public class WWModel3D_new implements Renderable
         /** Specular light array */
         float[] lightSpecular = {0.5f, 0.5f, 0.5f, 1.0f};
         
-            gl.glLightModelfv(GL.GL_LIGHT_MODEL_AMBIENT, model_ambient, 0);
-            //gl.glLightfv(GL.GL_LIGHT1, GL.GL_POSITION, lightPosition, 0);
-            //gl.glLightfv(GL.GL_LIGHT1, GL.GL_DIFFUSE, lightDiffuse, 0);
-            gl.glLightfv(GL.GL_LIGHT1, GL.GL_AMBIENT, lightAmbient, 0);
-            //gl.glLightfv(GL.GL_LIGHT1, GL.GL_SPECULAR, lightSpecular, 0);
+            gl.glLightModelfv(GL2.GL_LIGHT_MODEL_AMBIENT, model_ambient, 0);
+            //gl.glLightfv(GL2.GL_LIGHT1, GL2.GL_POSITION, lightPosition, 0);
+            //gl.glLightfv(GL2.GL_LIGHT1, GL2.GL_DIFFUSE, lightDiffuse, 0);
+            gl.glLightfv(GL2.GL_LIGHT1, GL2.GL_AMBIENT, lightAmbient, 0);
+            //gl.glLightfv(GL2.GL_LIGHT1, GL2.GL_SPECULAR, lightSpecular, 0);
             
             
-            gl.glEnable(GL.GL_LIGHT1);
-            gl.glEnable(GL.GL_LIGHTING);
+            gl.glEnable(GL2.GL_LIGHT1);
+            gl.glEnable(GL2.GL_LIGHTING);
             //gl.glEnable(GL.GL_NORMALIZE);
 //
             gl.glEnable(GL.GL_CULL_FACE);
-            gl.glShadeModel(GL.GL_SMOOTH);
+            gl.glShadeModel(GL2.GL_SMOOTH);
 //            gl.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             
             gl.glEnable(GL.GL_DEPTH_TEST);
             gl.glDepthFunc(GL.GL_LEQUAL);
-            gl.glHint(GL.GL_PERSPECTIVE_CORRECTION_HINT, GL.GL_NICEST);
+            gl.glHint(GL2.GL_PERSPECTIVE_CORRECTION_HINT, GL.GL_NICEST);
             
             // Get an instance of the display list renderer
             iModel3DRenderer renderer = DisplayListRenderer.getInstance();
@@ -303,37 +304,37 @@ public class WWModel3D_new implements Renderable
     
     // puts opengl in the correct state for this layer
     protected void beginDraw(DrawContext dc) {
-        GL gl = dc.getGL();
+        GL2 gl = dc.getGL().getGL2();
         
         // SEG - MAYBE USE LIGHTING TO SIMULATE SUN ON SPACE CRAFT??
         
 //        Vec4 cameraPosition = dc.getView().getEyePoint();
         
         gl.glPushAttrib(
-            GL.GL_TEXTURE_BIT |
+            GL2.GL_TEXTURE_BIT |
             GL.GL_COLOR_BUFFER_BIT |
             GL.GL_DEPTH_BUFFER_BIT |
-            GL.GL_HINT_BIT |
-            GL.GL_POLYGON_BIT |
-            GL.GL_ENABLE_BIT | 
-            GL.GL_CURRENT_BIT | 
-            GL.GL_LIGHTING_BIT | 
-            GL.GL_TRANSFORM_BIT);
+            GL2.GL_HINT_BIT |
+            GL2.GL_POLYGON_BIT |
+            GL2.GL_ENABLE_BIT | 
+            GL2.GL_CURRENT_BIT | 
+            GL2.GL_LIGHTING_BIT | 
+            GL2.GL_TRANSFORM_BIT);
         
         
         
-        gl.glMatrixMode(GL.GL_MODELVIEW);
+        gl.glMatrixMode(GL2.GL_MODELVIEW);
         gl.glPushMatrix();
     }
     
     // resets opengl state
     protected void endDraw(DrawContext dc) {
-        GL gl = dc.getGL();
+        GL2 gl = dc.getGL().getGL2();
         
         
         
         
-        gl.glMatrixMode(javax.media.opengl.GL.GL_MODELVIEW);
+        gl.glMatrixMode(GL2.GL_MODELVIEW);
         gl.glPopMatrix();
         
         gl.glPopAttrib();

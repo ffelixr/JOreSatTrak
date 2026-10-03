@@ -26,7 +26,8 @@ import gov.nasa.worldwind.render.DrawContext;
 import gov.nasa.worldwind.render.Renderable;
 import gov.nasa.worldwind.util.Logging;
 import java.awt.Color;
-import javax.media.opengl.GL;
+import com.jogamp.opengl.GL;
+import com.jogamp.opengl.GL2;
 import jsattrak.coverage.CoverageAnalyzer;
 
 /**
@@ -54,11 +55,11 @@ public class CoverageDataGeom implements Renderable
             throw new IllegalArgumentException(msg);
         }
 
-        javax.media.opengl.GL gl = dc.getGL();
+        GL2 gl = dc.getGL().getGL2();
 
         gl.glEnable(GL.GL_TEXTURE_2D);
-        gl.glPushAttrib(javax.media.opengl.GL.GL_TEXTURE_BIT | javax.media.opengl.GL.GL_ENABLE_BIT | javax.media.opengl.GL.GL_CURRENT_BIT);
-        gl.glMatrixMode(javax.media.opengl.GL.GL_MODELVIEW);
+        gl.glPushAttrib(GL2.GL_TEXTURE_BIT | GL2.GL_ENABLE_BIT | GL2.GL_CURRENT_BIT);
+        gl.glMatrixMode(GL2.GL_MODELVIEW);
 
         // allow for transparency
         gl.glEnable(GL.GL_BLEND);
@@ -101,7 +102,7 @@ public class CoverageDataGeom implements Renderable
                         satColor = ca.getColorForIndex(j, i);
                         gl.glColor4f(satColor.getRed() / 255.0f, satColor.getGreen() / 255.0f, satColor.getBlue() / 255.0f, ca.getAlpha() / 255.0f); // COLOR
 
-                        gl.glBegin(GL.GL_QUADS);  // counter clock wise?
+                        gl.glBegin(GL2.GL_QUADS);  // counter clock wise?
                         //gl.glTexCoord2f(0, 0);
 
                         gl.glVertex3f((float)pos1.x, (float)pos1.y, (float)pos1.z);

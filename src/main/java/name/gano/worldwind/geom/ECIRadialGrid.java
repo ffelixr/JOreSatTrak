@@ -22,9 +22,10 @@ package name.gano.worldwind.geom;
 import gov.nasa.worldwind.geom.Position;
 import gov.nasa.worldwind.render.DrawContext;
 import gov.nasa.worldwind.render.Renderable;
-import gov.nasa.worldwind.view.OrbitView;
+import gov.nasa.worldwind.view.orbit.OrbitView;
 import java.awt.Color;
-import javax.media.opengl.GL;
+import com.jogamp.opengl.GL;
+import com.jogamp.opengl.GL2;
 import name.gano.astro.AstroConst;
 
 /**
@@ -55,8 +56,8 @@ public class ECIRadialGrid implements Renderable
             return;
         }
 
-        javax.media.opengl.GL gl = dc.getGL();
-        gl.glPushAttrib(javax.media.opengl.GL.GL_TEXTURE_BIT | javax.media.opengl.GL.GL_ENABLE_BIT | javax.media.opengl.GL.GL_CURRENT_BIT);
+        GL2 gl = dc.getGL().getGL2();
+        gl.glPushAttrib(GL2.GL_TEXTURE_BIT | GL2.GL_ENABLE_BIT | GL2.GL_CURRENT_BIT);
 
         // Added so that the colors wouldn't depend on sun shading
         gl.glDisable(GL.GL_TEXTURE_2D);

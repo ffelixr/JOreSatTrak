@@ -30,9 +30,10 @@ import gov.nasa.worldwind.globes.Globe;
 import gov.nasa.worldwind.render.DrawContext;
 import gov.nasa.worldwind.render.Renderable;
 import java.awt.Color;
-import javax.media.opengl.GL;
-import javax.media.opengl.glu.GLU;
-import javax.media.opengl.glu.GLUquadric;
+import com.jogamp.opengl.GL;
+import com.jogamp.opengl.GL2;
+import com.jogamp.opengl.glu.GLU;
+import com.jogamp.opengl.glu.GLUquadric;
 
 public class Cone implements Renderable
 {
@@ -72,34 +73,35 @@ public class Cone implements Renderable
 
         Position p = myGlobe.computePositionFromPoint(this.topCenter);
 
-        javax.media.opengl.GL gl = dc.getGL();
+        GL2 gl = dc.getGL().getGL2();
 
-        gl.glPushAttrib(javax.media.opengl.GL.GL_TEXTURE_BIT | javax.media.opengl.GL.GL_ENABLE_BIT | javax.media.opengl.GL.GL_CURRENT_BIT);
-        gl.glDisable(javax.media.opengl.GL.GL_TEXTURE_2D);
+        gl.glPushAttrib(GL2.GL_TEXTURE_BIT | GL2.GL_ENABLE_BIT | GL2.GL_CURRENT_BIT);
+        gl.glDisable(GL.GL_TEXTURE_2D);
 
         gl.glEnable(GL.GL_BLEND);
         gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA);
         gl.glColor4ub((byte) getColor().getRed(), (byte) getColor().getGreen(), (byte) getColor().getBlue(), (byte) getColor().getAlpha());
 
-        gl.glEnable(javax.media.opengl.GL.GL_DEPTH_TEST);
-        gl.glMatrixMode(javax.media.opengl.GL.GL_MODELVIEW);
+        gl.glEnable(GL.GL_DEPTH_TEST);
+        gl.glMatrixMode(GL2.GL_MODELVIEW);
         gl.glPushMatrix();
 
         gl.glTranslated(this.topCenter.x, this.topCenter.y, this.topCenter.z);
 
-        dc.getGL().glRotated(90 + p.getLongitude().getDegrees(), 0, 1, 0);
-        dc.getGL().glRotated(myOrientation.getDegrees(), -1, 0, 0);
-        dc.getGL().glRotated(p.getLatitude().getDegrees() * myOrientation.sin(), 0, 1, 0);
-        dc.getGL().glRotated(myElevation.getDegrees(), 0, -1, 0);
-        dc.getGL().glRotated(p.getLatitude().getDegrees() * myElevation.sin(), -1, 0, 0);
+        gl.glRotated(90 + p.getLongitude().getDegrees(), 0, 1, 0);
+        gl.glRotated(myOrientation.getDegrees(), -1, 0, 0);
+        gl.glRotated(p.getLatitude().getDegrees() * myOrientation.sin(), 0, 1, 0);
+        gl.glRotated(myElevation.getDegrees(), 0, -1, 0);
+        gl.glRotated(p.getLatitude().getDegrees() * myElevation.sin(), -1, 0, 0);
 
-        GLUquadric quadric = dc.getGLU().gluNewQuadric();
-        dc.getGLU().gluQuadricDrawStyle(quadric, GLU.GLU_FILL);
+        GLU glu = dc.getGLU();
+        GLUquadric quadric = glu.gluNewQuadric();
+        glu.gluQuadricDrawStyle(quadric, GLU.GLU_FILL);
 
-        dc.getGLU().gluCylinder(quadric, 0, this.myGroundRange, this.myCeiling, slices, stacks);
-        dc.getGL().glTranslated(0, 0, this.myCeiling);
-        dc.getGLU().gluDisk(quadric, 0d, this.myGroundRange, slices, stacks);
-        dc.getGLU().gluDeleteQuadric(quadric);
+        glu.gluCylinder(quadric, 0, this.myGroundRange, this.myCeiling, slices, stacks);
+        gl.glTranslated(0, 0, this.myCeiling);
+        glu.gluDisk(quadric, 0d, this.myGroundRange, slices, stacks);
+        glu.gluDeleteQuadric(quadric);
 
         gl.glPopMatrix();
         gl.glPopAttrib();

@@ -28,7 +28,6 @@ import gov.nasa.worldwind.render.DrawContext;
 import gov.nasa.worldwind.render.Polyline;
 import java.awt.Color;
 import java.util.Vector;
-import javax.media.opengl.GL;
 import jsattrak.gui.J2dEarthLabel2;
 import name.gano.astro.bodies.Sun;
 
@@ -74,11 +73,11 @@ public class SunTerminatorPolyLineTimeDep extends Polyline implements TimeDepRen
     @Override
     public void render(DrawContext dc)
     {
-        javax.media.opengl.GL gl = dc.getGL();
-        gl.glPushAttrib(javax.media.opengl.GL.GL_TEXTURE_BIT | javax.media.opengl.GL.GL_ENABLE_BIT | javax.media.opengl.GL.GL_CURRENT_BIT);
+        com.jogamp.opengl.GL2 gl = dc.getGL().getGL2();
+        gl.glPushAttrib(com.jogamp.opengl.GL2.GL_TEXTURE_BIT | com.jogamp.opengl.GL2.GL_ENABLE_BIT | com.jogamp.opengl.GL2.GL_CURRENT_BIT);
 
         // Added so that the colors wouldn't depend on sun shading
-        gl.glDisable(GL.GL_TEXTURE_2D);
+        gl.glDisable(com.jogamp.opengl.GL.GL_TEXTURE_2D);
 
         super.render(dc);
 

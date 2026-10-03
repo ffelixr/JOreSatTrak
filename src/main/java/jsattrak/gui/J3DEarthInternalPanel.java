@@ -32,7 +32,7 @@ import gov.nasa.worldwind.awt.AWTInputHandler;
 import gov.nasa.worldwind.awt.WorldWindowGLJPanel;
 import gov.nasa.worldwind.event.PositionEvent;
 import gov.nasa.worldwind.event.PositionListener;
-import gov.nasa.worldwind.examples.WMSLayersPanel;
+import gov.nasa.worldwindx.examples.WMSLayersPanel;
 import gov.nasa.worldwind.examples.sunlight.AtmosphereLayer;
 import gov.nasa.worldwind.examples.sunlight.LensFlareLayer;
 import gov.nasa.worldwind.examples.sunlight.RectangularNormalTessellator;
@@ -43,16 +43,11 @@ import gov.nasa.worldwind.geom.Position;
 import gov.nasa.worldwind.geom.Vec4;
 import gov.nasa.worldwind.layers.CompassLayer;
 import gov.nasa.worldwind.layers.Earth.CountryBoundariesLayer;
-import gov.nasa.worldwind.layers.Earth.LandsatI3;
-import gov.nasa.worldwind.layers.Earth.USGSTopographicMaps;
 import gov.nasa.worldwind.layers.Earth.USGSUrbanAreaOrtho;
 import gov.nasa.worldwind.layers.Layer;
 import gov.nasa.worldwind.layers.LayerList;
-import gov.nasa.worldwind.layers.Mercator.examples.OSMCycleMapLayer;
-import gov.nasa.worldwind.layers.Mercator.examples.OSMMapnikLayer;
-import gov.nasa.worldwind.layers.Mercator.examples.OSMMapnikTransparentLayer;
-import gov.nasa.worldwind.layers.Mercator.examples.VirtualEarthLayer;
-import gov.nasa.worldwind.layers.Mercator.examples.YahooMapsLayer;
+import gov.nasa.worldwind.layers.Earth.OSMCycleMapLayer;
+import gov.nasa.worldwind.layers.Earth.OSMMapnikLayer;
 import gov.nasa.worldwind.layers.RenderableLayer;
 import gov.nasa.worldwind.layers.SkyGradientLayer;
 import gov.nasa.worldwind.layers.StarsLayer;
@@ -64,7 +59,7 @@ import gov.nasa.worldwind.layers.WorldMapLayer;
 import gov.nasa.worldwind.layers.placename.PlaceNameLayer;
 import gov.nasa.worldwind.render.Polyline;
 import gov.nasa.worldwind.util.StatusBar;
-import gov.nasa.worldwind.view.BasicOrbitView;
+import gov.nasa.worldwind.view.orbit.BasicOrbitView;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Container;
@@ -208,8 +203,8 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
         // sun shading needs this
         Configuration.setValue(AVKey.TESSELLATOR_CLASS_NAME, RectangularNormalTessellator.class.getName());
 
-        // make a new instace from the shared wwj resource!
-        wwd = new WorldWindowGLJPanel(app.getWwd());
+        // create WorldWindowGLJPanel
+        wwd = new WorldWindowGLJPanel();
 
         // add WWJ to panel
         //wwd = new WorldWindowGLJPanel(); // lightweight component
@@ -228,14 +223,6 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
         
         // add political boundary layer
         m.getLayers().add(new CountryBoundariesLayer());
-        // MS  Virtual Earth imagery
-        VirtualEarthLayer ve = new VirtualEarthLayer();
-        ve.setEnabled(false);  // off by default
-        m.getLayers().add(ve);
-        // yahoo imagergy
-        YahooMapsLayer ya = new YahooMapsLayer();
-        ya.setEnabled(false);  // off by default
-        m.getLayers().add(ya);
         // open maps
         OSMMapnikLayer ol = new OSMMapnikLayer();
         ol.setEnabled(false);  // off by default
@@ -243,9 +230,6 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
         OSMCycleMapLayer  ol2 = new OSMCycleMapLayer();
         ol2.setEnabled(false);  // off by default
         m.getLayers().add(ol2);
-        OSMMapnikTransparentLayer  ol3 = new OSMMapnikTransparentLayer();
-        ol3.setEnabled(false);  // off by default
-        m.getLayers().add(ol3);
 
         // Add view controls layer and select listener - New in WWJ V0.6
         viewControlsLayer = new ViewControlsLayer();
@@ -264,12 +248,7 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
         {
             if (layer instanceof TiledImageLayer)
             {
-                ((TiledImageLayer) layer).setShowImageTileOutlines(false);
-            }
-            if (layer instanceof LandsatI3)
-            {
-                ((TiledImageLayer) layer).setDrawBoundingVolumes(false);
-                ((TiledImageLayer) layer).setEnabled(false);
+                ((TiledImageLayer) layer).setDrawTileBoundaries(false);
             }
             if (layer instanceof CompassLayer)
             {
@@ -292,9 +271,6 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
             if (layer instanceof StarsLayer)
             {
                 starsLayer = (StarsLayer) layer;
-                
-                // for now just enlarge radius by a factor of 10
-                starsLayer.setRadius(starsLayer.getRadius()*10.0);
             }
             if(layer instanceof CountryBoundariesLayer)
             {
@@ -304,11 +280,6 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
         
         
         wwd.setModel(m);
-
-        // add USGS topo layer
-        USGSTopographicMaps topo = new USGSTopographicMaps();
-        topo.setEnabled(false);
-        WwjUtils.insertBeforePlacenames(getWwd(), topo);
         
         // Coverage Data Layer
         cel = new CoverageRenderableLayer(app.getCoverageAnalyzer());
@@ -1090,11 +1061,6 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     public void setModelViewNearClip(double modelViewNearClip)
     {
         this.modelViewNearClip = modelViewNearClip;
-        
-        if(this.isModelViewMode())
-        {
-            wwd.getView().setNearClipDistance(modelViewNearClip);
-        }
     }
 
     public double getModelViewFarClip()
@@ -1105,11 +1071,6 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     public void setModelViewFarClip(double modelViewFarClip)
     {
         this.modelViewFarClip = modelViewFarClip;
-        
-        if(this.isModelViewMode())
-        {
-            wwd.getView().setFarClipDistance(modelViewFarClip);
-        }
     }
     
     private void setupView()
@@ -1127,10 +1088,6 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
             wwd.setInputHandler(awth);
             awth.setSmoothViewChanges(smoothViewChanges); // FALSE MAKES THE VIEW FAST!! -- MIGHT WANT TO MAKE IT GUI Chooseable
                         
-            // IF EARTH VIEW -- RESET CLIPPING PLANES BACK TO NORMAL SETTINGS!!!
-            wwd.getView().setNearClipDistance(this.nearClippingPlaneDistOrbit);
-            wwd.getView().setFarClipDistance(this.farClippingPlaneDistOrbit);
-            
             // change class for inputHandler
             Configuration.setValue(AVKey.INPUT_HANDLER_CLASS_NAME, 
                         AWTInputHandler.class.getName());
@@ -1153,16 +1110,7 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
 
             AbstractSatellite sat = satHash.get(modelViewString);
 
-            BasicModelView3 bmv;
-            if(wwd.getView() instanceof BasicOrbitView)
-            {
-                bmv = new BasicModelView3(((BasicOrbitView)wwd.getView()).getOrbitViewModel(), sat);
-                //bmv = new BasicModelView3(sat);
-            }
-            else
-            {
-                bmv = new BasicModelView3(((BasicModelView3)wwd.getView()).getOrbitViewModel(), sat);
-            }
+            BasicModelView3 bmv = new BasicModelView3(sat);
             
             // remove the old hover listener -- depending on this instance of the input handler class type
             if( wwd.getInputHandler() instanceof AWTInputHandler)
@@ -1189,8 +1137,6 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
             mih.setSmoothViewChanges(smoothViewChanges); // FALSE MAKES THE VIEW FAST!!
 
             // settings for great closeups!
-            wwd.getView().setNearClipDistance(modelViewNearClip);
-            wwd.getView().setFarClipDistance(modelViewFarClip);
             bmv.setZoom(900000);
             bmv.setPitch(Angle.fromDegrees(45));
             
@@ -1281,8 +1227,8 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
             // Hmm need to do something to keet the ECI view moving even after user interaction
             // seems to work after you click off globe after messing with it
             // this fixes the problem:
-            wwd.getView().stopStateIterators();
             wwd.getView().stopMovement(); //seems to fix prop in v0.5
+            wwd.getView().stopAnimations();
             
             // update rotation of view and Stars
             double theta0 = eciLayer.getRotateECIdeg();
@@ -1528,10 +1474,6 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     public void setOrbitFarClipDistance(double clipDist)
     {
         farClippingPlaneDistOrbit = clipDist;
-        if(!this.isModelViewMode())
-        {
-            wwd.getView().setFarClipDistance(farClippingPlaneDistOrbit);
-        }
     }
 
     public double getOrbitFarClipDistance()
@@ -1542,10 +1484,6 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     public void setOrbitNearClipDistance(double clipDist)
     {
         nearClippingPlaneDistOrbit = clipDist;
-        if(!this.isModelViewMode())
-        {
-            wwd.getView().setNearClipDistance(nearClippingPlaneDistOrbit);
-        }
     }
 
     public double getOrbitNearClipDistance()

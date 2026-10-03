@@ -58,28 +58,46 @@
             <version>3.5.4</version>
         </dependency>
 
-        <!-- JOGL / GlueGen -->
+        <!-- JOGL 2 / GlueGen (JogAmp 2.4.0) -->
         <dependency>
-            <groupId>net.java.dev.gluegen</groupId>
+            <groupId>org.jogamp.gluegen</groupId>
             <artifactId>gluegen-rt</artifactId>
-            <version>1.0b06</version>
+            <version>2.4.0</version>
         </dependency>
         <dependency>
-            <groupId>net.java.dev.jogl</groupId>
-            <artifactId>jogl</artifactId>
-            <version>1.1.1</version>
+            <groupId>org.jogamp.jogl</groupId>
+            <artifactId>jogl-all</artifactId>
+            <version>2.4.0</version>
         </dependency>
+        <dependency>
+            <groupId>org.jogamp.gluegen</groupId>
+            <artifactId>gluegen-rt</artifactId>
+            <version>2.4.0</version>
+            <classifier>natives-macosx-universal</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.jogamp.jogl</groupId>
+            <artifactId>jogl-all</artifactId>
+            <version>2.4.0</version>
+            <classifier>natives-macosx-universal</classifier>
+        </dependency>
+        <!-- JOGL Utils (3D model loader) -->
         <dependency>
             <groupId>net.java.dev.jogl</groupId>
             <artifactId>joglutils</artifactId>
             <version>1.0</version>
         </dependency>
 
-        <!-- NASA WorldWind -->
+        <!-- NASA WorldWind 2.2.1 -->
         <dependency>
             <groupId>gov.nasa</groupId>
             <artifactId>worldwind</artifactId>
-            <version>0.6.0</version>
+            <version>2.2.1</version>
+        </dependency>
+        <dependency>
+            <groupId>gov.nasa.worldwind</groupId>
+            <artifactId>worldwindx</artifactId>
+            <version>2.2.1</version>
         </dependency>
 
 
@@ -114,6 +132,18 @@
                 <configuration>
                     <release>8</release>
                     <encoding>UTF-8</encoding>
+                    <excludes>
+                        <exclude>**/name/gano/worldwind/view/BasicModelView.java</exclude>
+                        <exclude>**/name/gano/worldwind/view/BasicModelView2.java</exclude>
+                        <exclude>**/name/gano/worldwind/view/BasicModelViewInputBroker.java</exclude>
+                        <exclude>**/name/gano/worldwind/view/BasicModelViewInputHandler.java</exclude>
+                        <exclude>**/name/gano/worldwind/view/BasicModelViewModel.java</exclude>
+                        <exclude>**/name/gano/worldwind/modelloader/Model3DLayer.java</exclude>
+                        <exclude>**/name/gano/worldwind/modelloader/Model3DLayer_new.java</exclude>
+                        <exclude>**/name/gano/worldwind/modelloader/WWModel3D.java</exclude>
+                        <exclude>**/name/gano/worldwind/modelloader/TestRPY.java</exclude>
+                        <exclude>**/name/gano/worldwind/modelloader/test.java</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
 

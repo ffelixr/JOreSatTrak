@@ -20,7 +20,7 @@
 package name.gano.worldwind.view;
 
 import gov.nasa.worldwind.geom.Position;
-import gov.nasa.worldwind.view.BasicOrbitView;
+import gov.nasa.worldwind.view.orbit.BasicOrbitView;
 
 /**
  * Adds better auto clipping calculations for JSatTrak applications (needing to see beyond the earth)
@@ -34,48 +34,18 @@ public class AutoClipBasicOrbitView extends BasicOrbitView
     private float autoNearClipFactor = 5.0f; // the near clip plane is set to zoomFactor/this value
     private float autoFarClipFactor = 200.0f;
 
-
     @Override
-    public double getAutoNearClipDistance()
+    protected double computeNearClipDistance()
     {
         Position eyePos = getCurrentEyePosition();
         double near = computeNearDistance(eyePos);
-
-        //near = (near - zeroZoom) / autoNearClipFactor;
-        // nearClippingPlaneDist = (zoomFactor - zeroZoom) / autoNearClipFactor;
-
-        return near/4.0;
+        return near / 4.0;
     }
 
     @Override
-    public double getAutoFarClipDistance()
+    protected double computeFarClipDistance()
     {
         Position eyePos = getCurrentEyePosition();
-        return computeFarDistance(eyePos)*4.0; // SEG - 2x
-    }
-
-    @Override
-    protected double computeNearDistance(Position eyePosition)
-    {
-        double near = 0;
-        if (eyePosition != null && this.dc != null)
-        {
-            double elevation = this.viewSupport.computeElevationAboveSurface(this.dc, eyePosition);
-            double tanHalfFov = getFieldOfView().tanHalfAngle();
-            near = elevation / (2 * Math.sqrt(2 * tanHalfFov * tanHalfFov + 1));
-        }
-        return near < MINIMUM_NEAR_DISTANCE ? MINIMUM_NEAR_DISTANCE : near;
-    }
-
-    @Override
-    protected double computeFarDistance(Position eyePosition)
-    {
-        double far = 0;
-        if (eyePosition != null)
-        {
-            far = computeHorizonDistance(eyePosition);
-        }
-
-        return far < MINIMUM_FAR_DISTANCE ? MINIMUM_FAR_DISTANCE : far;
+        return computeFarDistance(eyePos) * 4.0;
     }
 }

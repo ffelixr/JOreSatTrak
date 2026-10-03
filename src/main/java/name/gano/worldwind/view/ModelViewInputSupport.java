@@ -33,7 +33,7 @@ import gov.nasa.worldwind.geom.Angle;
 import gov.nasa.worldwind.geom.LatLon;
 import gov.nasa.worldwind.geom.Position;
 import gov.nasa.worldwind.util.Logging;
-import gov.nasa.worldwind.view.OrbitView;
+import gov.nasa.worldwind.view.orbit.OrbitView;
 
 /**
  * @author dcollins
@@ -576,7 +576,7 @@ class ModelViewInputSupport implements java.beans.PropertyChangeListener
         Position nextCenter = this.centerTarget;
         Position curCenter = this.orbitView.getCenterPosition();
 
-        double latlonDifference = LatLon.greatCircleDistance(nextCenter.getLatLon(), curCenter.getLatLon()).degrees;
+        double latlonDifference = LatLon.greatCircleDistance(nextCenter, curCenter).degrees;
         double elevDifference = Math.abs(nextCenter.getElevation() - curCenter.getElevation());
         boolean stopMoving = Math.max(latlonDifference, elevDifference) < this.centerMinEpsilon;
 
@@ -598,7 +598,7 @@ class ModelViewInputSupport implements java.beans.PropertyChangeListener
             // elevation that resolved the collision.
             if (this.orbitView.hadCollisions())
                 this.centerTarget = new Position(
-                        this.centerTarget.getLatLon(), this.orbitView.getCenterPosition().getElevation());
+                        this.centerTarget, this.orbitView.getCenterPosition().getElevation());
             flagViewChanged();
             setViewOutOfFocus(true);
         }

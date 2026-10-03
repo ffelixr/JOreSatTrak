@@ -25,7 +25,7 @@ package jsattrak.utilities;
 
 import gov.nasa.worldwind.geom.Angle;
 import gov.nasa.worldwind.layers.Layer;
-import gov.nasa.worldwind.view.OrbitView;
+import gov.nasa.worldwind.view.orbit.OrbitView;
 import java.awt.Color;
 import java.awt.Container;
 import java.awt.Dimension;

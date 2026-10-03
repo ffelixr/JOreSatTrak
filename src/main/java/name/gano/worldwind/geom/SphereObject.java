@@ -56,7 +56,7 @@ public final class SphereObject implements Extent, Renderable
     boolean plotFixedAxis = false;
     
     // improve performance keep from creating a new one all the time
-    javax.media.opengl.glu.GLUquadric quadric;
+    com.jogamp.opengl.glu.GLUquadric quadric;
     
     /**
      * Creates a sphere that completely contains a set of points.
@@ -230,6 +230,24 @@ public final class SphereObject implements Extent, Renderable
         return this.center;
     }
 
+    @Override
+    public double getProjectedArea(gov.nasa.worldwind.View view)
+    {
+        if (view == null)
+        {
+            String message = Logging.getMessage("nullValue.ViewIsNull");
+            Logging.logger().severe(message);
+            throw new IllegalArgumentException(message);
+        }
+        return gov.nasa.worldwind.util.WWMath.computeSphereProjectedArea(view, this.getCenter(), this.getRadius());
+    }
+
+    @Override
+    public double getEffectiveRadius(gov.nasa.worldwind.geom.Plane plane)
+    {
+        return this.getRadius();
+    }
+
     /**
      * Obtains the intersections of this sphere with a line. The returned array may be either null or of zero length if
      * no intersections are discovered. It does not contain null elements and will have a size of 2 at most. Tangential
@@ -360,42 +378,33 @@ public final class SphereObject implements Extent, Renderable
             throw new IllegalArgumentException(msg);
         }
 
-        javax.media.opengl.GL gl = dc.getGL();
+        com.jogamp.opengl.GL2 gl = dc.getGL().getGL2();
          
 
-        gl.glPushAttrib(javax.media.opengl.GL.GL_TEXTURE_BIT | javax.media.opengl.GL.GL_ENABLE_BIT
-            | javax.media.opengl.GL.GL_CURRENT_BIT);
-        gl.glDisable(javax.media.opengl.GL.GL_TEXTURE_2D);
+        gl.glPushAttrib(com.jogamp.opengl.GL2.GL_TEXTURE_BIT | com.jogamp.opengl.GL2.GL_ENABLE_BIT
+            | com.jogamp.opengl.GL2.GL_CURRENT_BIT);
+        gl.glDisable(com.jogamp.opengl.GL.GL_TEXTURE_2D);
         
         gl.glColor3d( sphereColor.getRed()/255.0 , sphereColor.getGreen()/255.0 , sphereColor.getBlue()/255.0 ); // COLOR 
 
-        gl.glMatrixMode(javax.media.opengl.GL.GL_MODELVIEW);
+        gl.glMatrixMode(com.jogamp.opengl.GL2.GL_MODELVIEW);
         gl.glPushMatrix();
         gl.glTranslated(this.center.x, this.center.y, this.center.z);
         
-        //javax.media.opengl.glu.GLUquadric quadric = dc.getGLU().gluNewQuadric();
         if(quadric == null)
         {
             quadric = dc.getGLU().gluNewQuadric();
         }
              
-        // fill in:
-        //dc.getGLU().gluQuadricDrawStyle(quadric, javax.media.opengl.glu.GLU.GLU_FILL);
-        // or just lines:// javax.media.opengl.glu.GLU.GLU_LINE
-        
         if(sphereFilled)
         {
-            dc.getGLU().gluQuadricDrawStyle(quadric, javax.media.opengl.glu.GLU.GLU_FILL);
+            dc.getGLU().gluQuadricDrawStyle(quadric, com.jogamp.opengl.glu.GLU.GLU_FILL);
         }
         else // lines
         {
-            dc.getGLU().gluQuadricDrawStyle(quadric, javax.media.opengl.glu.GLU.GLU_LINE);
+            dc.getGLU().gluQuadricDrawStyle(quadric, com.jogamp.opengl.glu.GLU.GLU_LINE);
         }
         
-        // this line is the PERFORMANCE HIT
-        // http://www.gamedev.net/community/forums/topic.asp?topic_id=479204
-        // http://lists.apple.com/archives/Mac-opengl/2003/Nov/msg00053.html
-        // OR MAYBE don't use spheres... use "dots" or label markers in WWJ?? (clickable?)
         dc.getGLU().gluSphere(quadric, this.radius, numDivisions, numDivisions);
         
         // Draw in axis
@@ -403,19 +412,19 @@ public final class SphereObject implements Extent, Renderable
         {
             gl.glLineWidth(3.0f);
             gl.glColor3d(1, 0, 0); // COLOR 
-            gl.glBegin(gl.GL_LINES);
+            gl.glBegin(com.jogamp.opengl.GL.GL_LINES);
                 gl.glVertex3d(radius * 3, 0, 0);
                 gl.glVertex3d(0, 0, 0);
             gl.glEnd();
             // Draw in axis
             gl.glColor3d(0, 1, 0); // COLOR 
-            gl.glBegin(gl.GL_LINES);
+            gl.glBegin(com.jogamp.opengl.GL.GL_LINES);
                 gl.glVertex3d(0, radius * 3, 0);
                 gl.glVertex3d(0, 0, 0);
             gl.glEnd();
             // Draw in axis
             gl.glColor3d(0, 0, 1); // COLOR 
-            gl.glBegin(gl.GL_LINES);
+            gl.glBegin(com.jogamp.opengl.GL.GL_LINES);
                 gl.glVertex3d(0, 0, radius * 3);
                 gl.glVertex3d(0, 0, 0);
             gl.glEnd();
@@ -423,6 +432,7 @@ public final class SphereObject implements Extent, Renderable
         
         gl.glPopMatrix();
         dc.getGLU().gluDeleteQuadric(quadric);
+        quadric = null;
 
         gl.glPopAttrib();
     }

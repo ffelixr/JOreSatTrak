@@ -87,10 +87,10 @@ public class ECIRenderableLayer extends RenderableLayer
     //  This method has been modified to include rotating for ECI coordinates based on current MJD
     protected void doRender(DrawContext dc)
     {
-        javax.media.opengl.GL gl = dc.getGL();
+        com.jogamp.opengl.GL2 gl = dc.getGL().getGL2();
         
         // this line must be before matrix push - otherwise when coverage is off, an ECI is on EFEF lines don't show
-       gl.glMatrixMode(javax.media.opengl.GL.GL_MODELVIEW); // add to prevent interatction with star layer // MUST INCLUDE THIS -- 5 May 2008 SEG
+       gl.glMatrixMode(com.jogamp.opengl.fixedfunc.GLMatrixFunc.GL_MODELVIEW); // add to prevent interatction with star layer // MUST INCLUDE THIS -- 5 May 2008 SEG
         
         gl.glPushMatrix();   // push for ECI roation
         gl.glRotated(-rotateECIdeg, 0.0, 1.0, 0.0); // rotate about Earth's spin axis (z-coordinate in J2K, y-coordinate in JOGL)

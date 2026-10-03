@@ -756,8 +756,20 @@ public class BasicModelViewInputHandler3 extends WWObjectImpl
         this.eventListeners.remove(KeyListener.class, listener);
     }
 
-     public void addKeyListener(KeyListener listener)
+    public void addKeyListener(KeyListener listener)
     {
         this.eventListeners.add(KeyListener.class, listener);
+    }
+
+    private boolean forceRedrawOnMousePressed = false;
+
+    public boolean isForceRedrawOnMousePressed()
+    {
+        return this.forceRedrawOnMousePressed;
+    }
+
+    public void setForceRedrawOnMousePressed(boolean forceRedraw)
+    {
+        this.forceRedrawOnMousePressed = forceRedraw;
     }
 }

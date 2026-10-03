@@ -36,8 +36,7 @@ import gov.nasa.worldwind.geom.Position;
 import gov.nasa.worldwind.globes.Globe;
 import gov.nasa.worldwind.pick.PickedObject;
 import gov.nasa.worldwind.pick.PickedObjectList;
-import gov.nasa.worldwind.view.OrbitView;
-import gov.nasa.worldwind.view.ScheduledOrbitViewStateIterator;
+import gov.nasa.worldwind.view.orbit.OrbitView;
 import java.awt.Component;
 import java.awt.Point;
 import java.awt.event.ActionEvent;
@@ -419,17 +418,12 @@ public class BasicModelViewInputBroker3
         }
         else if (keyCode == KeyEvent.VK_N)
         {
-            this.view.applyStateIterator(ScheduledOrbitViewStateIterator.createHeadingIterator(
-                this.view.getHeading(),
-                Angle.ZERO)); // Reset heading.
+            this.view.setHeading(Angle.ZERO); // Reset heading.
         }
         else if (keyCode == KeyEvent.VK_R)
         {
-            this.view.applyStateIterator(ScheduledOrbitViewStateIterator.createHeadingPitchIterator(
-                this.view.getHeading(),
-                Angle.ZERO,   // Reset heading.
-                this.view.getPitch(),
-                Angle.ZERO)); // Reset pitch.
+            this.view.setHeading(Angle.ZERO); // Reset heading.
+            this.view.setPitch(Angle.ZERO);   // Reset pitch.
         }
     }
 
@@ -788,8 +782,7 @@ public class BasicModelViewInputBroker3
 
         if (event.getStage().equals(RenderingEvent.BEFORE_RENDERING))
         {
-            // Cancel any InputHandler view changes if someone has set a view state iterator.
-            if (this.view.hasStateIterator())
+            if (this.view.isAnimating())
                 this.modelViewInputSupport.clearTargets();
 
             if (this.modelViewInputSupport.hasTargets())
@@ -824,8 +817,7 @@ public class BasicModelViewInputBroker3
         if (this.view == null)
             return;
 
-        if (this.view.hasStateIterator())
-            this.view.stopStateIterators();
+        this.view.stopAnimations();
     }
 
     private void fireViewChangedEvent()
@@ -966,7 +958,7 @@ public class BasicModelViewInputBroker3
         }
 
         Position eyePos = this.view.getEyePosition();
-        double normAlt = (eyePos.getElevation() / this.wwd.getModel().getGlobe().getRadiusAt(eyePos.getLatLon()));
+        double normAlt = (eyePos.getElevation() / this.wwd.getModel().getGlobe().getRadiusAt(eyePos));
         if (normAlt < 0)
             normAlt = 0;
         else if (normAlt > 1)
