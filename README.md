@@ -1,4 +1,4 @@
-# JOreSatTrak
+# JOreSatTrak - (Work in Progress - No fully functional yet)
 
 **JOreSatTrak** is an open-source satellite tracking, orbit propagation, and visualization application. It is an independent fork of the original **[JSatTrak](http://www.gano.name/shawn/JSatTrak)** application created by **Shawn E. Gano**, modernized to integrate the **[Orekit](https://www.orekit.org/)** space dynamics library alongside modern Java tooling.
 
