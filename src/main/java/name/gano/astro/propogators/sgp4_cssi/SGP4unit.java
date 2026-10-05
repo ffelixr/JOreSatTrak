@@ -76,9 +76,12 @@
 package name.gano.astro.propogators.sgp4_cssi;
 
 /**
+ * @deprecated This legacy SGP4 implementation is superseded by Orekit's
+ * analytical TLE propagator ({@code org.orekit.propagation.analytical.tle.TLEPropagator}).
  *
  * @author Shawn E. Gano, shawn@gano.name
  */
+@Deprecated
 public class SGP4unit
 {
     public static double pi = 3.14159265358979323846;

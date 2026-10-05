@@ -28,8 +28,12 @@ import java.io.Serializable;
 /**
  * 19 June 2009
  * converted to Java by:
+ * @deprecated This legacy SGP4 data structure is superseded by Orekit's
+ * TLE representation and propagators ({@code org.orekit.propagation.analytical.tle.TLE}).
+ *
  * @author Shawn E. Gano, shawn@gano.name
  */
+@Deprecated
 public class SGP4SatData implements Serializable
 {
   public int   satnum; // changed to int SEG

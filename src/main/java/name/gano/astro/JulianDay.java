@@ -1155,4 +1155,37 @@ public void update() {
         tzStringFormat = aTzStringFormat;
     }
 
+    /**
+     * Converts this JulianDay to an Orekit AbsoluteDate in the given TimeScale.
+     *
+     * @param scale Orekit TimeScale to reference the date against
+     * @return Orekit AbsoluteDate representing the same instant
+     */
+    public org.orekit.time.AbsoluteDate toAbsoluteDate(org.orekit.time.TimeScale scale) {
+        int yr = get(YEAR);
+        int mo = get(MONTH) + 1; // 0-indexed to 1-indexed
+        int day = get(DATE);
+        int hr = get(HOUR_OF_DAY);
+        int min = get(MINUTE);
+        double sec = get(SECOND);
+
+        return new org.orekit.time.AbsoluteDate(yr, mo, day, hr, min, sec, scale);
+    }
+
+    /**
+     * Creates a new JulianDay from an Orekit AbsoluteDate and TimeScale.
+     *
+     * @param date Orekit AbsoluteDate
+     * @param scale TimeScale to extract calendar components in
+     * @return new JulianDay object
+     */
+    public static JulianDay fromAbsoluteDate(org.orekit.time.AbsoluteDate date, org.orekit.time.TimeScale scale) {
+        org.orekit.time.DateTimeComponents dtc = date.getComponents(scale);
+        org.orekit.time.DateComponents dc = dtc.getDate();
+        org.orekit.time.TimeComponents tc = dtc.getTime();
+
+        return new JulianDay(dc.getYear(), dc.getMonth() - 1, dc.getDay(),
+                             tc.getHour(), tc.getMinute(), (int) tc.getSecond());
+    }
+
 }
