@@ -657,11 +657,41 @@ public String getDateTimeStr()
         String retStr=dateFormat.format( newTime.getTime() );
         
         return retStr;
-        
-
     } // convertJD2String
-    
 
-    
-    
+    /**
+     * Converts this JSatTrak Time to an Orekit AbsoluteDate in the given TimeScale.
+     *
+     * @param scale Orekit TimeScale to reference the date against (e.g. TimeScalesFactory.getUTC())
+     * @return Orekit AbsoluteDate representing the same instant
+     */
+    public org.orekit.time.AbsoluteDate toAbsoluteDate(org.orekit.time.TimeScale scale)
+    {
+        int yr = currentTime.get(Calendar.YEAR);
+        int mo = currentTime.get(Calendar.MONTH) + 1; // Calendar is 0-indexed, Orekit is 1-indexed
+        int day = currentTime.get(Calendar.DATE);
+        int hr = currentTime.get(Calendar.HOUR_OF_DAY);
+        int min = currentTime.get(Calendar.MINUTE);
+        double sec = currentTime.get(Calendar.SECOND) + (currentTime.get(Calendar.MILLISECOND) / 1000.0);
+
+        return new org.orekit.time.AbsoluteDate(yr, mo, day, hr, min, sec, scale);
+    }
+
+    /**
+     * Creates a new JSatTrak Time from an Orekit AbsoluteDate and TimeScale.
+     *
+     * @param date Orekit AbsoluteDate
+     * @param scale TimeScale to extract calendar components in
+     * @return new Time object
+     */
+    public static Time fromAbsoluteDate(org.orekit.time.AbsoluteDate date, org.orekit.time.TimeScale scale)
+    {
+        org.orekit.time.DateTimeComponents dtc = date.getComponents(scale);
+        org.orekit.time.DateComponents dc = dtc.getDate();
+        org.orekit.time.TimeComponents tc = dtc.getTime();
+
+        return new Time(dc.getYear(), dc.getMonth(), dc.getDay(),
+                        tc.getHour(), tc.getMinute(), tc.getSecond());
+    }
+
 }

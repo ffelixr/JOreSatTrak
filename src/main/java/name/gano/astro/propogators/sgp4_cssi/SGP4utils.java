@@ -56,8 +56,12 @@ import java.text.ParsePosition;
 
 /**
  * 19 June 2009
+ * @deprecated This legacy SGP4 utility library is superseded by Orekit's
+ * analytical TLE propagator ({@code org.orekit.propagation.analytical.tle.TLEPropagator}).
+ *
  * @author Shawn E. Gano, shawn@gano.name
  */
+@Deprecated
 public class SGP4utils
 {
     public static double pi = SGP4unit.pi;

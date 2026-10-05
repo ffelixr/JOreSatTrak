@@ -61,5 +61,14 @@ public class TLE implements java.io.Serializable
         return line2;
     }
              
+    /**
+     * Converts this JSatTrak TLE to an Orekit TLE.
+     *
+     * @return Orekit TLE instance
+     */
+    public org.orekit.propagation.analytical.tle.TLE toOrekitTLE()
+    {
+        return new org.orekit.propagation.analytical.tle.TLE(line1, line2);
+    }
     
 } // TLE
