@@ -24,7 +24,9 @@ package name.gano.astro.propogators.solvers;
 /**
  *
  * @author sgano
+ * @deprecated Superseded by Orekit {@link org.orekit.propagation.events.EventDetector}.
  */
+@Deprecated
 public interface StoppingCondition 
 {
     // check the new step to see if it meets the stopping condition

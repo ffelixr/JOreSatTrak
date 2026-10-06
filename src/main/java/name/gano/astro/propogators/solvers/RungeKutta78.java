@@ -31,8 +31,11 @@ import jsattrak.utilities.StateVector;
  * from Numerical Recipes. Modified to RK78 from the original RK45 in NR.
  * RK78 values from Erwin Fehlberg, NASA TR R-287
  * 
+ * @deprecated Superseded by Hipparchus {@link org.hipparchus.ode.nonstiff.DormandPrince853Integrator}
+ *             and Orekit {@link org.orekit.propagation.numerical.NumericalPropagator}.
  */
 // modified to work with SSS - and integrating a second order ODE
+@Deprecated
 public class RungeKutta78
 {
 

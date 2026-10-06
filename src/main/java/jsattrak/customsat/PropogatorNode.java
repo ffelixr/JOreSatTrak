@@ -71,7 +71,9 @@ import org.orekit.orbits.CartesianOrbit;
 import org.orekit.orbits.Orbit;
 import org.orekit.orbits.OrbitType;
 import org.orekit.propagation.SpacecraftState;
+import org.orekit.propagation.events.AltitudeDetector;
 import org.orekit.propagation.events.ApsideDetector;
+import org.orekit.propagation.events.NodeDetector;
 import org.orekit.propagation.events.handlers.StopOnDecreasing;
 import org.orekit.propagation.events.handlers.StopOnIncreasing;
 import org.orekit.propagation.numerical.NumericalPropagator;
@@ -117,9 +119,13 @@ public class PropogatorNode extends CustomTreeTableNode implements OrbitProblem
     
     private double popogateTimeLen = 86400; // in seconds
     
-    // stopping conditions used
+    // stopping conditions used (Orekit EventDetectors)
     private boolean stopOnApogee = false;
     private boolean stopOnPerigee = false;
+    private boolean stopOnAscendingNode = false;
+    private boolean stopOnDescendingNode = false;
+    private boolean stopOnAltitude = false;
+    private double stopAltitudeValue = 100000.0; // meters (e.g. 100 km default)
     
     // private variables used internally only
     private double JD_TT0; // JD_TT at initial time (Julian Date)
@@ -275,7 +281,7 @@ public class PropogatorNode extends CustomTreeTableNode implements OrbitProblem
                 numPropagator.addForceModel(drag);
             }
 
-            // Stopping conditions
+            // Stopping conditions (Orekit EventDetectors)
             if (stopOnApogee) {
                 numPropagator.addEventDetector(
                         new ApsideDetector(initialOrbit).withHandler(new StopOnDecreasing()));
@@ -283,6 +289,18 @@ public class PropogatorNode extends CustomTreeTableNode implements OrbitProblem
             if (stopOnPerigee) {
                 numPropagator.addEventDetector(
                         new ApsideDetector(initialOrbit).withHandler(new StopOnIncreasing()));
+            }
+            if (stopOnAscendingNode) {
+                numPropagator.addEventDetector(
+                        new NodeDetector(initialOrbit, FramesFactory.getEME2000()).withHandler(new StopOnIncreasing()));
+            }
+            if (stopOnDescendingNode) {
+                numPropagator.addEventDetector(
+                        new NodeDetector(initialOrbit, FramesFactory.getEME2000()).withHandler(new StopOnDecreasing()));
+            }
+            if (stopOnAltitude) {
+                numPropagator.addEventDetector(
+                        new AltitudeDetector(stopAltitudeValue, earth).withHandler(new StopOnDecreasing()));
             }
 
             // Step handler: record ephemeris points at stepSize intervals
@@ -519,16 +537,18 @@ public class PropogatorNode extends CustomTreeTableNode implements OrbitProblem
     }
 
     // ====================================================
-    // =======  ORBIT Problem Functions ===================
+    // =======  ORBIT Problem Functions (Deprecated) ======
     // ====================================================
-    /***************************************************************************
-     * Equations of Motion (accelerations) for 2-Body Problem + perturbations
-     *************************************************************************
-     * @param var
-     * @param vel
-     * @param t
-     * @return 
+    /**
+     * Equations of Motion (accelerations) for 2-Body Problem + perturbations.
+     * @deprecated Superseded by Orekit NumericalPropagator force models (HolmesFeatherstoneAttractionModel,
+     *             ThirdBodyAttraction, SolarRadiationPressure, DragForce). Retained for OrbitProblem interface compatibility.
+     * @param var state position
+     * @param vel state velocity
+     * @param t time
+     * @return acceleration
      */
+    @Deprecated
     public double[] deriv(double[] var, double[] vel, double t)
     {
         double[] acc = new double[3];
@@ -767,9 +787,7 @@ public class PropogatorNode extends CustomTreeTableNode implements OrbitProblem
         return val;
     } // getGoal   
 
-    public // in seconds
-    // stopping conditions used
-    boolean isStopOnApogee()
+    public boolean isStopOnApogee()
     {
         return stopOnApogee;
     }
@@ -789,5 +807,44 @@ public class PropogatorNode extends CustomTreeTableNode implements OrbitProblem
         this.stopOnPerigee = stopOnPerigee;
     }
 
-    
+    public boolean isStopOnAscendingNode()
+    {
+        return stopOnAscendingNode;
+    }
+
+    public void setStopOnAscendingNode(boolean stopOnAscendingNode)
+    {
+        this.stopOnAscendingNode = stopOnAscendingNode;
+    }
+
+    public boolean isStopOnDescendingNode()
+    {
+        return stopOnDescendingNode;
+    }
+
+    public void setStopOnDescendingNode(boolean stopOnDescendingNode)
+    {
+        this.stopOnDescendingNode = stopOnDescendingNode;
+    }
+
+    public boolean isStopOnAltitude()
+    {
+        return stopOnAltitude;
+    }
+
+    public void setStopOnAltitude(boolean stopOnAltitude)
+    {
+        this.stopOnAltitude = stopOnAltitude;
+    }
+
+    public double getStopAltitudeValue()
+    {
+        return stopAltitudeValue;
+    }
+
+    public void setStopAltitudeValue(double stopAltitudeValue)
+    {
+        this.stopAltitudeValue = stopAltitudeValue;
+    }
+
 }

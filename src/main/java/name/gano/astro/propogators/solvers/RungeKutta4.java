@@ -26,7 +26,10 @@ import jsattrak.utilities.StateVector;
 /**
  *
  * @author Shawn
+ * @deprecated Superseded by Hipparchus {@link org.hipparchus.ode.nonstiff.ClassicalRungeKuttaIntegrator}
+ *             and Orekit {@link org.orekit.propagation.numerical.NumericalPropagator}.
  */
+@Deprecated
 public class RungeKutta4
 {
 

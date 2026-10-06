@@ -23,6 +23,10 @@ package name.gano.astro.propogators.solvers;
 
 import jsattrak.utilities.StateVector;
 
+/**
+ * @deprecated Superseded by Orekit {@link org.orekit.propagation.numerical.NumericalPropagator} and ForceModels.
+ */
+@Deprecated
 public interface OrbitProblem
 {
         // this function advances the time 
