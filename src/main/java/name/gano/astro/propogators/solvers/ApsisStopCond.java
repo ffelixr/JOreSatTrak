@@ -29,7 +29,10 @@ import name.gano.math.interpolation.PolynomialInterp;
 /**
  *
  * @author sgano
+ * @deprecated Superseded by Orekit {@link org.orekit.propagation.events.ApsideDetector}
+ *             with {@link org.orekit.propagation.events.handlers.StopOnDecreasing} and {@link org.orekit.propagation.events.handlers.StopOnIncreasing}.
  */
+@Deprecated
 public class ApsisStopCond implements StoppingCondition
 {
     public static int APOAPSIS = -1; // apoapsis stopping condition
