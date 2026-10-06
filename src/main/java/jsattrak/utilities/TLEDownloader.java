@@ -38,41 +38,33 @@ import javax.swing.JProgressBar;
 public class TLEDownloader implements java.io.Serializable
 {
 	// root URL for all TLEs
-	String rootWeb = "http://celestrak.com/NORAD/elements/";
+	String rootWeb = "https://celestrak.org/NORAD/elements/gp.php";
 	
 	// names of all TLE files to update
 	public String[] fileNames = new String[] {
             // --- Special-Interest Satellites -----
-            //"sts.txt", //removed, no more Space Shuttle flights :(
 			"stations.txt",
-            "tle-new.txt", // added 26 Sept 2008 - SEG
-            "visual.txt", // SEG v4.2.2 added
-            "active.txt", // SEG v4.2.2 added
-            //"analyst.txt", // SEG v4.2.2 added
+            "visual.txt",
+            "active.txt",
             //---- Weather & Earth Resources Satellites ----
 			"weather.txt",
-			"noaa.txt",
 			"goes.txt",
 			"resource.txt",
 			"sarsat.txt",
 			"dmc.txt",
 			"tdrss.txt",
-            "argos.txt", // SEG v4.2.2 added
-            "planet.txt", // SEG v4.2.2 added
-            "spire.txt", // SEG v4.2.2 added
+            "argos.txt",
+            "planet.txt",
+            "spire.txt",
             //---- Communications Satellites ----
 			"geo.txt",
 			"intelsat.txt",
-			"gorizont.txt",
-			"raduga.txt",
-			"molniya.txt",
-			"iridium.txt",
-			"iridium-next.txt",
+			"iridium-NEXT.txt",
 			"orbcomm.txt",
 			"globalstar.txt",
-            "ses.txt", // SEG v4.2.2 added
-            "starlink.txt", // SEG v4.2.2 added
-            "satnogs.txt", // SEG v4.2.2 added
+            "ses.txt",
+            "starlink.txt",
+            "satnogs.txt",
 			"amateur.txt",
 			"x-comm.txt",
 			"other-comm.txt",
@@ -80,7 +72,7 @@ public class TLEDownloader implements java.io.Serializable
             "gps-ops.txt",
 			"glo-ops.txt",
 			"galileo.txt",
-            "beidou.txt", // SEG v4.2.2 added
+            "beidou.txt",
 			"sbas.txt",
 			"nnss.txt",
 			"musson.txt",
@@ -92,19 +84,61 @@ public class TLEDownloader implements java.io.Serializable
             //---- Miscellaneous Satellites ----
 			"military.txt",
 			"radar.txt",
-			"cubesat.txt",
-			"other.txt",
-			
+			"cubesat.txt"
+	};
+	
+	// corresponding CelesTrak query GROUP parameter for each file
+	public String[] groupNames = new String[] {
+            // --- Special-Interest Satellites -----
+			"stations",
+            "visual",
+            "active",
+            //---- Weather & Earth Resources Satellites ----
+			"weather",
+			"goes",
+			"resource",
+			"sarsat",
+			"dmc",
+			"tdrss",
+            "argos",
+            "planet",
+            "spire",
+            //---- Communications Satellites ----
+			"geo",
+			"intelsat",
+			"iridium-NEXT",
+			"orbcomm",
+			"globalstar",
+            "ses",
+            "starlink",
+            "satnogs",
+			"amateur",
+			"x-comm",
+			"other-comm",
+			//---- Navigation Satellites ----
+            "gps-ops",
+			"glo-ops",
+			"galileo",
+            "beidou",
+			"sbas",
+			"nnss",
+			"musson",
+            //---- Scientific Satellites ----
+			"science",
+			"geodetic",
+			"engineering",
+			"education",
+            //---- Miscellaneous Satellites ----
+			"military",
+			"radar",
+			"cubesat"
 	};
 	
 	// primary category for each TLE
 	public String[] primCat = new String[] {
-            //"Special-Interest",  //removed all : " Satellites" redundant //removed, no more Space Shuttle flights :( // SEG v4.2.1
 			"Special-Interest",
-            "Special-Interest", // new
-            "Special-Interest", // SEG v4.2.2 added
-            "Special-Interest", // SEG v4.2.2 added
-            //"Special-Interest", // SEG v4.2.2 added
+            "Special-Interest",
+            "Special-Interest",
             //---- Weather & Earth Resources Satellites ----
 			"Weather & Earth Resources",
 			"Weather & Earth Resources",
@@ -112,23 +146,18 @@ public class TLEDownloader implements java.io.Serializable
 			"Weather & Earth Resources",
 			"Weather & Earth Resources",
 			"Weather & Earth Resources",
-			"Weather & Earth Resources",
-            "Weather & Earth Resources", // SEG v4.2.2 added
-            "Weather & Earth Resources", // SEG v4.2.2 added
-            "Weather & Earth Resources", // SEG v4.2.2 added
+            "Weather & Earth Resources",
+            "Weather & Earth Resources",
+            "Weather & Earth Resources",
             //---- Communications Satellites ----
 			"Communications",
 			"Communications",
 			"Communications",
 			"Communications",
 			"Communications",
-			"Communications",
-			"Communications",
-			"Communications",
-			"Communications",
-            "Communications", // SEG v4.2.2 added
-            "Communications", // SEG v4.2.2 added
-            "Communications", // SEG v4.2.2 added
+            "Communications",
+            "Communications",
+            "Communications",
 			"Communications",
 			"Communications",
 			"Communications",
@@ -136,7 +165,7 @@ public class TLEDownloader implements java.io.Serializable
 			"Navigation",
 			"Navigation",
 			"Navigation",
-            "Navigation", // SEG v4.2.2 added
+            "Navigation",
 			"Navigation",
 			"Navigation",
 			"Navigation",
@@ -148,50 +177,41 @@ public class TLEDownloader implements java.io.Serializable
             //---- Miscellaneous Satellites ----
 			"Miscellaneous",
 			"Miscellaneous",
-			"Miscellaneous",
-			"Miscellaneous"			
+			"Miscellaneous"
 	};
 	
 	// secondary category for each TLE
 	public String[] secondCat = new String[] {
-            //"STS", //removed all : " Satellites" redundant //removed, no more Space Shuttle flights :( // SEG v4.2.1
-			"Space Stations", // SEG v4.2.2 renamed from International Space Station to Space Stations
-            "Last 30 Days' Launches", // new
-            "100 (or so) Brightest", // SEG v4.2.2 added
-            "Active Satellites", // SEG v4.2.2 added
-            //"Analyst Satellites", // SEG v4.2.2 added
+			"Space Stations",
+            "100 (or so) Brightest",
+            "Active Satellites",
             //---- Weather & Earth Resources Satellites ----
 			"Weather",
-			"NOAA",
 			"GOES",
 			"Earth Resources",
 			"Search & Rescue (SARSAT)",
 			"Disaster Monitoring",
 			"Tracking and Data Relay Satellite System (TDRSS)",
-            "ARGOS Data Collection System", // SEG v4.2.2 added
-            "Planet", // SEG v4.2.2 added
-            "Spire", // SEG v4.2.2 added
+            "ARGOS Data Collection System",
+            "Planet",
+            "Spire",
 			//---- Communications Satellites ----
-            "Geosynchronous", // SEG v4.2.2 renamed Geostationary to Geosynchronous
+            "Geosynchronous",
 			"Intelsat",
-			"Gorizont",
-			"Raduga",
-			"Molniya",
-			"Iridium",
 			"Iridium NEXT",
 			"Orbcomm",
 			"Globalstar",
-            "SES", // SEG v4.2.2 added
-            "Starlink", // SEG v4.2.2 added
-            "SatNOGS", // SEG v4.2.2 added
+            "SES",
+            "Starlink",
+            "SatNOGS",
 			"Amateur Radio",
 			"Experimental",
-			"Other Comm", // SEG v4.2.2 renammed from Other to Other Comm
+			"Other Comm",
 			//---- Navigation Satellites ----
             "GPS Operational",
 			"Glonass Operational",
 			"Galileo",
-            "Beidou", // SEG v4.2.2 added
+            "Beidou",
 			"Satellite-Based Augmentation System (WAAS/EGNOS/MSAS)",
 			"Navy Navigation Satellite System (NNSS)",
 			"Russian LEO Navigation",
@@ -203,8 +223,7 @@ public class TLEDownloader implements java.io.Serializable
             //---- Miscellaneous Satellites ----
 			"Miscellaneous Military",
 			"Radar Calibration",
-			"CubeSats",
-			"Other"			
+			"CubeSats"
 	};
 	
 	// local path to save files
@@ -396,14 +415,38 @@ public class TLEDownloader implements java.io.Serializable
 
         try
         {
-            // open file on the web
-            URL url = new URL(rootWeb + fileNames[i]);
+            // open file on the web with gp.php query parameters
+            URL url = new URL(getTleWebPath(i));
             URLConnection c = url.openConnection();
+            c.setRequestProperty("User-Agent", "JSatTrak/Orekit");
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(15000);
+
+            File outFile = new File(localPath + fileNames[i]);
+
+            // Handle HTTP response if it's an HttpURLConnection
+            if (c instanceof java.net.HttpURLConnection)
+            {
+                java.net.HttpURLConnection httpConn = (java.net.HttpURLConnection) c;
+                int responseCode = httpConn.getResponseCode();
+                if (responseCode == 403)
+                {
+                    // CelesTrak returns 403 Forbidden with explanatory text when rate-limited
+                    // or when data has not changed since last download within the 2-hour window.
+                    // If local cache already exists, we preserve it gracefully.
+                    if (outFile.exists() && outFile.length() > 0)
+                    {
+                        System.out.println("CelesTrak rate-limited/unchanged (HTTP 403) for " + fileNames[i] + "; keeping existing local cache.");
+                        currentTLEindex++;
+                        return true;
+                    }
+                }
+            }
+
             InputStreamReader isr = new InputStreamReader(c.getInputStream());
             BufferedReader br = new BufferedReader(isr);
 
             // open file on local drive to save to
-            File outFile = new File(localPath + fileNames[i]);
             BufferedWriter writer = new BufferedWriter(new FileWriter(outFile));
 
             // save file locally
@@ -418,23 +461,21 @@ public class TLEDownloader implements java.io.Serializable
             br.close();
             writer.close();
 
-//            if (i == (fileNames.length - 1)) // last one update to 100%
-//            {
-//                progBar.setValue(100);
-//                progBar.repaint();
-//            }
-
         } catch (Exception e)
         {
+            File outFile = new File(localPath + fileNames[i]);
+            if (outFile.exists() && outFile.length() > 0)
+            {
+                System.out.println("Warning Reading/Writing TLE - " + fileNames[i] + ": " + e.toString() + "; keeping existing local cache.");
+                currentTLEindex++;
+                return true;
+            }
+
             System.out.println("Error Reading/Writing TLE - " + fileNames[i] + "\n" + e.toString());
-            //e.printStackTrace();
             success = false;
-
             errorText = e.toString();
-
-            return false; // return after first error, to prevent slow response
+            return false; // return after first error if no local cache
         }
-        //} // for each TLE file
 
         currentTLEindex++; // increment index after this file has been downloaded (or attempted)
 
@@ -471,7 +512,8 @@ public class TLEDownloader implements java.io.Serializable
 
     public String getTleWebPath(int index)
     {
-        return rootWeb + fileNames[index];
+        String group = (groupNames != null && index < groupNames.length) ? groupNames[index] : fileNames[index].replace(".txt", "");
+        return rootWeb + "?GROUP=" + group + "&FORMAT=tle";
     }
 
     public void setUsingProxy(boolean b)

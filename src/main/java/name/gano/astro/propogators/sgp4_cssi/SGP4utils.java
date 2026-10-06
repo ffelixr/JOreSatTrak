@@ -204,8 +204,8 @@ public class SGP4utils
             throw new Exception("TLE line 1 not valid first line");
         }
 
-        // satnum
-        satrec.satnum = (int)readFloatFromString(tleLine1.substring(2, 7));
+        // satnum (standard 5-digit integer or Alpha-5 for catalog numbers >= 100000)
+        satrec.satnum = parseSatNum(tleLine1.substring(2, 7));
         // classification
         satrec.classification = tleLine1.substring(7, 8); // 1 char
         // intln designator
@@ -270,8 +270,8 @@ public class SGP4utils
             throw new Exception("TLE line 2 not valid second line");
         }
 
-        // satnum
-        int satnum = (int)readFloatFromString(tleLine2.substring(2, 7));
+        // satnum (standard 5-digit integer or Alpha-5 for catalog numbers >= 100000)
+        int satnum = parseSatNum(tleLine2.substring(2, 7));
         if(satnum != satrec.satnum)
         {
             System.out.println("Warning TLE line 2 Sat Num doesn't match line1 for sat: " + satrec.name);
@@ -345,6 +345,42 @@ public class SGP4utils
 
         return num.doubleValue();
     } // readFloatFromString
+
+    /**
+     * Parses a 5-character satellite number supporting standard numeric strings
+     * as well as Alpha-5 format for satellite numbers >= 100,000.
+     * Uses Orekit's TLE.parseSatelliteNumber when available, with fallback to Alpha-5 rules.
+     *
+     * @param inStr 5-character string from TLE line 1 or line 2 (columns 3-7)
+     * @return satellite number integer
+     */
+    public static int parseSatNum(String inStr) throws Exception
+    {
+        String s = inStr.trim();
+        if (s.isEmpty())
+        {
+            return 0;
+        }
+
+        try
+        {
+            return org.orekit.propagation.analytical.tle.TLE.parseSatelliteNumber(s);
+        }
+        catch (Throwable t)
+        {
+            // Fallback: standard Alpha-5 decoding if Orekit method is unavailable or fails
+            char firstChar = Character.toUpperCase(s.charAt(0));
+            if (firstChar >= 'A' && firstChar <= 'Z' && firstChar != 'I' && firstChar != 'O')
+            {
+                int alphaVal = (firstChar - 'A') + 10;
+                if (firstChar > 'I') alphaVal--;
+                if (firstChar > 'O') alphaVal--;
+                int remainder = Integer.parseInt(s.substring(1).trim());
+                return alphaVal * 10000 + remainder;
+            }
+            return Integer.parseInt(s);
+        }
+    } // parseSatNum
 
     /** -----------------------------------------------------------------------------
      *
