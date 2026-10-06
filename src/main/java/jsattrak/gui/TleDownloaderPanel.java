@@ -93,7 +93,7 @@ public class TleDownloaderPanel extends javax.swing.JPanel implements java.io.Se
         jLabel5.setText("NORAD Two-Line Element Data Downloader");
 
         jLabel6.setFont(new java.awt.Font("Dialog", 0, 10));
-        jLabel6.setText("Data from: celestrak.com ");
+        jLabel6.setText("Data from: celestrak.org ");
 
         javax.swing.GroupLayout jPanel1Layout = new javax.swing.GroupLayout(jPanel1);
         jPanel1.setLayout(jPanel1Layout);

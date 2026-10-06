@@ -242,6 +242,9 @@ public class SatBrowserTleDataLoader extends SwingWorker<Boolean,ProgressStatus>
                     // read from web
                     URL url = new URL(tleDownloader.getTleWebPath(i));
                     URLConnection c = url.openConnection();
+                    c.setRequestProperty("User-Agent", "JSatTrak/Orekit");
+                    c.setConnectTimeout(10000);
+                    c.setReadTimeout(15000);
                     InputStreamReader isr = new InputStreamReader(c.getInputStream());
                     tleReader = new BufferedReader(isr); // from the web
                     
@@ -500,27 +503,41 @@ public class SatBrowserTleDataLoader extends SwingWorker<Boolean,ProgressStatus>
             tleReader = new BufferedReader(tleFileReader); // from local file
 
 
-            String nextLine = null;
-
-            if(customCategoriesInFile)
+            // Check if file is OMM CSV format
+            if(tleFile.getName().toLowerCase().endsWith(".csv"))
             {
-                // read first line and dispose, since it contains category names and not TLE data
-                nextLine = tleReader.readLine();
+                java.util.List<TLE> ommList = OmmDataLoader.parseOmmCsv(tleReader);
+                for(TLE t : ommList)
+                {
+                    tleHash.put(t.getSatName(), t);
+                    currentSecondaryNode.add(new DefaultMutableTreeNode(t.getSatName()));
+                    newSatCount++;
+                }
             }
-
-            while((nextLine = tleReader.readLine()) != null)
+            else
             {
-                // needs three lines
-                currentTLE = new TLE(nextLine, tleReader.readLine(), tleReader.readLine());
+                String nextLine = null;
 
-                // save TLE
-                tleHash.put(currentTLE.getSatName(), currentTLE);
+                if(customCategoriesInFile)
+                {
+                    // read first line and dispose, since it contains category names and not TLE data
+                    nextLine = tleReader.readLine();
+                }
 
-                // add to tree
-                currentSecondaryNode.add(new DefaultMutableTreeNode(currentTLE.getSatName()));
+                while((nextLine = tleReader.readLine()) != null)
+                {
+                    // needs three lines
+                    currentTLE = new TLE(nextLine, tleReader.readLine(), tleReader.readLine());
 
-                newSatCount++;
-            }// while there are more lines to read
+                    // save TLE
+                    tleHash.put(currentTLE.getSatName(), currentTLE);
+
+                    // add to tree
+                    currentSecondaryNode.add(new DefaultMutableTreeNode(currentTLE.getSatName()));
+
+                    newSatCount++;
+                }// while there are more lines to read
+            }
 
             tleReader.close(); // close file
 
