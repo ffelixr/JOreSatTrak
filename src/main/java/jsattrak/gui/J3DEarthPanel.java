@@ -737,72 +737,9 @@ public class J3DEarthPanel extends javax.swing.JPanel implements J3DEarthCompone
 
     private void wmsButtonActionPerformed(java.awt.event.ActionEvent evt)//GEN-FIRST:event_wmsButtonActionPerformed
     {//GEN-HEADEREND:event_wmsButtonActionPerformed
-        // create a dialog for all the web map services
-
-        // create tabbed pane to add to Dialog
-        //JTabbedPane tabbedPane;
-
-        final JTabbedPane tabbedPane = new JTabbedPane();
-
-        tabbedPane.add(new JPanel());
-        tabbedPane.setTitleAt(0, "+");
-        tabbedPane.addChangeListener(new ChangeListener()
-                {
-
-                    public void stateChanged(ChangeEvent changeEvent)
-                    {
-                        if (tabbedPane.getSelectedIndex() != 0)
-                        {
-                            previousTabIndex = tabbedPane.getSelectedIndex();
-                            return;
-                        }
-
-                        String server = JOptionPane.showInputDialog("Enter wms server URL");
-                        if (server == null || server.length() < 1)
-                        {
-                            tabbedPane.setSelectedIndex(previousTabIndex);
-                            return;
-                        }
-
-                        // Respond by adding a new WMSLayerPanel to the tabbed pane.
-                        if (addWMSTab(tabbedPane.getTabCount(), server.trim(), tabbedPane) != null)
-                        {
-                            tabbedPane.setSelectedIndex(tabbedPane.getTabCount() - 1);
-                        }
-                    }
-                });
-
-        // Create a tab for each server and add it to the tabbed panel.
-        for (int i = 0; i < servers.length; i++)
-        {
-            addWMSTab(i + 1, servers[i], tabbedPane); // i+1 to place all server tabs to the right of the Add Server tab
-        }
-
-        // Display the first server pane by default.
-        tabbedPane.setSelectedIndex(tabbedPane.getTabCount() > 0 ? 1 : 0);
-        previousTabIndex = tabbedPane.getSelectedIndex();
-
-        // create and open dialog
-        String windowName = "Web Map Services";
-
-        JDialog iframe = new JDialog(parent, windowName, false); // parent, title, modal
-
-        //iframe.setContentPane(newPanel);
-        Container cp = iframe.getContentPane();
-
-        // add to dialog
-        cp.add(tabbedPane);
-
-        iframe.setSize(480, 350);
-
-        Point p = parent.getLocation();
-        iframe.setLocation(p.x + 15, p.y + 15);
-
-        setLookandFeel(iframe);
-
-        iframe.setVisible(true);
-        
-        
+        WMSManagementDialog dialog = new WMSManagementDialog(parent, wwd);
+        setLookandFeel(dialog);
+        dialog.setVisible(true);
     }//GEN-LAST:event_wmsButtonActionPerformed
 
     private void screenCaptureButtonActionPerformed(java.awt.event.ActionEvent evt)//GEN-FIRST:event_screenCaptureButtonActionPerformed
