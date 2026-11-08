@@ -29,6 +29,7 @@ import java.awt.Color;
 import javax.swing.JColorChooser;
 import javax.swing.JDialog;
 import jsattrak.objects.AbstractSatellite;
+import jsattrak.objects.GroundStation;
 import jsattrak.utilities.J3DEarthComponent;
 
 /**
@@ -89,7 +90,19 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
             eciRadioButton.setSelected(false);
         }
         
-        if(threeDPanel.isModelViewMode())
+        if(threeDPanel.isGsToSatViewMode())
+        {
+            gsToSatRadioButton.doClick();
+            if(threeDPanel.getGsToSatGroundStation() != null && !threeDPanel.getGsToSatGroundStation().isEmpty())
+            {
+                gsViewComboBox.setSelectedItem(threeDPanel.getGsToSatGroundStation());
+            }
+            if(threeDPanel.getGsToSatSatellite() != null && !threeDPanel.getGsToSatSatellite().isEmpty())
+            {
+                gsSatViewComboBox.setSelectedItem(threeDPanel.getGsToSatSatellite());
+            }
+        }
+        else if(threeDPanel.isModelViewMode())
         {
             modelViewRadioButton.doClick();
             modeViewComboBox.setSelectedItem(threeDPanel.getModelViewString()); // hope this works?
@@ -98,6 +111,9 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
         {
             earthViewRadioButton.doClick(); // set selected
         }
+
+        clampHorizonCheckBox.setSelected(threeDPanel.isGsToSatClampToHorizon());
+        showGsHudCheckBox.setSelected(threeDPanel.isGsToSatShowHud());
 
         smoothViewCheckBox.setSelected(threeDPanel.isSmoothViewChanges());
 
@@ -162,6 +178,13 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
         earthViewRadioButton = new javax.swing.JRadioButton();
         modelViewRadioButton = new javax.swing.JRadioButton();
         modeViewComboBox = new javax.swing.JComboBox();
+        gsToSatRadioButton = new javax.swing.JRadioButton();
+        gsViewLabel = new javax.swing.JLabel();
+        gsViewComboBox = new javax.swing.JComboBox();
+        gsSatViewLabel = new javax.swing.JLabel();
+        gsSatViewComboBox = new javax.swing.JComboBox();
+        clampHorizonCheckBox = new javax.swing.JCheckBox();
+        showGsHudCheckBox = new javax.swing.JCheckBox();
         jPanel3 = new javax.swing.JPanel();
         sunShadingCheckBox = new javax.swing.JCheckBox();
         flareCheckBox = new javax.swing.JCheckBox();
@@ -187,6 +210,7 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
 
         buttonGroup1.add(earthViewRadioButton);
         buttonGroup1.add(modelViewRadioButton);
+        buttonGroup1.add(gsToSatRadioButton);
 
         setPreferredSize(new java.awt.Dimension(200, 200));
 
@@ -299,6 +323,31 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
         modeViewComboBox.setModel(new javax.swing.DefaultComboBoxModel(new String[] { "Item 1", "Item 2", "Item 3", "Item 4" }));
         modeViewComboBox.setEnabled(false);
 
+        gsToSatRadioButton.setText("Ground Station to Sat");
+        gsToSatRadioButton.addChangeListener(new javax.swing.event.ChangeListener() {
+            public void stateChanged(javax.swing.event.ChangeEvent evt) {
+                gsToSatRadioButtonStateChanged(evt);
+            }
+        });
+
+        gsViewLabel.setText("Station:");
+
+        gsViewComboBox.setModel(new javax.swing.DefaultComboBoxModel(new String[] { "Item 1" }));
+        gsViewComboBox.setEnabled(false);
+
+        gsSatViewLabel.setText("Target Sat:");
+
+        gsSatViewComboBox.setModel(new javax.swing.DefaultComboBoxModel(new String[] { "Item 1" }));
+        gsSatViewComboBox.setEnabled(false);
+
+        clampHorizonCheckBox.setSelected(true);
+        clampHorizonCheckBox.setText("Clamp to Horizon (El >= 0°)");
+        clampHorizonCheckBox.setEnabled(false);
+
+        showGsHudCheckBox.setSelected(true);
+        showGsHudCheckBox.setText("Show Boresight HUD");
+        showGsHudCheckBox.setEnabled(false);
+
         javax.swing.GroupLayout jPanel2Layout = new javax.swing.GroupLayout(jPanel2);
         jPanel2.setLayout(jPanel2Layout);
         jPanel2Layout.setHorizontalGroup(
@@ -309,7 +358,21 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
                     .addGroup(jPanel2Layout.createSequentialGroup()
                         .addComponent(modelViewRadioButton)
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                        .addComponent(modeViewComboBox, 0, 217, Short.MAX_VALUE)))
+                        .addComponent(modeViewComboBox, 0, 217, Short.MAX_VALUE))
+                    .addComponent(gsToSatRadioButton)
+                    .addGroup(jPanel2Layout.createSequentialGroup()
+                        .addGap(21, 21, 21)
+                        .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addGroup(jPanel2Layout.createSequentialGroup()
+                                .addComponent(gsViewLabel)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(gsViewComboBox, 0, 195, Short.MAX_VALUE))
+                            .addGroup(jPanel2Layout.createSequentialGroup()
+                                .addComponent(gsSatViewLabel)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(gsSatViewComboBox, 0, 179, Short.MAX_VALUE))
+                            .addComponent(clampHorizonCheckBox)
+                            .addComponent(showGsHudCheckBox))))
                 .addContainerGap())
         );
         jPanel2Layout.setVerticalGroup(
@@ -320,6 +383,20 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
                 .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(modelViewRadioButton)
                     .addComponent(modeViewComboBox, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                .addComponent(gsToSatRadioButton)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(gsViewLabel)
+                    .addComponent(gsViewComboBox, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addGroup(jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(gsSatViewLabel)
+                    .addComponent(gsSatViewComboBox, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(clampHorizonCheckBox)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(showGsHudCheckBox)
                 .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
         );
 
@@ -605,9 +682,9 @@ private void earthViewRadioButtonStateChanged(javax.swing.event.ChangeEvent evt)
     {
         eciRadioButton.setEnabled(true);
         eciRadioButton.doClick(); // auto pick this
+        modeViewComboBox.setEnabled(false);
+        setGsToSatControlsEnabled(false);
     }
-    
-    modeViewComboBox.setEnabled(!earthViewRadioButton.isSelected());
 }//GEN-LAST:event_earthViewRadioButtonStateChanged
 
 private void modelViewRadioButtonStateChanged(javax.swing.event.ChangeEvent evt) {//GEN-FIRST:event_modelViewRadioButtonStateChanged
@@ -615,7 +692,8 @@ private void modelViewRadioButtonStateChanged(javax.swing.event.ChangeEvent evt)
     
     if(modelViewRadioButton.isSelected())
     {
-        modeViewComboBox.setEnabled(modelViewRadioButton.isSelected());
+        modeViewComboBox.setEnabled(true);
+        setGsToSatControlsEnabled(false);
         ecefRadioButton.doClick();
         
         eciRadioButton.setEnabled(false); // hide so user can't seletct this (not possible in this view anyways)
@@ -623,12 +701,46 @@ private void modelViewRadioButtonStateChanged(javax.swing.event.ChangeEvent evt)
     
     // fill in object list with all satellites
     modeViewComboBox.removeAllItems();
-    for(AbstractSatellite sat : app.getSatHash().values())
+    if (app != null)
     {
-        modeViewComboBox.addItem(sat.getName());
+        for(AbstractSatellite sat : app.getSatHash().values())
+        {
+            modeViewComboBox.addItem(sat.getName());
+        }
     }
     
 }//GEN-LAST:event_modelViewRadioButtonStateChanged
+
+private void gsToSatRadioButtonStateChanged(javax.swing.event.ChangeEvent evt) {
+    if (gsToSatRadioButton.isSelected())
+    {
+        modeViewComboBox.setEnabled(false);
+        setGsToSatControlsEnabled(true);
+        ecefRadioButton.doClick();
+        eciRadioButton.setEnabled(false);
+    }
+
+    gsViewComboBox.removeAllItems();
+    gsSatViewComboBox.removeAllItems();
+    if (app != null)
+    {
+        for (GroundStation gs : app.getGsHash().values())
+        {
+            gsViewComboBox.addItem(gs.getStationName());
+        }
+        for (AbstractSatellite sat : app.getSatHash().values())
+        {
+            gsSatViewComboBox.addItem(sat.getName());
+        }
+    }
+}
+
+private void setGsToSatControlsEnabled(boolean enabled) {
+    gsViewComboBox.setEnabled(enabled);
+    gsSatViewComboBox.setEnabled(enabled);
+    clampHorizonCheckBox.setEnabled(enabled);
+    showGsHudCheckBox.setEnabled(enabled);
+}
 
 private void terminatorColorLabelMouseClicked(java.awt.event.MouseEvent evt)//GEN-FIRST:event_terminatorColorLabelMouseClicked
 {//GEN-HEADEREND:event_terminatorColorLabelMouseClicked
@@ -698,6 +810,13 @@ private void gridColorLabelMouseClicked(java.awt.event.MouseEvent evt)//GEN-FIRS
     private javax.swing.JCheckBox sunShadingCheckBox;
     private javax.swing.JCheckBox terminatorCheckBox;
     private javax.swing.JLabel terminatorColorLabel;
+    private javax.swing.JRadioButton gsToSatRadioButton;
+    private javax.swing.JLabel gsViewLabel;
+    private javax.swing.JComboBox gsViewComboBox;
+    private javax.swing.JLabel gsSatViewLabel;
+    private javax.swing.JComboBox gsSatViewComboBox;
+    private javax.swing.JCheckBox clampHorizonCheckBox;
+    private javax.swing.JCheckBox showGsHudCheckBox;
     // End of variables declaration//GEN-END:variables
     
     
@@ -706,14 +825,6 @@ private void gridColorLabelMouseClicked(java.awt.event.MouseEvent evt)//GEN-FIRS
         boolean updateMapData = false;
         
         // === Camera Properties =============
-        try
-        {
-            double fov = Double.parseDouble(fovTextField.getText());
-            wwd.getView().setFieldOfView(Angle.fromDegrees(fov));
-        }
-        catch(Exception e){}
-        
-        
         if(eciRadioButton.isSelected())
         {
             threeDPanel.setViewModeECI(true);
@@ -722,17 +833,43 @@ private void gridColorLabelMouseClicked(java.awt.event.MouseEvent evt)//GEN-FIRS
         {
              threeDPanel.setViewModeECI(false);
         }
+
+        threeDPanel.setGsToSatClampToHorizon(clampHorizonCheckBox.isSelected());
+        threeDPanel.setGsToSatShowHud(showGsHudCheckBox.isSelected());
         
-        if(modelViewRadioButton.isSelected())
+        if(gsToSatRadioButton.isSelected())
         {
-            threeDPanel.setModelViewString(modeViewComboBox.getSelectedItem().toString()); // save name
-            
+            if(gsViewComboBox.getSelectedItem() != null)
+            {
+                threeDPanel.setGsToSatGroundStation(gsViewComboBox.getSelectedItem().toString());
+            }
+            if(gsSatViewComboBox.getSelectedItem() != null)
+            {
+                threeDPanel.setGsToSatSatellite(gsSatViewComboBox.getSelectedItem().toString());
+            }
+            threeDPanel.setGsToSatViewMode(true);
+        }
+        else if(modelViewRadioButton.isSelected())
+        {
+            threeDPanel.setGsToSatViewMode(false);
+            if(modeViewComboBox.getSelectedItem() != null)
+            {
+                threeDPanel.setModelViewString(modeViewComboBox.getSelectedItem().toString()); // save name
+            }
             threeDPanel.setModelViewMode(true); // do this last!
         }
         else
         {
+            threeDPanel.setGsToSatViewMode(false);
             threeDPanel.setModelViewMode(false);
         }
+
+        try
+        {
+            double fov = Double.parseDouble(fovTextField.getText());
+            wwd.getView().setFieldOfView(Angle.fromDegrees(fov));
+        }
+        catch(Exception e){}
 
         // smooth view
         threeDPanel.setSmoothViewChanges(smoothViewCheckBox.isSelected());

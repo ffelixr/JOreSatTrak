@@ -74,5 +74,16 @@ public interface  J3DEarthComponent
     public EcefTimeDepRenderableLayer getEcefTimeDepRenderableLayer();
     // grid
     public ECIRadialGrid getEciRadialGrid();
+    // Ground Station to Satellite view mode
+    public boolean isGsToSatViewMode();
+    public void setGsToSatViewMode(boolean gsToSatViewMode);
+    public String getGsToSatGroundStation();
+    public void setGsToSatGroundStation(String gsName);
+    public String getGsToSatSatellite();
+    public void setGsToSatSatellite(String satName);
+    public boolean isGsToSatClampToHorizon();
+    public void setGsToSatClampToHorizon(boolean clampToHorizon);
+    public boolean isGsToSatShowHud();
+    public void setGsToSatShowHud(boolean showHud);
 
 }

@@ -10,7 +10,7 @@ Key capabilities include:
 - **Multi-View Visualization**:
   - 2D equirectangular cartographic view (Java2D / Swing) displaying satellite footprints, day/night terminators, ground tracks, and ground stations.
   - 2D polar projection view (Java2D / Swing) supporting North Pole, South Pole, and Dual-Pole azimuthal equidistant projections with vector landmass coastlines and polar lat/lon grids.
-  - 3D interactive virtual globe rendering using NASA WorldWind Java (WWJ) and JOGL (OpenGL).
+  - 3D interactive virtual globe rendering using NASA WorldWind Java (WWJ) and JOGL (OpenGL), including Earth-centered, spacecraft-centered, and first-person Ground Station-to-Satellite boresight camera modes.
 - **Analysis Tools**: Pass prediction for ground stations, radar/optical look angles, sensor coverage mapping, ephemeris export, and MP4 video generation.
 - **Automation & Scripting**: Embedded BeanShell interpreter, socket/TCP remote control server (`jguiserver`), and headless execution support.
 

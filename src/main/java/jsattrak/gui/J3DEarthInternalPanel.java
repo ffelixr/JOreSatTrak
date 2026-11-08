@@ -106,10 +106,13 @@ import name.gano.worldwind.layers.Earth.CoverageRenderableLayer;
 import name.gano.worldwind.layers.Earth.ECEFRenderableLayer;
 import name.gano.worldwind.layers.Earth.ECIRenderableLayer;
 import name.gano.worldwind.layers.Earth.EcefTimeDepRenderableLayer;
+import name.gano.worldwind.layers.Earth.GroundStationHudLayer;
 import name.gano.worldwind.sunshader.CustomSunPositionProvider;
 import name.gano.worldwind.view.AutoClipBasicOrbitView;
 import name.gano.worldwind.view.BasicModelView3;
 import name.gano.worldwind.view.BasicModelViewInputHandler3;
+import name.gano.worldwind.view.GroundStationToSatView;
+import name.gano.worldwind.view.GroundStationViewInputHandler;
 
 /**
  *
@@ -159,6 +162,12 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
     private String modelViewString = ""; // to hold name of satellite to view when modelViewMode=true
     private double modelViewNearClip = 10000; // clipping pland for when in Model View mode
     private double modelViewFarClip = 5.0E7;
+    private boolean gsToSatViewMode = false;
+    private String gsToSatGroundStation = "";
+    private String gsToSatSatellite = "";
+    private boolean gsToSatClampToHorizon = true;
+    private boolean gsToSatShowHud = true;
+    private GroundStationHudLayer gsHudLayer;
     private boolean smoothViewChanges = true; // for 3D view smoothing (only is set after model/earth view has been changed -needs to be fixed)
     // near/far clipping plane distances for 3d windows (can effect render speed and if full orbit is shown)
     private double farClippingPlaneDistOrbit = -1;//200000000d; // good out to geo, but slow for LEO, using AutoClipping plane view I made works better
@@ -303,6 +312,11 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
         ecefModel = new ECEFModelRenderable(satHash, gsHash, wwd.getModel().getGlobe());
         ecefLayer.addRenderable(ecefModel); // add renderable object
         m.getLayers().add(ecefLayer); // add ECI Layer
+
+        // add Ground Station to Sat HUD Layer
+        gsHudLayer = new GroundStationHudLayer();
+        gsHudLayer.setEnabled(false);
+        m.getLayers().add(gsHudLayer);
         
         // add terrain profile layer
         terrainProfileLayer = new TerrainProfileLayer();
@@ -771,7 +785,7 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
         JDialog iframe = new JDialog(app, windowName, false);
         
         iframe.setContentPane(newPanel); // set contents pane
-        iframe.setSize(220+330, 260+65+185); // set size w,h
+        iframe.setSize(220+330, 260+65+280); // set size w,h
         
         Point p = this.getLocationOnScreen();
         iframe.setLocation(p.x + 15, p.y + 55);
@@ -959,7 +973,7 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     public void setModelViewMode(boolean viewMode)
     {
         // see if it is changed?
-        if(viewMode == modelViewMode)
+        if(viewMode == modelViewMode && (!viewMode || !gsToSatViewMode))
         {
             // no change, then do nothing
             return;
@@ -967,6 +981,10 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
         
         // save state
         this.modelViewMode = viewMode;
+        if (viewMode)
+        {
+            this.gsToSatViewMode = false;
+        }
         
         // setup correct view
         setupView();
@@ -988,6 +1006,101 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
         }
         
         this.modelViewString = modelString;
+    }
+
+    @Override
+    public boolean isGsToSatViewMode()
+    {
+        return gsToSatViewMode;
+    }
+
+    @Override
+    public void setGsToSatViewMode(boolean gsToSatViewMode)
+    {
+        if (this.gsToSatViewMode == gsToSatViewMode && (!gsToSatViewMode || !modelViewMode))
+        {
+            return;
+        }
+        this.gsToSatViewMode = gsToSatViewMode;
+        if (gsToSatViewMode)
+        {
+            this.modelViewMode = false;
+        }
+        setupView();
+    }
+
+    @Override
+    public String getGsToSatGroundStation()
+    {
+        return gsToSatGroundStation;
+    }
+
+    @Override
+    public void setGsToSatGroundStation(String gsName)
+    {
+        if (gsName == null)
+        {
+            gsName = "";
+        }
+        boolean changed = !this.gsToSatGroundStation.equalsIgnoreCase(gsName);
+        this.gsToSatGroundStation = gsName;
+        if (changed && gsToSatViewMode)
+        {
+            setupView();
+        }
+    }
+
+    @Override
+    public String getGsToSatSatellite()
+    {
+        return gsToSatSatellite;
+    }
+
+    @Override
+    public void setGsToSatSatellite(String satName)
+    {
+        if (satName == null)
+        {
+            satName = "";
+        }
+        boolean changed = !this.gsToSatSatellite.equalsIgnoreCase(satName);
+        this.gsToSatSatellite = satName;
+        if (changed && gsToSatViewMode)
+        {
+            setupView();
+        }
+    }
+
+    @Override
+    public boolean isGsToSatClampToHorizon()
+    {
+        return gsToSatClampToHorizon;
+    }
+
+    @Override
+    public void setGsToSatClampToHorizon(boolean clampToHorizon)
+    {
+        this.gsToSatClampToHorizon = clampToHorizon;
+        if (wwd.getView() instanceof GroundStationToSatView)
+        {
+            ((GroundStationToSatView) wwd.getView()).setClampToHorizon(clampToHorizon);
+        }
+    }
+
+    @Override
+    public boolean isGsToSatShowHud()
+    {
+        return gsToSatShowHud;
+    }
+
+    @Override
+    public void setGsToSatShowHud(boolean showHud)
+    {
+        this.gsToSatShowHud = showHud;
+        if (gsHudLayer != null)
+        {
+            gsHudLayer.setShowHud(showHud);
+        }
     }
 
     public double getModelViewNearClip()
@@ -1012,8 +1125,16 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     
     private void setupView()
     {
-        if(modelViewMode == false)
+        if(modelViewMode == false && gsToSatViewMode == false)
         { // Earth View mode
+            if (gsHudLayer != null)
+            {
+                gsHudLayer.setEnabled(false);
+            }
+            if (viewControlsLayer != null)
+            {
+                viewControlsLayer.setEnabled(true);
+            }
             AutoClipBasicOrbitView bov = new AutoClipBasicOrbitView();
             wwd.setView(bov);
             
@@ -1033,9 +1154,71 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
             this.getWwd().addSelectListener(new ViewControlsSelectListener(wwd, viewControlsLayer));
             
         } // Earth View mode
+        else if (gsToSatViewMode)
+        { // Ground Station to Satellite View mode
+            this.setViewModeECI(false);
+
+            if (!gsHash.containsKey(gsToSatGroundStation) && !gsHash.isEmpty())
+            {
+                gsToSatGroundStation = gsHash.keySet().iterator().next();
+            }
+            if (!satHash.containsKey(gsToSatSatellite) && !satHash.isEmpty())
+            {
+                gsToSatSatellite = satHash.keySet().iterator().next();
+            }
+
+            if (!gsHash.containsKey(gsToSatGroundStation) || !satHash.containsKey(gsToSatSatellite))
+            {
+                System.out.println("NO Current Ground Station or Satellite Selected, can't switch to GS->Sat Mode: "
+                        + gsToSatGroundStation + " -> " + gsToSatSatellite);
+                return;
+            }
+
+            GroundStation gs = gsHash.get(gsToSatGroundStation);
+            AbstractSatellite sat = satHash.get(gsToSatSatellite);
+
+            GroundStationToSatView gsView = new GroundStationToSatView(gs, sat, gsToSatClampToHorizon);
+
+            if (wwd.getInputHandler() instanceof AWTInputHandler)
+            {
+                ((AWTInputHandler) wwd.getInputHandler()).removeHoverSelectListener();
+            }
+            else if (wwd.getInputHandler() instanceof BasicModelViewInputHandler3)
+            {
+                ((BasicModelViewInputHandler3) wwd.getInputHandler()).removeHoverSelectListener();
+            }
+
+            wwd.setView(gsView);
+            wwd.getInputHandler().setEventSource(null);
+
+            GroundStationViewInputHandler gih = new GroundStationViewInputHandler();
+            gih.setEventSource(wwd);
+            wwd.setInputHandler(gih);
+            gih.setSmoothViewChanges(smoothViewChanges);
+
+            Configuration.setValue(AVKey.INPUT_HANDLER_CLASS_NAME,
+                    GroundStationViewInputHandler.class.getName());
+
+            if (gsHudLayer != null)
+            {
+                gsHudLayer.setShowHud(gsToSatShowHud);
+                gsHudLayer.setEnabled(true);
+            }
+            if (viewControlsLayer != null)
+            {
+                viewControlsLayer.setEnabled(false);
+            }
+        }
         else
         { // Model View mode
-            
+            if (gsHudLayer != null)
+            {
+                gsHudLayer.setEnabled(false);
+            }
+            if (viewControlsLayer != null)
+            {
+                viewControlsLayer.setEnabled(true);
+            }
             // TEST NEW VIEW -- TO MAKE WORK MUST TURN OFF ECI!
             this.setViewModeECI(false);
 
