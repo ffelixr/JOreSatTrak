@@ -28,6 +28,7 @@ package jsattrak.utilities;
 
 import java.awt.Point;
 import jsattrak.gui.J2DEarthPanel;
+import jsattrak.gui.J2DPolarEarthPanel;
 import jsattrak.gui.JSatTrak;
 import jsattrak.gui.SatPropertyPanel;
 import java.io.Serializable;
@@ -60,6 +61,7 @@ public class JstSaveClass implements Serializable
     
     // vectors for the windows to save:
     private Vector<J2DEarthPanelSave> twoDWindowSaveVec = new Vector<J2DEarthPanelSave>(); // 2D Panels
+    private Vector<J2DPolarEarthPanelSave> twoDPolarWindowSaveVec = new Vector<J2DPolarEarthPanelSave>(); // 2D Polar Panels
     private Vector<SatPropertyPanelSave> satPropWindowSaveVec = new Vector<SatPropertyPanelSave>(); // Property Panels
     private Vector<J3DEarthlPanelSave> threeDWindowSaveVec = new Vector<J3DEarthlPanelSave>(); // 3D Windows (internal)
     private Vector<J3DEarthlPanelSave> threeDExtWindowSaveVec = new Vector<J3DEarthlPanelSave>(); // 3d Windows (external)
@@ -134,6 +136,11 @@ public class JstSaveClass implements Serializable
                 // 2d panel
                 twoDWindowSaveVec.add( new J2DEarthPanelSave( (J2DEarthPanel)jif.getContentPane(), jif.getX(), jif.getY(), jif.getSize() ));
             }
+            else if( jif.getContentPane() instanceof J2DPolarEarthPanel )
+            {
+                // 2d polar panel
+                twoDPolarWindowSaveVec.add( new J2DPolarEarthPanelSave( (J2DPolarEarthPanel)jif.getContentPane(), jif.getX(), jif.getY(), jif.getSize() ));
+            }
             else if( jif.getContentPane() instanceof SatPropertyPanel)
             {
                 // property panel
@@ -187,6 +194,16 @@ public class JstSaveClass implements Serializable
     public void setTwoDWindowSaveVec(Vector<J2DEarthPanelSave> twoDWindowSaveVec)
     {
         this.twoDWindowSaveVec = twoDWindowSaveVec;
+    }
+
+    public Vector<J2DPolarEarthPanelSave> getTwoDPolarWindowSaveVec()
+    {
+        return twoDPolarWindowSaveVec;
+    }
+
+    public void setTwoDPolarWindowSaveVec(Vector<J2DPolarEarthPanelSave> twoDPolarWindowSaveVec)
+    {
+        this.twoDPolarWindowSaveVec = twoDPolarWindowSaveVec;
     }
 
     public Vector<SatPropertyPanelSave> getSatPropWindowSaveVec()

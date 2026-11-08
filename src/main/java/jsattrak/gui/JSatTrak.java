@@ -82,6 +82,7 @@ import jsattrak.objects.SatelliteTleSGP4;
 import jsattrak.utilities.ConsoleDialog;
 import jsattrak.utilities.CustomFileFilter;
 import jsattrak.utilities.J2DEarthPanelSave;
+import jsattrak.utilities.J2DPolarEarthPanelSave;
 import jsattrak.utilities.J3DEarthComponent;
 import jsattrak.utilities.J3DEarthlPanelSave;
 import jsattrak.utilities.JstSaveClass;
@@ -118,6 +119,8 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     // Vector<J2DEarthPanel> twoDWindowVec = new Vector();
     Vector<J2DEarthPanel> twoDWindowVec = new Vector<J2DEarthPanel>();
     int twoDWindowCount = 0; // running count (for naming)
+    Vector<J2DPolarEarthPanel> twoDPolarWindowVec = new Vector<J2DPolarEarthPanel>();
+    int twoDPolarWindowCount = 0; // running count (for naming)
     // Satellite property vector to store all the windows (so they can be updated)
     Vector<SatPropertyPanel> satPropWindowVec = new Vector<SatPropertyPanel>();
     // 3D windows
@@ -570,6 +573,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         showGSBrowserMenuItem = new javax.swing.JMenuItem();
         jSeparator5 = new javax.swing.JSeparator();
         new2DWindowMenuItem = new javax.swing.JMenuItem();
+        new2DPolarWindowMenuItem = new javax.swing.JMenuItem();
         newInternal3DWindowMenuItem = new javax.swing.JMenuItem();
         newExternal3DWindowMenuItem = new javax.swing.JMenuItem();
         jSeparator1 = new javax.swing.JSeparator();
@@ -1131,6 +1135,16 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
             }
         });
         new3DwindowMenu.add(new2DWindowMenuItem);
+
+        new2DPolarWindowMenuItem
+                .setIcon(new javax.swing.ImageIcon(getClass().getResource("/icons/other/gnome-mime-image.png"))); // NOI18N
+        new2DPolarWindowMenuItem.setText("New 2D Polar Window"); // NOI18N
+        new2DPolarWindowMenuItem.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                createNew2dPolarWindow();
+            }
+        });
+        new3DwindowMenu.add(new2DPolarWindowMenuItem);
 
         newInternal3DWindowMenuItem
                 .setIcon(new javax.swing.ImageIcon(getClass().getResource("/icons/other/emblem-web.png"))); // NOI18N
@@ -1744,6 +1758,31 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         return iframe; // return it if the user wants to set properties
     }
 
+    public JInternalFrame createNew2dPolarWindow() {
+        J2DPolarEarthPanel newPanel = new J2DPolarEarthPanel(satHash, gsHash, zoomIntoggleButton, zoomOuttoggleButton,
+                recenterToggleButton, currentJulianDate, sun, this);
+
+        twoDPolarWindowCount++;
+        String windowName = "2D Polar Window - " + twoDPolarWindowCount;
+        newPanel.setName(windowName);
+        twoDPolarWindowVec.add(newPanel);
+
+        JInternalFrame iframe = new JInternalFrame(windowName, true, true, true, true);
+        iframe.setContentPane(newPanel);
+        iframe.setSize(450, 470);
+        iframe.setLocation(25, 25);
+        iframe.setFrameIcon(new javax.swing.ImageIcon(getClass().getResource("/icons/logo/JSatTrakLogo_16.png")));
+        iframe.addInternalFrameListener(this);
+        iframe.setVisible(true);
+        mainDesktopPane.add(iframe);
+        try {
+            iframe.setSelected(true);
+        } catch (java.beans.PropertyVetoException e) {
+        }
+
+        return iframe;
+    }
+
     private JInternalFrame createNew3DInternalWindow() {
         threeDInternalWindowCount++;
         String windowName = "3D Earth Window - " + threeDInternalWindowCount;
@@ -1950,6 +1989,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         for (J2DEarthPanel twoDPanel : twoDWindowVec) {
             twoDPanel.repaint();
         }
+        for (J2DPolarEarthPanel twoDPolarPanel : twoDPolarWindowVec) {
+            twoDPolarPanel.repaint();
+        }
 
         // repaint 3D windows
         for (J3DEarthPanel threeDPanel : threeDWindowVec) {
@@ -2142,6 +2184,11 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
 
             panel = new JCreateMovieDialog(this, false,
                     (J2DEarthPanel) mainDesktopPane.getSelectedFrame().getContentPane(), this);
+        } else if (mainDesktopPane.getSelectedFrame().getContentPane() instanceof J2DPolarEarthPanel) { // if a 2d polar window
+
+            panel = new JCreateMovieDialog(this, false,
+                    mainDesktopPane.getSelectedFrame().getContentPane(), this,
+                    mainDesktopPane.getSelectedFrame().getContentPane().getName());
         } else // default container
         {
             panel = new JCreateMovieDialog(this, false, mainDesktopPane.getSelectedFrame().getContentPane(), this,
@@ -2350,6 +2397,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     public javax.swing.JDesktopPane mainDesktopPane;
     private javax.swing.JMenuItem movieWholeAppMenuItem;
     private javax.swing.JMenuItem new2DWindowMenuItem;
+    private javax.swing.JMenuItem new2DPolarWindowMenuItem;
     private javax.swing.JMenu new3DwindowMenu;
     private javax.swing.JMenuItem newExternal3DWindowMenuItem;
     private javax.swing.JMenuItem newInternal3DWindowMenuItem;
@@ -2403,6 +2451,10 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
             J2DEarthPanel closedEarthPanel = (J2DEarthPanel) (((JInternalFrame) e.getSource()).getContentPane());
             twoDWindowVec.remove(closedEarthPanel);
         } catch (Exception ee) {
+            if (((JInternalFrame) e.getSource()).getContentPane() instanceof J2DPolarEarthPanel) {
+                twoDPolarWindowVec.remove((J2DPolarEarthPanel) ((JInternalFrame) e.getSource()).getContentPane());
+                return;
+            }
             try {
                 // if not see if it was a SatPropertyPanel
                 SatPropertyPanel closedPropPanel = (SatPropertyPanel) (((JInternalFrame) e.getSource())
@@ -2687,6 +2739,12 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     } // getExtension
 
     public void open2dWindowOptions() {
+        if (mainDesktopPane.getSelectedFrame() != null
+                && mainDesktopPane.getSelectedFrame().getContentPane() instanceof J2DPolarEarthPanel) {
+            open2dPolarWindowOptions((J2DPolarEarthPanel) mainDesktopPane.getSelectedFrame().getContentPane());
+            return;
+        }
+
         if (mainDesktopPane.getSelectedFrame() == null
                 || !(mainDesktopPane.getSelectedFrame().getContentPane() instanceof J2DEarthPanel)) {
             JOptionPane.showInternalMessageDialog(mainDesktopPane, "A 2D window must be selected.", "ERROR",
@@ -2726,6 +2784,30 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         }
 
     } // open2dWindowOptions
+
+    public void open2dPolarWindowOptions(J2DPolarEarthPanel panel) {
+        if (panel == null) {
+            return;
+        }
+        Point pt = mainDesktopPane.getSelectedFrame() != null
+                ? mainDesktopPane.getSelectedFrame().getLocation()
+                : new Point(25, 25);
+
+        TwoDPolarViewPropertiesPanel propPanel = new TwoDPolarViewPropertiesPanel(panel, this);
+        JInternalFrame iframe = new JInternalFrame("2D Polar Window Prop.", true, true, true, true);
+        iframe.setContentPane(propPanel);
+        iframe.setSize(620, 410);
+        iframe.setLocation(pt.x + 15, pt.y + 20);
+        iframe.setFrameIcon(new javax.swing.ImageIcon(getClass().getResource("/icons/logo/JSatTrakLogo_16.png")));
+        propPanel.setInternalFrame(iframe);
+        iframe.addInternalFrameListener(this);
+        iframe.setVisible(true);
+        mainDesktopPane.add(iframe);
+        try {
+            iframe.setSelected(true);
+        } catch (java.beans.PropertyVetoException e) {
+        }
+    }
 
     public int getRealTimeAnimationRefreshRateMs() {
         return realTimeAnimationRefreshRateMs;
@@ -2836,6 +2918,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
 
         // clear other window Vectors in case they were not cleared correctly
         twoDWindowVec.clear();
+        twoDPolarWindowVec.clear();
         satPropWindowVec.clear();
         threeDWindowVec.clear();
         threeDInternalWindowVec.clear();
@@ -2845,6 +2928,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
 
         // window count reset
         twoDWindowCount = 0;
+        twoDPolarWindowCount = 0;
         threeDWindowCount = 0;
         threeDInternalWindowCount = 0;
 
@@ -2983,6 +3067,15 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                         J2DEarthPanel newPanel = twoDWindowVec.lastElement(); // get window just created
 
                         j2dp.copySettings2PanelAndFrame(newPanel, iframe); // copy settings to this window
+                    }
+
+                    // create all the needed 2D Polar windows:
+                    if (openClass.getTwoDPolarWindowSaveVec() != null) {
+                        for (J2DPolarEarthPanelSave j2dpp : openClass.getTwoDPolarWindowSaveVec()) {
+                            JInternalFrame iframe = createNew2dPolarWindow();
+                            J2DPolarEarthPanel newPanel = twoDPolarWindowVec.lastElement();
+                            j2dpp.copySettings2PanelAndFrame(newPanel, iframe);
+                        }
                     }
 
                     // create all the needed sat prop windows:
@@ -3494,6 +3587,10 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     public Vector<J2DEarthPanel> getTwoDWindowVec() {
         return twoDWindowVec;
 
+    }
+
+    public Vector<J2DPolarEarthPanel> getTwoDPolarWindowVec() {
+        return twoDPolarWindowVec;
     }
 
     public J2DEarthPanel getNonDisplayed2DEarthPanel(int height) {
