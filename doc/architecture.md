@@ -9,6 +9,7 @@ Key capabilities include:
 - **Coordinate Systems & Transformations**: Conversion across TEME (True Equator Mean Equinox), J2000 / ECI, ECEF (ITRF), topocentric AER (Azimuth, Elevation, Range), Geodetic (Lat, Lon, Alt).
 - **Multi-View Visualization**:
   - 2D equirectangular cartographic view (Java2D / Swing) displaying satellite footprints, day/night terminators, ground tracks, and ground stations.
+  - 2D polar projection view (Java2D / Swing) supporting North Pole, South Pole, and Dual-Pole azimuthal equidistant projections with vector landmass coastlines and polar lat/lon grids.
   - 3D interactive virtual globe rendering using NASA WorldWind Java (WWJ) and JOGL (OpenGL).
 - **Analysis Tools**: Pass prediction for ground stations, radar/optical look angles, sensor coverage mapping, ephemeris export, and MP4 video generation.
 - **Automation & Scripting**: Embedded BeanShell interpreter, socket/TCP remote control server (`jguiserver`), and headless execution support.

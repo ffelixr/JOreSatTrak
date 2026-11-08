@@ -39,6 +39,9 @@ src/main/java/
 |---|---|
 | [`JSatTrak`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/gui/JSatTrak.java) | Main entry point (`JFrame`). Coordinates the MDI desktop, simulation clock loop, object collections, toolbars, and menus. |
 | [`J2DEarthPanel`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/gui/J2DEarthPanel.java) | 2D cartographic view. Renders map projection, sub-satellite footprints, day/night line, and orbit ground tracks. |
+| [`J2DPolarEarthPanel`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/gui/J2DPolarEarthPanel.java) | 2D azimuthal equidistant polar projection view (North, South, and Dual-Pole modes) with vector coastlines, polar grid, solar terminator, ground tracks, and footprints. |
+| [`J2dPolarEarthLabel`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/gui/J2dPolarEarthLabel.java) | Java2D rendering component for the 2D polar projection discs and coordinate transformations. |
+| [`TwoDPolarViewPropertiesPanel`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/gui/TwoDPolarViewPropertiesPanel.java) | Configuration dialog panel for customizing 2D Polar Projection Window properties. |
 | [`J3DEarthPanel`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/gui/J3DEarthPanel.java) | 3D virtual globe using NASA WorldWind. Displays 3D orbit lines, ground stations, and Earth elevation. |
 | [`J3DEarthInternalPanel`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/gui/J3DEarthInternalPanel.java) | Internal frame wrapper for embedding 3D WorldWind windows inside the MDI desktop. |
 | [`JTrackingPanel`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/gui/JTrackingPanel.java) | Ground station pass tracker. Computes rise/set/culmination times, Az/El angles, Doppler shifts, and polar plots. |
@@ -90,6 +93,7 @@ src/main/java/
 | Class | Description |
 |---|---|
 | [`JstSaveClass`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/utilities/JstSaveClass.java) | Scenario serialization container. Serialized via XStream into `.jst` files. |
+| [`J2DPolarEarthPanelSave`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/utilities/J2DPolarEarthPanelSave.java) | Persistence state container for saving and restoring 2D Polar Projection windows in `.jst` scenario files. |
 | [`TLEDownloader`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/utilities/TLEDownloader.java) | Automated HTTP fetcher that downloads active satellite TLE lists from CelesTrak and Space-Track. |
 | [`OrbitModelRenderable`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/utilities/OrbitModelRenderable.java) | NASA WorldWind renderable pipeline for drawing orbital paths in 3D. |
 | [`ECEFModelRenderable`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/src/main/java/jsattrak/utilities/ECEFModelRenderable.java) | NASA WorldWind renderable for drawing 3D spacecraft bodies and pointing geometry. |
