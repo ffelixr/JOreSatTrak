@@ -258,7 +258,8 @@ public class TreeUtilities {
         public M nextElement() {
             Enumeration<M> enumer = stack.peek();
             M node = enumer.nextElement();
-            Enumeration<M> children = node.children();
+            @SuppressWarnings("unchecked")
+            Enumeration<M> children = (Enumeration<M>) (Enumeration<?>) node.children();
 
             if (!enumer.hasMoreElements()) {
                 stack.pop();
@@ -279,10 +280,11 @@ public class TreeUtilities {
         protected Enumeration<M> children;
         protected Enumeration<M> subtree;
 
+        @SuppressWarnings("unchecked")
         public PostorderNodeEnumeration(M rootNode) {
             super();
             root = rootNode;
-            children = root.children();
+            children = (Enumeration<M>) (Enumeration<?>) root.children();
             subtree = EMPTY_ENUMERATION;
         }
 
@@ -337,7 +339,8 @@ public class TreeUtilities {
             // look at head
             Enumeration<M> enumer = queue.peek();
             M node = enumer.nextElement();
-            Enumeration<M> children = node.children();
+            @SuppressWarnings("unchecked")
+            Enumeration<M> children = (Enumeration<M>) (Enumeration<?>) node.children();
             
             if (!enumer.hasMoreElements()) {
                 // remove head
