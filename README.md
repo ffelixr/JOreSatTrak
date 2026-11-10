@@ -102,20 +102,27 @@ mvn clean package -DskipTests
 ```
 
 ### Run:
-Use the universal launcher script on any supported OS:
+Use the launcher script for your platform:
+
+**macOS / Linux / Git Bash:**
 ```bash
 ./JOreSatTrak_run.sh
 ```
 
-#### Customizing the Launcher via Environment Variables
-The launcher script auto-detects the operating system (`macOS / Darwin`, `Linux`, `Windows / MinGW / Cygwin`) and honors the following environment variables:
+**Windows 11 / Windows (CMD, PowerShell, or double-click in Explorer):**
+```cmd
+JOreSatTrak_run.bat
+```
 
-| Variable | Description | Example |
-| :--- | :--- | :--- |
-| `JORE_JAVA_HOME` | Path to preferred JDK home | `export JORE_JAVA_HOME=/usr/lib/jvm/java-21` |
-| `JORE_JAVA_BIN` | Explicit path to `java` executable (overrides `JORE_JAVA_HOME`) | `export JORE_JAVA_BIN=/opt/jdk-21/bin/java` |
-| `JORE_JVM_OPTS` | Extra flags passed to the JVM | `export JORE_JVM_OPTS="-Xmx2g"` |
-| `JORE_JAR` | Custom path to packaged JAR | `export JORE_JAR=target/joresattrak-0.1.jar` |
+#### Customizing the Launcher via Environment Variables
+The launcher scripts (`JOreSatTrak_run.sh` and `JOreSatTrak_run.bat`) honor the following environment variables:
+
+| Variable | Description | Example (macOS/Linux) | Example (Windows) |
+| :--- | :--- | :--- | :--- |
+| `JORE_JAVA_HOME` | Path to preferred JDK home | `export JORE_JAVA_HOME=/usr/lib/jvm/java-21` | `set JORE_JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-17` |
+| `JORE_JAVA_BIN` | Explicit path to `java` executable (overrides `JORE_JAVA_HOME`) | `export JORE_JAVA_BIN=/opt/jdk-21/bin/java` | `set JORE_JAVA_BIN=C:\Java\jdk-17\bin\java.exe` |
+| `JORE_JVM_OPTS` | Extra flags passed to the JVM | `export JORE_JVM_OPTS="-Xmx2g"` | `set JORE_JVM_OPTS=-Xmx2g` |
+| `JORE_JAR` | Custom path to packaged JAR | `export JORE_JAR=target/joresattrak-0.1.jar` | `set JORE_JAR=target\joresattrak-0.1.jar` |
 
 On Linux / Windows, you can also launch the JAR directly:
 ```bash
