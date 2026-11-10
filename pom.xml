@@ -81,6 +81,30 @@
             <version>2.4.0</version>
             <classifier>natives-macosx-universal</classifier>
         </dependency>
+        <dependency>
+            <groupId>org.jogamp.gluegen</groupId>
+            <artifactId>gluegen-rt</artifactId>
+            <version>2.4.0</version>
+            <classifier>natives-windows-amd64</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.jogamp.jogl</groupId>
+            <artifactId>jogl-all</artifactId>
+            <version>2.4.0</version>
+            <classifier>natives-windows-amd64</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.jogamp.gluegen</groupId>
+            <artifactId>gluegen-rt</artifactId>
+            <version>2.4.0</version>
+            <classifier>natives-linux-amd64</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.jogamp.jogl</groupId>
+            <artifactId>jogl-all</artifactId>
+            <version>2.4.0</version>
+            <classifier>natives-linux-amd64</classifier>
+        </dependency>
         <!-- JOGL Utils (3D model loader) -->
         <dependency>
             <groupId>net.java.dev.jogl</groupId>

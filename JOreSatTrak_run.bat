@@ -83,8 +83,8 @@ if not defined JAVA_BIN (
 
 rem Base JVM options:
 rem   - Module opens required for AWT/Java2D and JOGL integration in Java 17+
-rem   - DirectDraw acceleration disabled to prevent OpenGL/DirectDraw clashes on Windows
-set DEFAULT_JVM_OPTS=--add-opens java.desktop/sun.awt=ALL-UNNAMED --add-opens java.desktop/sun.java2d=ALL-UNNAMED --add-opens java.desktop/sun.awt.windows=ALL-UNNAMED -Dsun.java2d.noddraw=true
+rem   - DirectDraw and background erase disabled to prevent OpenGL/DirectDraw clashes on Windows
+set DEFAULT_JVM_OPTS=--add-opens java.desktop/sun.awt=ALL-UNNAMED --add-opens java.desktop/sun.java2d=ALL-UNNAMED --add-opens java.desktop/sun.awt.windows=ALL-UNNAMED -Dsun.java2d.noddraw=true -Dsun.awt.noerasebackground=true
 
 echo [JOreSatTrak] Launching on Windows using: "%JAVA_BIN%"
 
