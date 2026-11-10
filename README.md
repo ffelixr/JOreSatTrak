@@ -44,6 +44,7 @@ This fork introduces significant modernization over the original JSatTrak:
 3. **Independent 3D Contexts**: Replaced obsolete shared-canvas context initialization (`WorldWindowGLCanvas` / `GLJPanel`) with decoupled GL initialization, resolving `IllegalStateException: Null shared GLContext` crashes and restoring full 3D Earth rendering in both internal and external windows.
 4. **Modern Java Tooling**: Full Apache Maven build lifecycle, deprecation cleanup, and compatibility with modern JDKs (Java 8 through Java 21).
 5. **2D Polar Projection Window**: Added a dedicated Azimuthal Equidistant 2D Polar Projection view (**Windows -> New 2D Polar Window**) supporting North Pole, South Pole, and Dual-Pole (North & South) modes, with vector landmass coastlines, concentric polar lat/lon grids, solar terminator shading, and continuous high-latitude ground track and footprint rendering across the poles and the $\pm 180^\circ$ meridian.
+6. **3D Ground Station-to-Satellite Viewport**: Added a first-person 3D observer camera mode (**Camera Following -> Ground Station to Sat** in 3D View Properties, or **3D GS->Sat View** in the Tracking Tool) that anchors the camera at a Ground Station and dynamically tracks a target Satellite with an antenna/telescope boresight HUD (reticle, cardinal compass markers, $0^\circ$ horizon and elevation-mask rings, live AER telemetry, horizon clamping, and interactive FOV zoom and angular offset controls).
 
 ---
 

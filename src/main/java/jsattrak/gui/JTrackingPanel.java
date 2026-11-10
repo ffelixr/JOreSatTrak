@@ -279,10 +279,12 @@ public class JTrackingPanel extends javax.swing.JPanel
         jScrollPane1 = new javax.swing.JScrollPane();
         aerTextArea = new javax.swing.JTextArea();
         refreshComboBoxesButton = new javax.swing.JButton();
+        open3dViewButton = new javax.swing.JButton();
         jPanel2 = new javax.swing.JPanel();
         jPolarPlotLabel = new jsattrak.gui.JPolarPlotLabel();
         jToolBar1 = new javax.swing.JToolBar();
         jButton1 = new javax.swing.JButton();
+        open3dViewPolarButton = new javax.swing.JButton();
         leadLagCheckBox = new javax.swing.JCheckBox();
         jCheckBox1 = new javax.swing.JCheckBox();
         jCheckBox2 = new javax.swing.JCheckBox();
@@ -339,6 +341,19 @@ public class JTrackingPanel extends javax.swing.JPanel
             }
         });
 
+        java.net.URL eyeIconUrl = getClass().getResource("/icons/other/eye24.png");
+        if (eyeIconUrl != null)
+        {
+            open3dViewButton.setIcon(new javax.swing.ImageIcon(eyeIconUrl));
+        }
+        open3dViewButton.setText("3D GS->Sat View"); // NOI18N
+        open3dViewButton.setToolTipText("Open 3D Ground Station to Satellite viewport"); // NOI18N
+        open3dViewButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                open3dGsToSatViewActionPerformed(evt);
+            }
+        });
+
         javax.swing.GroupLayout jPanel1Layout = new javax.swing.GroupLayout(jPanel1);
         jPanel1.setLayout(jPanel1Layout);
         jPanel1Layout.setHorizontalGroup(
@@ -356,7 +371,9 @@ public class JTrackingPanel extends javax.swing.JPanel
                             .addComponent(satComboBox, 0, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                             .addComponent(gsComboBox, 0, 169, Short.MAX_VALUE))
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                        .addComponent(refreshComboBoxesButton))
+                        .addComponent(refreshComboBoxesButton)
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                        .addComponent(open3dViewButton))
                     .addComponent(jLabel3))
                 .addContainerGap())
         );
@@ -377,7 +394,9 @@ public class JTrackingPanel extends javax.swing.JPanel
                         .addComponent(jLabel3))
                     .addGroup(jPanel1Layout.createSequentialGroup()
                         .addGap(24, 24, 24)
-                        .addComponent(refreshComboBoxesButton)))
+                        .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addComponent(refreshComboBoxesButton)
+                            .addComponent(open3dViewButton))))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 199, Short.MAX_VALUE)
                 .addContainerGap())
@@ -403,6 +422,20 @@ public class JTrackingPanel extends javax.swing.JPanel
             }
         });
         jToolBar1.add(jButton1);
+
+        if (eyeIconUrl != null)
+        {
+            open3dViewPolarButton.setIcon(new javax.swing.ImageIcon(eyeIconUrl));
+        }
+        open3dViewPolarButton.setText("3D View"); // NOI18N
+        open3dViewPolarButton.setToolTipText("Open 3D Ground Station to Satellite viewport"); // NOI18N
+        open3dViewPolarButton.setFocusable(false);
+        open3dViewPolarButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                open3dGsToSatViewActionPerformed(evt);
+            }
+        });
+        jToolBar1.add(open3dViewPolarButton);
 
         leadLagCheckBox.setSelected(true);
         leadLagCheckBox.setText("Lead/Lag Data"); // NOI18N
@@ -1137,6 +1170,14 @@ public class JTrackingPanel extends javax.swing.JPanel
     {//GEN-HEADEREND:event_jCheckBox5ActionPerformed
         jPolarPlotLabel.setUseCompassPoints(jCheckBox5.isSelected());
     }//GEN-LAST:event_jCheckBox5ActionPerformed
+
+    private void open3dGsToSatViewActionPerformed(java.awt.event.ActionEvent evt)
+    {
+        if (app != null && gsComboBox.getSelectedIndex() >= 0 && satComboBox.getSelectedIndex() >= 0)
+        {
+            app.open3dGsToSatWindow(gsComboBox.getSelectedItem().toString(), satComboBox.getSelectedItem().toString());
+        }
+    }
     
     /**
      * jumps time to the mid point of a pass
@@ -1238,6 +1279,8 @@ public class JTrackingPanel extends javax.swing.JPanel
     private javax.swing.JTabbedPane jTabbedPane1;
     private javax.swing.JToolBar jToolBar1;
     private javax.swing.JCheckBox leadLagCheckBox;
+    private javax.swing.JButton open3dViewButton;
+    private javax.swing.JButton open3dViewPolarButton;
     private javax.swing.JTable passTable;
     private javax.swing.JButton printTableButton;
     private javax.swing.JButton refreshComboBoxesButton;

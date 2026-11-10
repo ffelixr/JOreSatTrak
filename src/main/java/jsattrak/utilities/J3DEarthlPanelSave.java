@@ -63,6 +63,11 @@ public class J3DEarthlPanelSave implements Serializable
     private String modelViewString; // to hold name of satellite to view when modelViewMode=true
     private double modelViewNearClip; // clipping pland for when in Model View mode
     private double modelViewFarClip;
+    private boolean gsToSatViewMode;
+    private String gsToSatGroundStation;
+    private String gsToSatSatellite;
+    private boolean gsToSatClampToHorizon = true;
+    private boolean gsToSatShowHud = true;
     private boolean smoothViewChanges; // for 3D view smoothing
     // orbit clipping plans
     private double farClippingPlaneDistOrbit;
@@ -115,6 +120,11 @@ public class J3DEarthlPanelSave implements Serializable
         modelViewString = panel.getModelViewString(); // to hold name of satellite to view when modelViewMode=true
         modelViewNearClip = panel.getModelViewNearClip(); // clipping pland for when in Model View mode
         modelViewFarClip = panel.getModelViewFarClip();
+        gsToSatViewMode = panel.isGsToSatViewMode();
+        gsToSatGroundStation = panel.getGsToSatGroundStation();
+        gsToSatSatellite = panel.getGsToSatSatellite();
+        gsToSatClampToHorizon = panel.isGsToSatClampToHorizon();
+        gsToSatShowHud = panel.isGsToSatShowHud();
         //orbit view clipping planes
         farClippingPlaneDistOrbit = panel.getOrbitFarClipDistance();
         nearClippingPlaneDistOrbit = panel.getOrbitNearClipDistance();
@@ -193,7 +203,24 @@ public class J3DEarthlPanelSave implements Serializable
         newPanel.setModelViewString(modelViewString); // to hold name of satellite to view when modelViewMode=true
         newPanel.setModelViewNearClip(modelViewNearClip); // clipping pland for when in Model View mode
         newPanel.setModelViewFarClip(modelViewFarClip);
-        newPanel.setModelViewMode(modelViewMode);  // set last! (in model view mode section)
+        if (gsToSatGroundStation != null)
+        {
+            newPanel.setGsToSatGroundStation(gsToSatGroundStation);
+        }
+        if (gsToSatSatellite != null)
+        {
+            newPanel.setGsToSatSatellite(gsToSatSatellite);
+        }
+        newPanel.setGsToSatClampToHorizon(gsToSatClampToHorizon);
+        newPanel.setGsToSatShowHud(gsToSatShowHud);
+        if (gsToSatViewMode)
+        {
+            newPanel.setGsToSatViewMode(true);
+        }
+        else
+        {
+            newPanel.setModelViewMode(modelViewMode);  // set last! (in model view mode section)
+        }
         try
         {
             //orbit view clipping planes

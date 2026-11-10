@@ -39,6 +39,7 @@ import com.jogamp.opengl.GL2;
 import jsattrak.objects.AbstractSatellite;
 import jsattrak.objects.GroundStation;
 import name.gano.worldwind.geom.SphereObject;
+import name.gano.worldwind.view.GroundStationToSatView;
 
 
 /**
@@ -186,9 +187,23 @@ public class ECEFModelRenderable implements Renderable
         } // for each sat
 
         // for each GroundStation
-        // for each satellite
+        GroundStation activeObserverGs = null;
+        AbstractSatellite activeTargetSat = null;
+        GroundStationToSatView gsView = null;
+        if (dc.getView() instanceof GroundStationToSatView)
+        {
+            gsView = (GroundStationToSatView) dc.getView();
+            activeObserverGs = gsView.getGroundStation();
+            activeTargetSat = gsView.getSatellite();
+        }
+
         for(GroundStation gs : gsHash.values() ) // search through all sat nodes
         {
+            if (activeObserverGs != null && (gs == activeObserverGs || gs.getStationName().equals(activeObserverGs.getStationName())))
+            {
+                // Skip rendering the 100 km marker sphere around the active observer camera
+                continue;
+            }
             if(gs.isShow3D())
             {
                 // for now just plop down a sphere for the GS
@@ -206,12 +221,46 @@ public class ECEFModelRenderable implements Renderable
                     GlobeAnnotation an = new GlobeAnnotation(gs.getStationName(), Position.fromDegrees(gs.getLatitude(), gs.getLongitude(), gs.getAltitude()), geoAttr);
                     // annotation - without any attribs, gives a bubble box
                     // annotation doesn't strech well in GLCanvas
+                    // annotation doesn't strech well in GLCanvas
                     //GlobeAnnotation an = new GlobeAnnotation(gs.getStationName(), Position.fromDegrees(gs.getLatitude(), gs.getLongitude(), gs.getAltitude()));
                     an.render(dc);
                 }
                 
             } // show GS in 3D
         } // for each ground station
+
+        // Draw 3D Line-of-Sight ray from active observer Ground Station to target Satellite
+        if (gsView != null && activeObserverGs != null && activeTargetSat != null && gsView.isValidTrackingData())
+        {
+            Vec4 gsPt = globe.computePointFromPosition(
+                    Angle.fromDegrees(activeObserverGs.getLatitude()),
+                    Angle.fromDegrees(activeObserverGs.getLongitude()),
+                    activeObserverGs.getAltitude());
+            Vec4 satPt = globe.computePointFromPosition(
+                    Angle.fromRadiansLatitude(activeTargetSat.getLatitude()),
+                    Angle.fromRadiansLongitude(activeTargetSat.getLongitude()),
+                    activeTargetSat.getAltitude());
+            if (gsPt != null && satPt != null)
+            {
+                if (gsView.isTargetAboveElevationMask())
+                {
+                    gl.glColor4f(0.25f, 0.95f, 0.45f, 0.85f);
+                }
+                else if (gsView.isTargetAboveHorizon())
+                {
+                    gl.glColor4f(1.0f, 0.78f, 0.20f, 0.85f);
+                }
+                else
+                {
+                    gl.glColor4f(1.0f, 0.35f, 0.35f, 0.75f);
+                }
+                gl.glLineWidth(1.5f);
+                gl.glBegin(GL.GL_LINES);
+                gl.glVertex3d(gsPt.x, gsPt.y, gsPt.z);
+                gl.glVertex3d(satPt.x, satPt.y, satPt.z);
+                gl.glEnd();
+            }
+        }
         
         // LOCATION OF SAT - and orientation
                    // plot position 

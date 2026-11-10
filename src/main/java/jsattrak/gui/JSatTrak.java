@@ -1783,6 +1783,39 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         return iframe;
     }
 
+    /**
+     * Opens or reconfigures a 3D Earth Window in Ground Station to Satellite viewport mode
+     * for the specified Ground Station and Satellite.
+     *
+     * @param gsName  Ground Station name
+     * @param satName Satellite name
+     */
+    public void open3dGsToSatWindow(String gsName, String satName) {
+        if (gsName == null || satName == null) {
+            return;
+        }
+        jsattrak.utilities.J3DEarthComponent targetPanel = null;
+        if (!threeDInternalWindowVec.isEmpty()) {
+            targetPanel = threeDInternalWindowVec.lastElement();
+        } else if (!threeDWindowVec.isEmpty()) {
+            targetPanel = threeDWindowVec.lastElement();
+        } else {
+            JInternalFrame iframe = createNew3DInternalWindow();
+            if (iframe != null && iframe.getContentPane() instanceof jsattrak.utilities.J3DEarthComponent) {
+                targetPanel = (jsattrak.utilities.J3DEarthComponent) iframe.getContentPane();
+            }
+        }
+
+        if (targetPanel != null) {
+            targetPanel.setGsToSatGroundStation(gsName);
+            targetPanel.setGsToSatSatellite(satName);
+            targetPanel.setGsToSatClampToHorizon(true);
+            targetPanel.setGsToSatShowHud(true);
+            targetPanel.setGsToSatViewMode(true);
+            forceRepainting(false);
+        }
+    }
+
     private JInternalFrame createNew3DInternalWindow() {
         threeDInternalWindowCount++;
         String windowName = "3D Earth Window - " + threeDInternalWindowCount;
