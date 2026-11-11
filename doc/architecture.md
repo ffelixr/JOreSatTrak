@@ -220,15 +220,18 @@ Modes supported:
 
 ## 4. Key Dependencies & Build System
 
-The project is built and managed via Maven (`pom.xml`):
+The project is built and managed via Apache Maven (`pom.xml`), combining dependencies from Maven Central with an in-project local repository (`repo/`) for legacy and custom-packaged artifacts:
 
-| Dependency | Purpose | Details |
-|---|---|---|
-| **Java SE 8** | Runtime / Language Target | Configured in `maven-compiler-plugin` |
-| **NASA WorldWind (0.6.0)** | 3D Globe Rendering | High-performance virtual globe GIS |
-| **JOGL (1.1.1) / GlueGen (1.0b06)** | OpenGL Bindings | Java-to-native OpenGL bindings for WWJ |
-| **FlatLaf (3.5.4)** | User Interface Look and Feel | Modern cross-platform Swing UI |
-| **Jama (1.0.2)** | Linear Algebra Matrix Math | Matrix decompositions and coordinate vectors |
-| **JCodec (0.2.5)** | Video Rendering | Pure-Java MP4 video export |
-| **XStream (1.3) & XPP3 (1.1.4c)** | XML Serialization | Saving and loading `.jst` project files |
-| **BeanShell (2.0b4-seg)** | Dynamic Scripting | Embedded Java syntax interpreter |
+| Dependency | Version | Source | Purpose |
+|---|---|---|---|
+| **Java SE 17** | `17` | JDK | Runtime & compiler release target (`maven-compiler-plugin`) |
+| **Orekit** | `13.1.8` | Maven Central | Space dynamics, numerical/analytical orbit propagation, and IERS frames |
+| **Hipparchus** | `4.0.3` | Maven Central *(transitive)* | Mathematical foundation (ODE solvers, geometry, linear algebra) |
+| **NASA WorldWind Java (`worldwind`, `worldwindx`)** | `2.2.1` | Local `repo/` | 3D virtual globe GIS rendering |
+| **JogAmp JOGL (`jogl-all`) & GlueGen (`gluegen-rt`)** | `2.6.0` | Local `repo/` | OpenGL bindings & native libraries (`macosx-universal` [arm64 + x86_64], `windows-amd64`, `linux-amd64`, `linux-aarch64`) |
+| **JOGL Utils (`joglutils`)** | `1.0` | Local `repo/` | Legacy 3D `.3ds`/`.obj` model loader |
+| **FlatLaf** | `3.5.4` | Maven Central | Modern cross-platform light/dark Swing Look and Feel |
+| **Jama** | `1.0.2` | Maven Central | Legacy linear algebra matrix decompositions and vectors |
+| **JCodec (`jcodec`, `jcodec-javase`)** | `0.2.5` | Maven Central | Pure-Java MP4 video export |
+| **XStream & XPP3** | `1.3` / `1.1.4c` | Maven Central | XML serialization for `.jst` scenario files |
+| **BeanShell (`bsh`)** | `2.0b4-seg` | Local `repo/` | Custom-built embedded Java scripting console |

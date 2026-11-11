@@ -39,46 +39,55 @@ Third-party software libraries and their respective copyright notices and licens
 
 This fork introduces significant modernization over the original JSatTrak:
 
-1. **Orekit Space Dynamics Engine**: Replaced custom legacy propagation routines with the industry-standard, flight-proven Orekit library.
-2. **NASA WorldWind 2.2.1 & JOGL 2.4.0**: Upgraded from legacy WorldWind 0.5.0 and JOGL 1.1.1 to WorldWind 2.2.1 and JogAmp JOGL 2.4.0, resolving major OpenGL rendering and modern display pipeline incompatibilities.
+1. **Orekit Space Dynamics Engine**: Replaced custom legacy propagation routines with the industry-standard, flight-proven Orekit library (`13.1.8` / Hipparchus `4.0.3`).
+2. **NASA WorldWind 2.2.1 & JOGL 2.6.0**: Upgraded from legacy WorldWind 0.5.0/0.6.0 and JOGL 1.1.1 to WorldWind 2.2.1 and JogAmp JOGL 2.6.0, resolving OpenGL rendering incompatibilities, HiDPI/Retina display scaling issues, and adding native ARM64 / Apple Silicon support.
 3. **Independent 3D Contexts**: Replaced obsolete shared-canvas context initialization (`WorldWindowGLCanvas` / `GLJPanel`) with decoupled GL initialization, resolving `IllegalStateException: Null shared GLContext` crashes and restoring full 3D Earth rendering in both internal and external windows.
-4. **Modern Java Tooling**: Full Apache Maven build lifecycle, deprecation cleanup, and compatibility with modern JDKs (Java 8 through Java 21).
+4. **Modern Java Tooling**: Full Apache Maven build lifecycle targeting Java 17 (`maven.compiler.release=17`), deprecation cleanup, and compatibility with modern JDKs (Java 17, 21+).
 5. **2D Polar Projection Window**: Added a dedicated Azimuthal Equidistant 2D Polar Projection view (**Windows -> New 2D Polar Window**) supporting North Pole, South Pole, and Dual-Pole (North & South) modes, with vector landmass coastlines, concentric polar lat/lon grids, solar terminator shading, and continuous high-latitude ground track and footprint rendering across the poles and the $\pm 180^\circ$ meridian.
 6. **3D Ground Station-to-Satellite Viewport**: Added a first-person 3D observer camera mode (**Camera Following -> Ground Station to Sat** in 3D View Properties, or **3D GS->Sat View** in the Tracking Tool) that anchors the camera at a Ground Station and dynamically tracks a target Satellite with an antenna/telescope boresight HUD (reticle, cardinal compass markers, $0^\circ$ horizon and elevation-mask rings, live AER telemetry, horizon clamping, and interactive FOV zoom and angular offset controls).
 
 ---
 
+## Project Dependencies
+
+The project is built with **Apache Maven** (`pom.xml`) targeting **Java 17+**. Dependencies are resolved from Maven Central and the self-contained in-project local Maven repository ([`repo/`](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/repo)) for offline/reproducible builds:
+
+| Library | Version | Source | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Orekit** | `13.1.8` | Maven Central | High-fidelity astrodynamics, numerical/analytical orbit propagation, and coordinate frames |
+| **Hipparchus** | `4.0.3` | Maven Central *(via Orekit)* | Mathematics, ODE integrators, linear algebra, and geometry |
+| **NASA WorldWind Java (`worldwind`, `worldwindx`)** | `2.2.1` | Local `repo/` | 3D virtual globe GIS rendering |
+| **JogAmp JOGL (`jogl-all`) & GlueGen (`gluegen-rt`)** | `2.6.0` | Local `repo/` | OpenGL bindings & native libraries (`macosx-universal` [arm64 + x86_64], `windows-amd64`, `linux-amd64`, `linux-aarch64`) |
+| **JOGL Utils (`joglutils`)** | `1.0` | Local `repo/` | Legacy 3D `.3ds`/`.obj` model parsing |
+| **FlatLaf** | `3.5.4` | Maven Central | Modern light/dark Swing Look and Feel |
+| **JCodec (`jcodec`, `jcodec-javase`)** | `0.2.5` | Maven Central | Pure-Java MP4 video export |
+| **JAMA** | `1.0.2` | Maven Central | Legacy matrix algebra utilities |
+| **XStream & XPP3** | `1.3` / `1.1.4c` | Maven Central | XML serialization for `.jst` scenario files |
+| **BeanShell (`bsh`)** | `2.0b4-seg` | Local `repo/` | Embedded Java scripting console |
+
+---
+
 ## macOS & Apple Silicon (arm64) Considerations
 
-NASA WorldWind Java (WWJ 2.2.1) and JogAmp JOGL (2.4.0) rely on native compiled OpenGL binaries (`gluegen-rt` and `jogl-all`). On macOS, particularly on Apple Silicon (M1/M2/M3/M4 chips, `arm64`):
+NASA WorldWind Java (WWJ 2.2.1) and JogAmp JOGL (2.6.0) rely on native OpenGL binaries (`gluegen-rt` and `jogl-all`).
 
-### Native Architecture Requirement
-- JOGL 2.4.0 and JAWT integration require an **`x86_64` (Intel 64-bit)** Java runtime environment when running on macOS.
-- If executed under a native `arm64` JVM, JOGL will fail with an `UnsatisfiedLinkError` or `RuntimeException: Unable to initialize JAWT` because the native libraries provided for macOS OpenGL bindings are compiled for `x86_64` (or universal x86_64/i386).
-
-### Running on Apple Silicon (macOS arm64)
-To run JOreSatTrak seamlessly on Apple Silicon Macs, run the application using an **`x86_64` JDK via Rosetta 2**:
-
-1. Ensure Rosetta 2 is installed:
-   ```bash
-   softwareupdate --install-rosetta
-   ```
-2. Install an `x86_64` JDK (such as Eclipse Temurin 17 or 21 x86_64). For example:
-   ```bash
-   # Using Homebrew (specify x86_64 architecture)
-   arch -x86_64 brew install --cask temurin@21
-   ```
-3. Run the application via `arch -x86_64` or the provided launcher script:
-   ```bash
-   ./JOreSatTrak_run.sh
-   ```
-   Or manually:
-   ```bash
-   arch -x86_64 /Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java \
-     --add-opens java.desktop/sun.awt=ALL-UNNAMED \
-     --add-opens java.desktop/sun.java2d=ALL-UNNAMED \
-     -jar target/joresattrak-0.1.jar
-   ```
+* **Native Apple Silicon Support:** JOGL 2.6.0 ships `natives-macosx-universal` containing true universal Mach-O binaries with both **`arm64`** and **`x86_64`** slices, as well as Retina/HiDPI display scaling fixes.
+* **No Rosetta 2 Required:** Apple Silicon Macs (M1/M2/M3/M4) run natively using a standard `arm64` JDK (Java 17 or 21+) without `arch -x86_64` emulation.
+* **Java Module Access (`--add-opens`):** On Java 17+, JOGL requires reflective access to internal AWT/Java2D and NIO packages. Use the provided launcher script or include the module flags manually:
+  ```bash
+  ./JOreSatTrak_run.sh
+  ```
+  Or manually:
+  ```bash
+  java \
+    --add-opens java.desktop/sun.awt=ALL-UNNAMED \
+    --add-opens java.desktop/sun.java2d=ALL-UNNAMED \
+    --add-opens java.desktop/java.awt=ALL-UNNAMED \
+    --add-opens java.desktop/javax.swing=ALL-UNNAMED \
+    --add-opens java.base/java.lang=ALL-UNNAMED \
+    --add-opens java.base/java.nio=ALL-UNNAMED \
+    -jar target/joresattrak-0.1.jar
+  ```
 
 ---
 
@@ -86,14 +95,14 @@ To run JOreSatTrak seamlessly on Apple Silicon Macs, run the application using a
 
 - **[System Architecture](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/doc/architecture.md)**: Detailed breakdown of subsystems, data flows, and design patterns.
 - **[Component Reference](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/doc/components.md)**: Index of key classes and modules.
-- **[Original Notes](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/README.txt)**: Historical notes and references from the original JSatTrak distribution.
+- **[Original Notes](file:///Users/ffelix/Movistar%20Cloud/Workspaces/Java/JSatTrak/doc/original_jsattrak/README.txt)**: Historical notes and references from the original JSatTrak distribution.
 
 ---
 
 ## Building and Running
 
 ### Prerequisites
-- Java JDK 8 or higher (`x86_64` on macOS)
+- Java JDK 17 or higher (native `arm64` or `x86_64` on macOS, Windows, and Linux)
 - Maven 3.6+
 
 ### Build:
