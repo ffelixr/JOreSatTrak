@@ -5,9 +5,8 @@ set -e
 # JOreSatTrak Launch Script
 #
 # Supports:
-#   - macOS (Darwin): Defaults to x86_64 Java runtime under Rosetta 2
-#                     (required by JOGL 2.4.0 / NASA WorldWind macOS binaries)
-#   - Linux: Native Java execution
+#   - macOS (Darwin): Native ARM64 (Apple Silicon) and x86_64 execution with JOGL 2.6.0
+#   - Linux: Native Java execution (x86_64 / aarch64)
 #   - Windows (Git Bash, MSYS2, Cygwin, MINGW): Native Java execution
 #
 # Customization Environment Variables:
@@ -35,6 +34,10 @@ OS_TYPE="$(uname -s 2>/dev/null || echo "Unknown")"
 DEFAULT_JVM_OPTS=(
   --add-opens java.desktop/sun.awt=ALL-UNNAMED
   --add-opens java.desktop/sun.java2d=ALL-UNNAMED
+  --add-opens java.desktop/java.awt=ALL-UNNAMED
+  --add-opens java.desktop/javax.swing=ALL-UNNAMED
+  --add-opens java.base/java.lang=ALL-UNNAMED
+  --add-opens java.base/java.nio=ALL-UNNAMED
 )
 
 # Resolve Java binary
@@ -65,21 +68,11 @@ resolve_java_bin() {
 
 case "$OS_TYPE" in
   Darwin*)
-    # macOS: Default to Temurin x86_64 if not specified
-    if [ -z "$JORE_JAVA_BIN" ] && [ -z "$JORE_JAVA_HOME" ] && [ -z "$JAVA_HOME" ]; then
-      MAC_DEFAULT_X86_JAVA="/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java"
-      if [ -x "$MAC_DEFAULT_X86_JAVA" ]; then
-        JAVA_BIN="$MAC_DEFAULT_X86_JAVA"
-      else
-        JAVA_BIN="$(resolve_java_bin)"
-      fi
-    else
-      JAVA_BIN="$(resolve_java_bin)"
-    fi
+    JAVA_BIN="$(resolve_java_bin)"
 
     if [ -z "$JAVA_BIN" ] || [ ! -x "$JAVA_BIN" ]; then
       echo "Error: Java executable not found."
-      echo "Please set JORE_JAVA_HOME or JORE_JAVA_BIN to an x86_64 JDK installation."
+      echo "Please install Java 17+ or set JORE_JAVA_HOME / JORE_JAVA_BIN / JAVA_HOME."
       exit 1
     fi
 
@@ -87,18 +80,10 @@ case "$OS_TYPE" in
     HOST_ARCH="$(uname -m)"
     echo "[JOreSatTrak] Launching on macOS ($HOST_ARCH) using: $JAVA_BIN"
 
-    if [ "$HOST_ARCH" = "arm64" ]; then
-      # Execute through Rosetta 2 x86_64 emulator for JOGL native compatibility
-      exec arch -x86_64 "$JAVA_BIN" \
-        "${DEFAULT_JVM_OPTS[@]}" \
-        ${JORE_JVM_OPTS} \
-        -jar "$JAR_FILE" "$@"
-    else
-      exec "$JAVA_BIN" \
-        "${DEFAULT_JVM_OPTS[@]}" \
-        ${JORE_JVM_OPTS} \
-        -jar "$JAR_FILE" "$@"
-    fi
+    exec "$JAVA_BIN" \
+      "${DEFAULT_JVM_OPTS[@]}" \
+      ${JORE_JVM_OPTS} \
+      -jar "$JAR_FILE" "$@"
     ;;
 
   Linux*)

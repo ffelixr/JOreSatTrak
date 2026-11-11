@@ -14,6 +14,7 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>17</maven.compiler.release>
+        <jogl.version>2.6.0</jogl.version>
     </properties>
 
     <repositories>
@@ -58,52 +59,64 @@
             <version>3.5.4</version>
         </dependency>
 
-        <!-- JOGL 2 / GlueGen (JogAmp 2.4.0) -->
+        <!-- JOGL 2 / GlueGen (JogAmp 2.6.0) -->
         <dependency>
             <groupId>org.jogamp.gluegen</groupId>
             <artifactId>gluegen-rt</artifactId>
-            <version>2.4.0</version>
+            <version>${jogl.version}</version>
         </dependency>
         <dependency>
             <groupId>org.jogamp.jogl</groupId>
             <artifactId>jogl-all</artifactId>
-            <version>2.4.0</version>
+            <version>${jogl.version}</version>
         </dependency>
         <dependency>
             <groupId>org.jogamp.gluegen</groupId>
             <artifactId>gluegen-rt</artifactId>
-            <version>2.4.0</version>
+            <version>${jogl.version}</version>
             <classifier>natives-macosx-universal</classifier>
         </dependency>
         <dependency>
             <groupId>org.jogamp.jogl</groupId>
             <artifactId>jogl-all</artifactId>
-            <version>2.4.0</version>
+            <version>${jogl.version}</version>
             <classifier>natives-macosx-universal</classifier>
         </dependency>
         <dependency>
             <groupId>org.jogamp.gluegen</groupId>
             <artifactId>gluegen-rt</artifactId>
-            <version>2.4.0</version>
+            <version>${jogl.version}</version>
             <classifier>natives-windows-amd64</classifier>
         </dependency>
         <dependency>
             <groupId>org.jogamp.jogl</groupId>
             <artifactId>jogl-all</artifactId>
-            <version>2.4.0</version>
+            <version>${jogl.version}</version>
             <classifier>natives-windows-amd64</classifier>
         </dependency>
         <dependency>
             <groupId>org.jogamp.gluegen</groupId>
             <artifactId>gluegen-rt</artifactId>
-            <version>2.4.0</version>
+            <version>${jogl.version}</version>
             <classifier>natives-linux-amd64</classifier>
         </dependency>
         <dependency>
             <groupId>org.jogamp.jogl</groupId>
             <artifactId>jogl-all</artifactId>
-            <version>2.4.0</version>
+            <version>${jogl.version}</version>
             <classifier>natives-linux-amd64</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.jogamp.gluegen</groupId>
+            <artifactId>gluegen-rt</artifactId>
+            <version>${jogl.version}</version>
+            <classifier>natives-linux-aarch64</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.jogamp.jogl</groupId>
+            <artifactId>jogl-all</artifactId>
+            <version>${jogl.version}</version>
+            <classifier>natives-linux-aarch64</classifier>
         </dependency>
         <!-- JOGL Utils (3D model loader) -->
         <dependency>
