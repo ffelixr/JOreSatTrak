@@ -624,6 +624,13 @@ public class SatelliteTleSGP4 extends AbstractSatellite {
         return tle.getSatName();
     }
 
+    /**
+     * Returns the underlying TLE associated with this satellite.
+     */
+    public TLE getTle() {
+        return tle;
+    }
+
     public double[] getKeplarianElements() {
         return Kepler.SingularOsculatingElements(AstroConst.GM_Earth, j2kPos, j2kVel);
     }

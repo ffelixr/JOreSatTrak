@@ -206,7 +206,10 @@ public final class PayloadTleMatcher {
         return new DesignatorParts(prefix, prefix + piece);
     }
 
-    static int extractNoradId(TLE tle) {
+    /**
+     * Extracts the numeric NORAD catalog ID (supporting Alpha-5 encoding) from TLE Line 1.
+     */
+    public static int extractNoradId(TLE tle) {
         if (tle == null || tle.getLine1() == null) {
             return 0;
         }
