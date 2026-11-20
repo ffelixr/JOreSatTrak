@@ -67,6 +67,7 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
         // setup options window with currently selected options
         bgColorPanel.setBackground( j2dpanel.getBackgroundColor() );
         latLongLinesCheckBox.setSelected( j2dpanel.getShowLatLonLines()  );
+        showUpcomingLaunchesCheckBox.setSelected( j2dpanel.isShowUpcomingLaunches() );
         
 //        if(j2dpanel.getImageMapNum() == 0)
 //        {
@@ -150,6 +151,7 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
         bgColorPanel = new javax.swing.JPanel();
         bgColorButton = new javax.swing.JButton();
         latLongLinesCheckBox = new javax.swing.JCheckBox();
+        showUpcomingLaunchesCheckBox = new javax.swing.JCheckBox();
         jLabel1 = new javax.swing.JLabel();
         zoomIncrementTextField = new javax.swing.JTextField();
         fastImageScalingRadioButton = new javax.swing.JRadioButton();
@@ -228,6 +230,11 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
         latLongLinesCheckBox.setText("Show Lat/Long Lines");
         latLongLinesCheckBox.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 0, 0, 0));
         latLongLinesCheckBox.setMargin(new java.awt.Insets(0, 0, 0, 0));
+
+        showUpcomingLaunchesCheckBox.setText("Show Upcoming Launches");
+        showUpcomingLaunchesCheckBox.setSelected(true);
+        showUpcomingLaunchesCheckBox.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 0, 0, 0));
+        showUpcomingLaunchesCheckBox.setMargin(new java.awt.Insets(0, 0, 0, 0));
 
         jLabel1.setText("Zoom Increment Factor:");
 
@@ -611,7 +618,9 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
                                     .addComponent(jPanel3, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                                     .addGroup(layout.createSequentialGroup()
                                         .addContainerGap()
-                                        .addComponent(latLongLinesCheckBox)))
+                                        .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                                            .addComponent(latLongLinesCheckBox)
+                                            .addComponent(showUpcomingLaunchesCheckBox))))
                                 .addGap(6, 6, 6))
                             .addGroup(layout.createSequentialGroup()
                                 .addContainerGap()
@@ -640,7 +649,9 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
                     .addComponent(bgColorButton, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
                 .addGap(18, 18, 18)
                 .addComponent(latLongLinesCheckBox)
-                .addGap(24, 24, 24)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(showUpcomingLaunchesCheckBox)
+                .addGap(12, 12, 12)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(jLabel1)
                     .addComponent(zoomIncrementTextField, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
@@ -774,7 +785,10 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
         
         
         // force repaint
-        app.forceRepainting(updateMaps);
+        if (app != null)
+        {
+            app.forceRepainting(updateMaps);
+        }
         
         // close internal frame
         try
@@ -790,7 +804,10 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
         boolean updateMaps = saveSettings();
         
         // force repaint
-        app.forceRepainting(updateMaps);
+        if (app != null)
+        {
+            app.forceRepainting(updateMaps);
+        }
         
     }//GEN-LAST:event_applyButtonActionPerformed
 
@@ -880,6 +897,7 @@ private void imageBrowseButtonActionPerformed(java.awt.event.ActionEvent evt) {/
     private javax.swing.JComboBox regionsComboBox;
     private javax.swing.JCheckBox showDarknessCheckBox;
     private javax.swing.JCheckBox showDatTimeCheckBox;
+    private javax.swing.JCheckBox showUpcomingLaunchesCheckBox;
     private javax.swing.JRadioButton smoothScalingRadioButton;
     private javax.swing.JButton sunColorButton;
     private javax.swing.JPanel sunColorPanel;
@@ -896,6 +914,7 @@ private void imageBrowseButtonActionPerformed(java.awt.event.ActionEvent evt) {/
         // setup options window with currently selected options
         j2dpanel.setBackgroundColor( bgColorPanel.getBackground() );
         j2dpanel.setShowLatLonLines( latLongLinesCheckBox.isSelected()  );
+        j2dpanel.setShowUpcomingLaunches( showUpcomingLaunchesCheckBox.isSelected() );
         
 //        if(blueMarbleImageRadioButton.isSelected() )
 //        {

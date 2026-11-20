@@ -24,6 +24,7 @@ package jsattrak.utilities;
 import gov.nasa.worldwind.WorldWindow;
 import gov.nasa.worldwind.layers.LayerList;
 import java.awt.Point;
+import jsattrak.awareness.LiveAwarenessService;
 import jsattrak.gui.JSatTrak;
 import name.gano.worldwind.geom.ECIRadialGrid;
 import name.gano.worldwind.layers.Earth.EcefTimeDepRenderableLayer;
@@ -85,5 +86,12 @@ public interface  J3DEarthComponent
     public void setGsToSatClampToHorizon(boolean clampToHorizon);
     public boolean isGsToSatShowHud();
     public void setGsToSatShowHud(boolean showHud);
+    // Live Awareness launch overlay
+    public void setAwarenessService(LiveAwarenessService service);
+    public void centerOnLatLon(double latDeg, double lonDeg);
+    public boolean isShowUpcomingLaunches();
+    public void setShowUpcomingLaunches(boolean enabled);
+    public void refreshLaunchOverlay(long simEpochMillis);
+    public void dispose();
 
 }

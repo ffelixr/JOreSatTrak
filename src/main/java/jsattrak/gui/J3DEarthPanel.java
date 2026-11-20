@@ -92,6 +92,7 @@ import javax.swing.UIManager;
 import javax.swing.border.TitledBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import jsattrak.awareness.LiveAwarenessService;
 import jsattrak.coverage.CoverageAnalyzer;
 import jsattrak.objects.AbstractSatellite;
 import jsattrak.utilities.ECEFModelRenderable;
@@ -106,6 +107,7 @@ import name.gano.worldwind.layers.Earth.ECEFRenderableLayer;
 import name.gano.worldwind.layers.Earth.ECIRenderableLayer;
 import name.gano.worldwind.layers.Earth.EcefTimeDepRenderableLayer;
 import name.gano.worldwind.layers.Earth.GroundStationHudLayer;
+import name.gano.worldwind.layers.Earth.LaunchSitesLayer;
 import name.gano.worldwind.sunshader.CustomSunPositionProvider;
 import name.gano.worldwind.view.AutoClipBasicOrbitView;
 import name.gano.worldwind.view.BasicModelView3;
@@ -174,6 +176,8 @@ public class J3DEarthPanel extends javax.swing.JPanel implements J3DEarthCompone
     private boolean gsToSatClampToHorizon = true;
     private boolean gsToSatShowHud = true;
     private GroundStationHudLayer gsHudLayer;
+    private LaunchSitesLayer launchSitesLayer;
+    private LaunchSitesLayer.ViewCoordinator launchCoordinator;
     private boolean smoothViewChanges = true; // for 3D view smoothing (only is set after model/earth view has been changed -needs to be fixed)
     // near/far clipping plane distances for 3d windows (can effect render speed and if full orbit is shown)
      private double farClippingPlaneDistOrbit = -1;//200000000d; // good out to geo, but slow for LEO, using AutoClipping plane view I made works better
@@ -340,7 +344,14 @@ public class J3DEarthPanel extends javax.swing.JPanel implements J3DEarthCompone
         latLongLinesLayer.setName("Lat/Long Lines");
         latLongLinesLayer.setEnabled(false);
         //insertBeforeCompass(this.getWwd(), latLongLinesLayer);
-        m.getLayers().add(latLongLinesLayer); // add ECI Layer        
+        m.getLayers().add(latLongLinesLayer); // add ECI Layer
+
+        launchSitesLayer = new LaunchSitesLayer(null);
+        m.getLayers().add(launchSitesLayer);
+        launchCoordinator = new LaunchSitesLayer.ViewCoordinator(
+                wwd,
+                launchSitesLayer,
+                LaunchSitesLayer.mjdToEpochMillis(currentMJD));
         
         // add the WWJ status bar at the bottom
         statusBar = new StatusBar();
@@ -384,6 +395,10 @@ public class J3DEarthPanel extends javax.swing.JPanel implements J3DEarthCompone
                 {
                     update(true);
                     eyePoint = getWwd().getView().getEyePoint();
+                    if (launchCoordinator != null)
+                    {
+                        launchCoordinator.onViewMoved();
+                    }
                 }
             }
         });
@@ -1258,6 +1273,11 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
             this.getWwd().addSelectListener(new ViewControlsSelectListener(wwd, viewControlsLayer));
             
         } // model view mode
+
+        if (launchCoordinator != null)
+        {
+            launchCoordinator.reattachSelectListener();
+        }
         
     } // setupView
 
@@ -1416,6 +1436,11 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
 
         // update layer that needs time updates
         timeDepLayer.setCurrentMJD(mjd);
+
+        if (launchCoordinator != null)
+        {
+            launchCoordinator.refreshForMjd(mjd);
+        }
         
     } // set MJD
 
@@ -1541,6 +1566,7 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     
     public void closeWindow()
     {
+        dispose();
         try
         {
             parent.dispose(); // could setClosed(true)
@@ -1654,5 +1680,61 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     {
         return timeDepLayer;
     } //getEcefTimeDepRenderableLayer
+
+    @Override
+    public void setAwarenessService(LiveAwarenessService service)
+    {
+        if (launchCoordinator != null)
+        {
+            launchCoordinator.setAwarenessService(service);
+        }
+    }
+
+    public LiveAwarenessService getAwarenessService()
+    {
+        return launchCoordinator != null ? launchCoordinator.getAwarenessService() : null;
+    }
+
+    @Override
+    public void centerOnLatLon(double latDeg, double lonDeg)
+    {
+        if (!modelViewMode && !gsToSatViewMode)
+        {
+            LaunchSitesLayer.centerOrbitViewOnLatLon(wwd, latDeg, lonDeg);
+        }
+    }
+
+    @Override
+    public boolean isShowUpcomingLaunches()
+    {
+        return launchCoordinator != null && launchCoordinator.isShowUpcomingLaunches();
+    }
+
+    @Override
+    public void setShowUpcomingLaunches(boolean enabled)
+    {
+        if (launchCoordinator != null)
+        {
+            launchCoordinator.setShowUpcomingLaunches(enabled);
+        }
+    }
+
+    @Override
+    public void refreshLaunchOverlay(long simEpochMillis)
+    {
+        if (launchCoordinator != null)
+        {
+            launchCoordinator.refreshLaunchOverlay(simEpochMillis);
+        }
+    }
+
+    @Override
+    public void dispose()
+    {
+        if (launchCoordinator != null)
+        {
+            launchCoordinator.dispose();
+        }
+    }
 
 }

@@ -24,24 +24,19 @@
 package jsattrak.gui;
 
 import java.awt.Frame;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.InputStreamReader;
-import java.net.URL;
-import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Hashtable;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import javax.swing.JOptionPane;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
+import jsattrak.utilities.GroundStationCatalogRepository;
 import jsattrak.utilities.TreeGroundStationTransferHandler;
 
 /**
@@ -50,9 +45,9 @@ import jsattrak.utilities.TreeGroundStationTransferHandler;
  */
 public class JGroundStationBrowser extends javax.swing.JPanel implements java.io.Serializable
 {
-    public static String groundStationDB = "data/groundstations/groundstations_db.csv";
+    public static String groundStationDB = GroundStationCatalogRepository.DEFAULT_BASE_DB;
     public static String groundStationDir = "data/groundstations/";
-    public static String groundStationCustomDB = "data/groundstations/groundstations_custom.csv";
+    public static String groundStationCustomDB = GroundStationCatalogRepository.DEFAULT_CUSTOM_DB;
     
     DefaultTreeModel treeModel;
     DefaultMutableTreeNode topTreeNode; // top node
@@ -61,11 +56,19 @@ public class JGroundStationBrowser extends javax.swing.JPanel implements java.io
     Hashtable<String,double []> gsHash = new Hashtable<String, double[]>(); // stores Ground Station name and LLA info [deg,deg,meters]
     
     Frame parent;
+    private final transient GroundStationCatalogRepository repository;
     
     /** Creates new form JGroundStationBrowser */
     public JGroundStationBrowser(Frame parent)
     {
+        this(parent, GroundStationCatalogRepository.createDefault());
+    }
+
+    /** Creates new form JGroundStationBrowser backed by the supplied repository. */
+    public JGroundStationBrowser(Frame parent, GroundStationCatalogRepository repository)
+    {
         this.parent = parent;
+        this.repository = Objects.requireNonNull(repository, "repository");
         
         initComponents();
         
@@ -74,126 +77,7 @@ public class JGroundStationBrowser extends javax.swing.JPanel implements java.io
         treeModel = new DefaultTreeModel(topTreeNode); // create tree model using root node
         groundStationTree.setModel(treeModel); // set the tree's model
         
-        String currentSecondaryNodeName = null;
-        DefaultMutableTreeNode currentSecondaryNode = null; //new DefaultMutableTreeNode(tleDownloader.secondCat[i]);
-        
-        
-        // read data files for Ground Stations (standard and custom)
-        try
-        {
-            BufferedReader gsReader = null; // initalization of reader 
-            
-            //see if local file exists, if not stream from web
-            
-            // read local file
-            if( new File(groundStationDB).exists())
-            {
-                File gsFile = new File(groundStationDB);
-                FileReader gsFileReader = new FileReader(gsFile);
-                gsReader = new BufferedReader(gsFileReader); // from local file
-            }
-            else
-            {
-                // read from web
-                URL url = new URL("http://www.gano.name/shawn/JSatTrak/" + groundStationDB);
-                URLConnection c = url.openConnection();
-                InputStreamReader isr = new InputStreamReader(c.getInputStream());
-                gsReader = new BufferedReader(isr); // from the web
-            }
-            
-            String nextLine = null;
-            int gsCount = 0; // count of stations loaded
-            while ((nextLine = gsReader.readLine()) != null)
-            {
-                // split line into parts
-                String[] elements = nextLine.split(",");
-                
-                if (elements.length == 5) // if the row is formatted correctly
-                {
-                    String network = elements[0];
-                    String stationName = elements[1];
-                    double stationLat = Double.parseDouble(elements[2]);
-                    double stationLon = Double.parseDouble(elements[3]);
-                    double stationAlt = Double.parseDouble(elements[4]);
-
-                    //System.out.println("" + gsCount + " : " + stationName + ", " + stationLat+ ", " + stationLon + ", " + stationAlt);
-
-                    // save ground station to hash
-                    gsHash.put(stationName, new double[]{stationLat, stationLon, stationAlt});
-
-                    // check to see if we are still in same Secondary node if not create new one
-                    if (!network.equalsIgnoreCase(currentSecondaryNodeName))
-                    {
-                        // create new secondary node and add it to the tree
-                        currentSecondaryNode = new DefaultMutableTreeNode(network);
-                        topTreeNode.add(currentSecondaryNode);
-                        currentSecondaryNodeName = network;
-                    }
-
-                    // add new Ground station to the node
-                    currentSecondaryNode.add(new DefaultMutableTreeNode(stationName));
-
-                    gsCount++;
-                }
-            }// while there are more lines to read
-            gsReader.close();
-            
-            // now load custom Ground Stations
-            if (new File(groundStationCustomDB).exists())
-            {
-                File gsFile = new File(groundStationCustomDB);
-                FileReader gsFileReader = new FileReader(gsFile);
-                gsReader = new BufferedReader(gsFileReader); // from local file
-
-                customSecondaryNode = new DefaultMutableTreeNode("Custom");
-                topTreeNode.add(customSecondaryNode);
-                while ((nextLine = gsReader.readLine()) != null)
-                {
-                    // split line into parts
-                    String[] elements = nextLine.split(",");
-
-                    if (elements.length == 5) // if the row is formatted correctly
-                    {
-                        String network = elements[0]; // ignored for custom
-                        String stationName = elements[1];
-                        double stationLat = Double.parseDouble(elements[2]);
-                        double stationLon = Double.parseDouble(elements[3]);
-                        double stationAlt = Double.parseDouble(elements[4]);
-
-                        //System.out.println("" + gsCount + " : " + stationName + ", " + stationLat+ ", " + stationLon + ", " + stationAlt);
-
-                        // save ground station to hash
-                        gsHash.put(stationName, new double[]{stationLat, stationLon, stationAlt});
-
-                        // add new Ground station to the node
-                        customSecondaryNode.add(new DefaultMutableTreeNode(stationName));
-
-                        gsCount++;
-                    }
-                }// while there are more lines to read
-                gsReader.close();
-            } // if custom file exists
-            else
-            {
-                // add blank Custom node
-                customSecondaryNode = new DefaultMutableTreeNode("Custom");
-                topTreeNode.add(customSecondaryNode);
-            }
-            
-            // add text to bottom
-            statusTextField.setText("Total Ground Stations loaded: " + gsCount);
-            
-            // auto expand root node
-            groundStationTree.expandRow(0);
-        
-        }
-        catch (Exception e)
-        {
-             System.out.println("ERROR IN GROUND STATION READING POSSIBLE FILE FORMAT OR MISSING FILES:");
-                e.printStackTrace();
-                JOptionPane.showMessageDialog(parent, "Error Loading Ground Station Data. Check data.\n"+e.toString(), "Data LOADING ERROR", JOptionPane.ERROR_MESSAGE);
-        }
-        
+        reloadCatalog();
         
         // Drag and Drop Handler
         // setup transfer handler
@@ -205,6 +89,60 @@ public class JGroundStationBrowser extends javax.swing.JPanel implements java.io
         
         
     } // constructor
+
+    /**
+     * Reloads ground station catalogs from the repository and refreshes the tree and lookup map.
+     */
+    public void reloadCatalog()
+    {
+        topTreeNode.removeAllChildren();
+        gsHash.clear();
+        customSecondaryNode = null;
+
+        try
+        {
+            Map<String, List<GroundStationCatalogRepository.CatalogEntry>> grouped = repository.loadGroupedCatalog();
+            int gsCount = 0;
+
+            for (Map.Entry<String, List<GroundStationCatalogRepository.CatalogEntry>> entry : grouped.entrySet())
+            {
+                DefaultMutableTreeNode networkNode = new DefaultMutableTreeNode(entry.getKey());
+                topTreeNode.add(networkNode);
+
+                if (GroundStationCatalogRepository.CUSTOM_NETWORK.equals(entry.getKey()))
+                {
+                    customSecondaryNode = networkNode;
+                }
+
+                for (GroundStationCatalogRepository.CatalogEntry station : entry.getValue())
+                {
+                    gsHash.put(station.name(), new double[]{station.latDeg(), station.lonDeg(), station.altMeters()});
+                    networkNode.add(new DefaultMutableTreeNode(station.name()));
+                    gsCount++;
+                }
+            }
+
+            if (customSecondaryNode == null)
+            {
+                customSecondaryNode = new DefaultMutableTreeNode(GroundStationCatalogRepository.CUSTOM_NETWORK);
+                topTreeNode.add(customSecondaryNode);
+            }
+
+            treeModel.reload(topTreeNode);
+
+            // add text to bottom
+            statusTextField.setText("Total Ground Stations loaded: " + gsCount);
+
+            // auto expand root node
+            groundStationTree.expandRow(0);
+        }
+        catch (Exception e)
+        {
+            System.out.println("ERROR IN GROUND STATION READING POSSIBLE FILE FORMAT OR MISSING FILES:");
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(parent, "Error Loading Ground Station Data. Check data.\n" + e.toString(), "Data LOADING ERROR", JOptionPane.ERROR_MESSAGE);
+        }
+    }
     
     /** This method is called from within the constructor to
      * initialize the form.
@@ -318,58 +256,41 @@ public class JGroundStationBrowser extends javax.swing.JPanel implements java.io
         if(dlg.isOkHit())
         {
             // okay was hit process data
-            String network = dlg.getNetwork();
             String siteName = dlg.getSiteName();
             double latitude = dlg.getLatitude();
             double longitude = dlg.getLongitude();
             double altitude = dlg.getAltitude();
             boolean saveData = dlg.isSaveData();
-            
-            // save ground station to hash
-            gsHash.put(siteName, new double[]{latitude, longitude, altitude});
 
-            // add new Ground station to the node
-            DefaultMutableTreeNode newNode = new DefaultMutableTreeNode(siteName);
-            customSecondaryNode.add(newNode);
-            
-            groundStationTree.repaint(); // refreseh tree?
-            
-            // expand custom
-           groundStationTree.scrollPathToVisible(getPath(newNode));
-            
             if (saveData) // append data to file
             {
                 try
                 {
-                    File gsFile = new File(groundStationCustomDB);
-                    boolean append = true;
-                    
-                    // if file doesn't exist create a new one
-                    if(!gsFile.exists()) 
-                    {
-                        (new File(groundStationDir)).mkdirs();
-                        gsFile.createNewFile();
-                        
-                        append = false;
-                    } // create new file
-                    
-                    FileWriter gsFileWriter = new FileWriter(gsFile,append);
-                    BufferedWriter gsWriter = new BufferedWriter(gsFileWriter); // from local file
-
-                    gsWriter.write("\n" + network + "," + siteName + "," + latitude + "," + longitude + "," + altitude);
-
-                    gsWriter.close();
-
+                    repository.appendCustomStation(siteName, latitude, longitude, altitude);
                 }
                 catch (Exception e)
                 {
                     System.out.println("ERROR SAVING GROUND STATION - Check permissions or format:");
                     e.printStackTrace();
                     JOptionPane.showMessageDialog(parent, "Error Saving Ground Station Data. Check data and permissions. \n" + e.toString(), "Data SAVING ERROR", JOptionPane.ERROR_MESSAGE);
+                    return;
                 }
-                
             } // if save data
-           
+
+            String effectiveName = saveData
+                    ? GroundStationCatalogRepository.sanitizeCsvField(siteName)
+                    : siteName;
+
+            // save ground station to hash
+            gsHash.put(effectiveName, new double[]{latitude, longitude, altitude});
+
+            // add new Ground station to the node
+            DefaultMutableTreeNode newNode = new DefaultMutableTreeNode(effectiveName);
+            treeModel.insertNodeInto(newNode, customSecondaryNode, customSecondaryNode.getChildCount());
+
+            // expand custom
+            groundStationTree.scrollPathToVisible(getPath(newNode));
+
         } // if okay hit
         
 }//GEN-LAST:event_addGSButtonActionPerformed

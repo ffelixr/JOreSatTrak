@@ -46,15 +46,25 @@ import java.awt.event.ActionListener;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowListener;
 import java.awt.image.BufferedImage;
+import java.beans.PropertyVetoException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.Serializable;
 import java.text.SimpleDateFormat;
+import java.util.Collection;
 import java.util.GregorianCalendar;
+import java.util.HashSet;
 import java.util.Hashtable;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.Vector;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+import java.util.function.DoubleConsumer;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -74,6 +84,14 @@ import javax.swing.UIManager;
 import javax.swing.event.InternalFrameEvent;
 import javax.swing.event.InternalFrameListener;
 import jguiserver.GuiServer;
+import jsattrak.awareness.AwarenessStateListener;
+import jsattrak.awareness.LaunchRecord;
+import jsattrak.awareness.LiveAwarenessService;
+import jsattrak.awareness.gui.LiveAwarenessInternalFrame;
+import jsattrak.awareness.gui.LiveDataSourcesDialog;
+import jsattrak.awareness.gui.PayloadTleImportDialog;
+import jsattrak.awareness.tle.PayloadTleMatch;
+import jsattrak.awareness.tle.PayloadTleMatcher;
 import jsattrak.coverage.CoverageAnalyzer;
 import jsattrak.coverage.JSatTrakTimeDependent;
 import jsattrak.objects.AbstractSatellite;
@@ -81,6 +99,7 @@ import jsattrak.objects.CustomSatellite;
 import jsattrak.objects.SatelliteTleSGP4;
 import jsattrak.utilities.ConsoleDialog;
 import jsattrak.utilities.CustomFileFilter;
+import jsattrak.utilities.GroundStationCatalogRepository;
 import jsattrak.utilities.J2DEarthPanelSave;
 import jsattrak.utilities.J2DPolarEarthPanelSave;
 import jsattrak.utilities.J3DEarthComponent;
@@ -134,6 +153,17 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
 
     // sat panel - show list of satellites
     JObjectListPanel objListPanel;
+
+    // Live Awareness & Ground Station repository coordinator
+    private transient GroundStationCatalogRepository groundStationCatalogRepository;
+    private transient LiveAwarenessService liveAwarenessService;
+    private transient LiveAwarenessInternalFrame liveAwarenessFrame;
+    private transient JGroundStationBrowser openGsBrowser;
+    private transient JInternalFrame openGsBrowserFrame;
+    private transient List<GroundStationCatalogRepository.CatalogEntry> lastLaunchPadEntries = List.of();
+    private final transient AtomicBoolean liveAwarenessShutdown = new AtomicBoolean(false);
+    private transient AwarenessStateListener liveAwarenessListener;
+    private transient Thread liveAwarenessShutdownHook;
 
     // Sun object
     private Sun sun;
@@ -268,6 +298,11 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         // add it to the internal Frame
         satListInternalFrame.setContentPane(objListPanel);
 
+        // Initialize Ground Station repository and Live Awareness coordinator before initial map creation
+        this.groundStationCatalogRepository = GroundStationCatalogRepository.createDefault();
+        this.liveAwarenessService = LiveAwarenessService.createDefault(this.groundStationCatalogRepository);
+        this.lastLaunchPadEntries = loadLaunchApiPadsQuietly();
+
         // // TEST
         // JObjectListInternalFrame t = new
         // JObjectListInternalFrame(satHash,gsHash,this);
@@ -344,6 +379,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                 + ", by Fernando Félix-Redondo");
         setStatusMessage("Heavily based on JSatTrak " + versionString + ", by Shawn E. Gano");
         setStatusMessage("Using Orekit by CS Group");
+
+        // Wire Live Awareness listener, quiet startup, and application shutdown hooks
+        registerLiveAwarenessLifecycle();
 
         // save root app to Bean Shell interperator
         try {
@@ -513,6 +551,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         saveButton = new javax.swing.JButton();
         openSatBrowserButton = new javax.swing.JButton();
         openGSbrowser = new javax.swing.JButton();
+        openLiveAwarenessButton = new javax.swing.JButton();
         resetTimeButton = new javax.swing.JButton();
         playBackButton = new javax.swing.JButton();
         stepBackButton = new javax.swing.JButton();
@@ -560,6 +599,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         localTimeMenuItem = new javax.swing.JMenuItem();
         utilitiesMenu = new javax.swing.JMenu();
         tleLoaderMenuItem = new javax.swing.JMenuItem();
+        liveDataSourcesMenuItem = new javax.swing.JMenuItem();
         jSeparator6 = new javax.swing.JSeparator();
         trackToolMenuItem = new javax.swing.JMenuItem();
         coverageMenuItem = new javax.swing.JMenuItem();
@@ -571,6 +611,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         new3DwindowMenu = new javax.swing.JMenu();
         showSatBrowser = new javax.swing.JMenuItem();
         showGSBrowserMenuItem = new javax.swing.JMenuItem();
+        liveAwarenessMenuItem = new javax.swing.JMenuItem();
         jSeparator5 = new javax.swing.JSeparator();
         new2DWindowMenuItem = new javax.swing.JMenuItem();
         new2DPolarWindowMenuItem = new javax.swing.JMenuItem();
@@ -631,6 +672,18 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
             }
         });
         jToolBar.add(openGSbrowser);
+
+        openLiveAwarenessButton.setIcon(new javax.swing.ImageIcon(getClass().getResource("/icons/other/Orbit.png"))); // NOI18N
+        openLiveAwarenessButton.setToolTipText("Open Live Awareness Hub");
+        openLiveAwarenessButton.setFocusable(false);
+        openLiveAwarenessButton.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        openLiveAwarenessButton.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        openLiveAwarenessButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                openOrFocusLiveAwareness();
+            }
+        });
+        jToolBar.add(openLiveAwarenessButton);
 
         resetTimeButton.setIcon(
                 new javax.swing.ImageIcon(getClass().getResource("/icons/gnome_2_18/media-seek-backward.png"))); // NOI18N
@@ -1038,6 +1091,16 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
             }
         });
         utilitiesMenu.add(tleLoaderMenuItem);
+
+        liveDataSourcesMenuItem.setIcon(
+                new javax.swing.ImageIcon(getClass().getResource("/icons/other/applications-internet.png"))); // NOI18N
+        liveDataSourcesMenuItem.setText("Live Data Sources..."); // NOI18N
+        liveDataSourcesMenuItem.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                openLiveDataSourcesDialog();
+            }
+        });
+        utilitiesMenu.add(liveDataSourcesMenuItem);
         utilitiesMenu.add(jSeparator6);
 
         trackToolMenuItem.setAccelerator(
@@ -1124,6 +1187,16 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
             }
         });
         new3DwindowMenu.add(showGSBrowserMenuItem);
+
+        liveAwarenessMenuItem.setIcon(
+                new javax.swing.ImageIcon(getClass().getResource("/icons/other/Orbit.png"))); // NOI18N
+        liveAwarenessMenuItem.setText("Live Awareness"); // NOI18N
+        liveAwarenessMenuItem.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                openOrFocusLiveAwareness();
+            }
+        });
+        new3DwindowMenu.add(liveAwarenessMenuItem);
         new3DwindowMenu.add(jSeparator5);
 
         new2DWindowMenuItem
@@ -1330,6 +1403,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     private void exitMenuItemActionPerformed(java.awt.event.ActionEvent evt)// GEN-FIRST:event_exitMenuItemActionPerformed
     {// GEN-HEADEREND:event_exitMenuItemActionPerformed
      // how to exit:
+        shutdownLiveAwareness();
         this.dispose(); // close app
         System.exit(0); // SEG added 26 May 2009 bug fix
     }// GEN-LAST:event_exitMenuItemActionPerformed
@@ -1469,6 +1543,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
 
         // update date box:
         dateTextField.setText(currentJulianDate.getDateTimeStr());
+        refreshLiveAwarenessFrameDisplay();
 
     }// GEN-LAST:event_localTimeZoneCheckBoxActionPerformed
 
@@ -1709,6 +1784,8 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
             animationRefreshRateMs = nonRealTimeAnimationRefreshRateMs; // non real time refresh rate
         }
 
+        refreshLiveAwarenessFrameDisplay();
+
     }// GEN-LAST:event_realTimeModeCheckBoxActionPerformed
 
     private void stepForwardTimeButtonActionPerformed(java.awt.event.ActionEvent evt)// GEN-FIRST:event_stepForwardTimeButtonActionPerformed
@@ -1730,6 +1807,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         // J2DEarthPanel newPanel = new J2DEarthPanel(satHash);
         J2DEarthPanel newPanel = new J2DEarthPanel(satHash, gsHash, zoomIntoggleButton, zoomOuttoggleButton,
                 recenterToggleButton, currentJulianDate, sun, this);
+        if (liveAwarenessService != null) {
+            newPanel.setAwarenessService(liveAwarenessService);
+        }
 
         twoDWindowCount++;
         String windowName = "2D Earth Window - " + twoDWindowCount;
@@ -1761,6 +1841,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     public JInternalFrame createNew2dPolarWindow() {
         J2DPolarEarthPanel newPanel = new J2DPolarEarthPanel(satHash, gsHash, zoomIntoggleButton, zoomOuttoggleButton,
                 recenterToggleButton, currentJulianDate, sun, this);
+        if (liveAwarenessService != null) {
+            newPanel.setAwarenessService(liveAwarenessService);
+        }
 
         twoDPolarWindowCount++;
         String windowName = "2D Polar Window - " + twoDPolarWindowCount;
@@ -1826,6 +1909,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         // create 3D Earth Panel:
         J3DEarthInternalPanel newPanel = new J3DEarthInternalPanel(iframe, satHash, gsHash, currentJulianDate.getMJD(),
                 this);
+        if (liveAwarenessService != null) {
+            newPanel.setAwarenessService(liveAwarenessService);
+        }
         threeDInternalWindowVec.add(newPanel); // add to vector
 
         // frame size
@@ -1866,6 +1952,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
 
         // create 3D Earth Panel:
         J3DEarthPanel newPanel = new J3DEarthPanel(iframe, satHash, gsHash, currentJulianDate.getMJD(), this);
+        if (liveAwarenessService != null) {
+            newPanel.setAwarenessService(liveAwarenessService);
+        }
         threeDWindowVec.add(newPanel); // add to vector
 
         iframe.setContentPane(newPanel);
@@ -2010,6 +2099,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         for (JTrackingPanel tp : trackingWindowVec) {
             tp.updateTime(currentJulianDate.getDateTimeStr());
         }
+
+        // refresh Live Awareness hub display (without network I/O)
+        refreshLiveAwarenessFrameDisplay();
 
     } // update time
 
@@ -2360,15 +2452,33 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     } // openTrackingToolSelectorWindow
 
     public void showGSBrowserInternalFrame() {
-
-        // satBrowser.setVisible(true); // show window
+        if (openGsBrowserFrame != null && !openGsBrowserFrame.isClosed() && openGsBrowser != null) {
+            if (!openGsBrowserFrame.isVisible()) {
+                openGsBrowserFrame.setVisible(true);
+            }
+            try {
+                if (openGsBrowserFrame.isIcon()) {
+                    openGsBrowserFrame.setIcon(false);
+                }
+                openGsBrowserFrame.moveToFront();
+                openGsBrowserFrame.setSelected(true);
+            } catch (PropertyVetoException ignored) {
+            }
+            return;
+        }
 
         // create new internal frame window
         String windowName = "Ground Station Browser";
         JInternalFrame iframe = new JInternalFrame(windowName, true, true, true, true);
 
-        // show satellite browser window
-        JGroundStationBrowser gsBrowser = new JGroundStationBrowser(this); // non-modal version
+        // show ground station browser window backed by shared repository
+        GroundStationCatalogRepository repo = groundStationCatalogRepository != null
+                ? groundStationCatalogRepository
+                : GroundStationCatalogRepository.createDefault();
+        JGroundStationBrowser gsBrowser = new JGroundStationBrowser(this, repo);
+        this.openGsBrowser = gsBrowser;
+        this.openGsBrowserFrame = iframe;
+        this.lastLaunchPadEntries = loadLaunchApiPadsQuietly();
 
         iframe.setContentPane(gsBrowser);
         iframe.setSize(261, 380); // w,h
@@ -2424,6 +2534,8 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     private javax.swing.JSeparator jSeparator8;
     private javax.swing.JSeparator jSeparator9;
     private javax.swing.JToolBar jToolBar;
+    private javax.swing.JMenuItem liveAwarenessMenuItem;
+    private javax.swing.JMenuItem liveDataSourcesMenuItem;
     private javax.swing.JMenuItem localTimeMenuItem;
     private javax.swing.JCheckBox localTimeZoneCheckBox;
     private javax.swing.JMenuItem lookFeelMenuItem;
@@ -2437,6 +2549,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     private javax.swing.JMenuItem newMenuItem;
     private javax.swing.JMenuItem nonRealTimeMenuItem;
     private javax.swing.JButton openGSbrowser;
+    private javax.swing.JButton openLiveAwarenessButton;
     private javax.swing.JMenuItem openMenuItem;
     private javax.swing.JButton openSatBrowserButton;
     private javax.swing.JButton playBackButton;
@@ -2479,60 +2592,44 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     }
 
     public void internalFrameClosed(InternalFrameEvent e) {
-        try // try to cast frame contents as a J2DEarthPanel -- to see if it is that type
-        {
-            J2DEarthPanel closedEarthPanel = (J2DEarthPanel) (((JInternalFrame) e.getSource()).getContentPane());
+        JInternalFrame closedFrame = (JInternalFrame) e.getSource();
+        Container contentPane = closedFrame.getContentPane();
+        if (closedFrame == liveAwarenessFrame) {
+            liveAwarenessFrame = null;
+            return;
+        }
+        if (closedFrame == openGsBrowserFrame || contentPane == openGsBrowser) {
+            openGsBrowser = null;
+            openGsBrowserFrame = null;
+            return;
+        }
+        if (contentPane instanceof J2DEarthPanel closedEarthPanel) {
+            closedEarthPanel.setAwarenessService(null);
             twoDWindowVec.remove(closedEarthPanel);
-        } catch (Exception ee) {
-            if (((JInternalFrame) e.getSource()).getContentPane() instanceof J2DPolarEarthPanel) {
-                twoDPolarWindowVec.remove((J2DPolarEarthPanel) ((JInternalFrame) e.getSource()).getContentPane());
-                return;
-            }
-            try {
-                // if not see if it was a SatPropertyPanel
-                SatPropertyPanel closedPropPanel = (SatPropertyPanel) (((JInternalFrame) e.getSource())
-                        .getContentPane());
-                satPropWindowVec.remove(closedPropPanel);
-                // System.out.println("Prop window Closed");
-            } catch (Exception eee) {
-                // SatSettingsPanel
-                try {
-                    // if not see if it was a SatPropertyPanel
-                    SatSettingsPanel closedPropPanel = (SatSettingsPanel) (((JInternalFrame) e.getSource())
-                            .getContentPane());
-
-                    // System.out.println("Settings window Closed");
-                } catch (Exception eeee) {
-
-                    try {
-                        // if not see if it was a J3DEarthInternalPanel
-                        J3DEarthInternalPanel closedPropPanel = (J3DEarthInternalPanel) (((JInternalFrame) e
-                                .getSource()).getContentPane());
-                        threeDInternalWindowVec.remove(closedPropPanel);
-                        System.gc(); // clean up
-
-                        // System.out.println("Settings window Closed");
-                    } catch (Exception eeeee) {
-                        // something else trackingWindowVec
-                        try {
-                            // if not see if it was a J3DEarthInternalPanel
-                            JTrackingPanel closedPropPanel = (JTrackingPanel) (((JInternalFrame) e.getSource())
-                                    .getContentPane());
-                            trackingWindowVec.remove(closedPropPanel);
-                            System.gc(); // clean up
-
-                            // System.out.println("Settings window Closed");
-                        } catch (Exception eeeeee) {
-                            // something else trackingWindowVec
-                        }
-                    }
-                }
-            }
-
-        } // 2D Earth window
-
-        // System.out.println("2D Windows Open:" + twoDWindowVec.size() );
-
+            return;
+        }
+        if (contentPane instanceof J2DPolarEarthPanel closedPolarPanel) {
+            closedPolarPanel.setAwarenessService(null);
+            twoDPolarWindowVec.remove(closedPolarPanel);
+            return;
+        }
+        if (contentPane instanceof SatPropertyPanel closedPropPanel) {
+            satPropWindowVec.remove(closedPropPanel);
+            return;
+        }
+        if (contentPane instanceof SatSettingsPanel) {
+            return;
+        }
+        if (contentPane instanceof J3DEarthInternalPanel closed3dPanel) {
+            closed3dPanel.dispose();
+            threeDInternalWindowVec.remove(closed3dPanel);
+            System.gc();
+            return;
+        }
+        if (contentPane instanceof JTrackingPanel closedTrackingPanel) {
+            trackingWindowVec.remove(closedTrackingPanel);
+            System.gc();
+        }
     } // internalFrameClosed
 
     public void internalFrameOpened(InternalFrameEvent e) {
@@ -2934,6 +3031,20 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         // clear console
         console.clearMessages();
 
+        // detach awareness listeners from open 2D/Polar/3D windows before disposal
+        for (J2DEarthPanel panel : twoDWindowVec) {
+            panel.setAwarenessService(null);
+        }
+        for (J2DPolarEarthPanel panel : twoDPolarWindowVec) {
+            panel.setAwarenessService(null);
+        }
+        for (J3DEarthInternalPanel panel : threeDInternalWindowVec) {
+            panel.dispose();
+        }
+        liveAwarenessFrame = null;
+        openGsBrowser = null;
+        openGsBrowserFrame = null;
+
         // close all internal windows besides the sat list
         for (JInternalFrame jif : mainDesktopPane.getAllFrames()) {
             if (!(jif.getContentPane() instanceof JObjectListPanel)) {
@@ -3144,6 +3255,10 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                         J3DEarthPanel newPanel = threeDWindowVec.lastElement(); // get window just created
 
                         j3dp.copySettings2PanelAndFrame(newPanel, iframe); // copy settings to this window
+                        if (liveAwarenessService != null) {
+                            newPanel.setAwarenessService(liveAwarenessService);
+                            newPanel.refreshLaunchOverlay(currentJulianDate.getTimeInMillis());
+                        }
                     }
                     // create all 3D internal windows needed
                     for (J3DEarthlPanelSave j3dp : openClass.getThreeDWindowSaveVec()) {
@@ -3152,6 +3267,10 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                                                                                                 // created
 
                         j3dp.copySettings2PanelAndFrame(newPanel, iframe); // copy settings to this window
+                        if (liveAwarenessService != null) {
+                            newPanel.setAwarenessService(liveAwarenessService);
+                            newPanel.refreshLaunchOverlay(currentJulianDate.getTimeInMillis());
+                        }
                     }
 
                     // New 20 March 2009 -- app size and onscreen location
@@ -3296,35 +3415,23 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     }
 
     public void windowClosing(WindowEvent e) {
-
-        try // try to cast frame contents as a J3DEarthPanel -- to see if it is that type
-        {
-            J3DEarthPanel closedEarthPanel = (J3DEarthPanel) (((JDialog) e.getSource()).getContentPane());
-            threeDWindowVec.remove(closedEarthPanel); // remove from Vector
-
-            // System.out.println("3D Window Count = " + threeDWindowVec.size());
-
-            System.gc(); // force garbage collection after getting rid of that window
-
-        } catch (Exception ee) {
-
-            try // close Command Console Window
-            {
-                if (((JDialog) e.getSource()).getContentPane() instanceof JConsole) {
-                    // enable menu item again
-                    commandShellMenuItem.setEnabled(true);
-                }
-
-                // something else closed
-
-            } catch (Exception eee) {
-                // something else closed
-                // note the last one wouldn't cause a problem potentially...!
-            }
-
+        Object source = e.getSource();
+        if (source == this) {
+            shutdownLiveAwareness();
+            return;
         }
-
-    } // windowClosed
+        if (source instanceof JDialog dialog) {
+            Container contentPane = dialog.getContentPane();
+            if (contentPane instanceof J3DEarthPanel closedEarthPanel) {
+                closedEarthPanel.dispose();
+                threeDWindowVec.remove(closedEarthPanel); // remove from Vector
+                System.gc(); // force garbage collection after getting rid of that window
+            } else if (contentPane instanceof JConsole) {
+                // enable menu item again
+                commandShellMenuItem.setEnabled(true);
+            }
+        }
+    } // windowClosing
 
     public double getCurrentTimeStep() {
         return timeStepSpeeds[currentTimeStepSpeedIndex];
@@ -3769,6 +3876,437 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         }
         ///////////////////////////////// window decoration check
     } // setLookandFeel
+
+    @Override
+    public void dispose() {
+        shutdownLiveAwareness();
+        super.dispose();
+    }
+
+    private void registerLiveAwarenessLifecycle() {
+        this.addWindowListener(this);
+        this.liveAwarenessShutdownHook = new Thread(this::shutdownLiveAwareness, "LiveAwareness-shutdown");
+        Runtime.getRuntime().addShutdownHook(this.liveAwarenessShutdownHook);
+        this.liveAwarenessListener = new AwarenessStateListener() {
+            @Override
+            public void onAwarenessDataChanged() {
+                forceRepainting();
+                refreshOpenGsBrowserIfCompanionPadsChanged();
+            }
+
+            @Override
+            public void onSelectionChanged(String selectedLaunchId) {
+                forceRepainting();
+            }
+
+            @Override
+            public void onStatusMessage(String message, boolean isWarning) {
+                if (message != null && !message.isBlank()) {
+                    setStatusMessage(message);
+                }
+            }
+
+            @Override
+            public void onOpenUiRequested() {
+                openOrFocusLiveAwareness();
+            }
+        };
+        liveAwarenessService.addListener(liveAwarenessListener);
+        liveAwarenessService.initializeAtStartup();
+    }
+
+    private void shutdownLiveAwareness() {
+        if (!liveAwarenessShutdown.compareAndSet(false, true)) {
+            return;
+        }
+        if (liveAwarenessShutdownHook != null && Thread.currentThread() != liveAwarenessShutdownHook) {
+            try {
+                Runtime.getRuntime().removeShutdownHook(liveAwarenessShutdownHook);
+            } catch (IllegalStateException ignored) {
+                // JVM shutdown already in progress
+            }
+            liveAwarenessShutdownHook = null;
+        }
+        if (liveAwarenessService != null && liveAwarenessListener != null) {
+            liveAwarenessService.removeListener(liveAwarenessListener);
+        }
+        if (SwingUtilities.isEventDispatchThread()) {
+            for (J2DEarthPanel panel : twoDWindowVec) {
+                panel.setAwarenessService(null);
+            }
+            for (J2DPolarEarthPanel panel : twoDPolarWindowVec) {
+                panel.setAwarenessService(null);
+            }
+            for (J3DEarthPanel panel : threeDWindowVec) {
+                panel.dispose();
+            }
+            for (J3DEarthInternalPanel panel : threeDInternalWindowVec) {
+                panel.dispose();
+            }
+            if (liveAwarenessFrame != null) {
+                liveAwarenessFrame.dispose();
+                liveAwarenessFrame = null;
+            }
+        }
+        if (liveAwarenessService != null) {
+            liveAwarenessService.shutdown();
+        }
+    }
+
+    private List<GroundStationCatalogRepository.CatalogEntry> loadLaunchApiPadsQuietly() {
+        return loadLaunchApiPads(groundStationCatalogRepository);
+    }
+
+    private void refreshOpenGsBrowserIfCompanionPadsChanged() {
+        this.lastLaunchPadEntries = syncLaunchApiPadSnapshot(
+                groundStationCatalogRepository,
+                this.lastLaunchPadEntries,
+                () -> {
+                    if (openGsBrowser != null) {
+                        openGsBrowser.reloadCatalog();
+                    }
+                });
+    }
+
+    public static List<GroundStationCatalogRepository.CatalogEntry> loadLaunchApiPads(
+            GroundStationCatalogRepository repo) {
+        if (repo == null) {
+            return List.of();
+        }
+        try {
+            List<GroundStationCatalogRepository.CatalogEntry> pads = repo
+                    .loadGroupedCatalog()
+                    .get(GroundStationCatalogRepository.LAUNCH_API_NETWORK);
+            return pads != null ? List.copyOf(pads) : List.of();
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    public static List<GroundStationCatalogRepository.CatalogEntry> syncLaunchApiPadSnapshot(
+            GroundStationCatalogRepository repo,
+            List<GroundStationCatalogRepository.CatalogEntry> previousPads,
+            Runnable onCompanionPadsChanged) {
+        List<GroundStationCatalogRepository.CatalogEntry> currentPads = loadLaunchApiPads(repo);
+        if (!Objects.equals(previousPads, currentPads)) {
+            if (onCompanionPadsChanged != null) {
+                onCompanionPadsChanged.run();
+            }
+            return currentPads;
+        }
+        return previousPads != null ? previousPads : List.of();
+    }
+
+    private TimeZone getActiveDisplayTimeZone() {
+        return resolveDisplayTimeZone(isLoalTimeModeSelected(), localTZ);
+    }
+
+    private void refreshLiveAwarenessFrameDisplay() {
+        if (liveAwarenessFrame != null && liveAwarenessFrame.isVisible()) {
+            liveAwarenessFrame.refreshDisplay(
+                    currentJulianDate.getTimeInMillis(),
+                    isRealTimeMode(),
+                    getActiveDisplayTimeZone());
+        }
+    }
+
+    public LiveAwarenessService getLiveAwarenessService() {
+        return liveAwarenessService;
+    }
+
+    public void openOrFocusLiveAwareness() {
+        if (liveAwarenessService == null) {
+            return;
+        }
+        liveAwarenessService.ensureActivated();
+
+        if (liveAwarenessFrame == null || liveAwarenessFrame.isClosed()) {
+            liveAwarenessFrame = new LiveAwarenessInternalFrame(
+                    liveAwarenessService,
+                    this::jumpToEpochMillis,
+                    this::centerAllMapsOn,
+                    this::openPayloadTleImportDialog,
+                    this::showSatBrowserInternalFrame,
+                    this::openLiveDataSourcesDialog);
+            liveAwarenessFrame.addInternalFrameListener(this);
+            liveAwarenessFrame.setLocation(30, 30);
+            mainDesktopPane.add(liveAwarenessFrame);
+        } else if (liveAwarenessFrame.getParent() == null) {
+            mainDesktopPane.add(liveAwarenessFrame);
+        }
+
+        liveAwarenessFrame.refreshDisplay(
+                currentJulianDate.getTimeInMillis(),
+                isRealTimeMode(),
+                getActiveDisplayTimeZone());
+
+        if (!liveAwarenessFrame.isVisible()) {
+            liveAwarenessFrame.setVisible(true);
+        }
+        try {
+            if (liveAwarenessFrame.isIcon()) {
+                liveAwarenessFrame.setIcon(false);
+            }
+            liveAwarenessFrame.moveToFront();
+            liveAwarenessFrame.setSelected(true);
+        } catch (PropertyVetoException ignored) {
+        }
+    }
+
+    public void openLiveDataSourcesDialog() {
+        if (liveAwarenessService == null) {
+            return;
+        }
+        LiveDataSourcesDialog dialog = new LiveDataSourcesDialog(this, liveAwarenessService);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
+    public void jumpToEpochMillis(long epochMillis) {
+        applyJumpToEpochMillis(
+                currentJulianDate,
+                epochMillis,
+                isRealTimeMode(),
+                () -> setRealTimeMode(false),
+                this::checkTimeDiffResetGroundTracks,
+                () -> {
+                    currentPlayDirection = 0;
+                    stopAnimation();
+                },
+                () -> {
+                    updateTime();
+                    long simMillis = currentJulianDate.getTimeInMillis();
+                    for (J3DEarthPanel panel : threeDWindowVec) {
+                        panel.refreshLaunchOverlay(simMillis);
+                    }
+                    for (J3DEarthInternalPanel panel : threeDInternalWindowVec) {
+                        panel.refreshLaunchOverlay(simMillis);
+                    }
+                });
+    }
+
+    public void centerAllMapsOn(double latDeg, double lonDeg) {
+        centerMapsOn(twoDWindowVec, twoDPolarWindowVec, threeDWindowVec, threeDInternalWindowVec, latDeg, lonDeg);
+    }
+
+    public boolean addOrUpdateSatelliteFromTle(TLE tle, boolean updateIfPresent) {
+        return addOrUpdateSatelliteFromTleInternal(tle, updateIfPresent, true);
+    }
+
+    private boolean addOrUpdateSatelliteFromTleInternal(TLE tle, boolean updateIfPresent, boolean refreshUi) {
+        return addOrUpdateSatelliteFromTle(
+                satHash,
+                tle,
+                updateIfPresent,
+                currentJulianDate.getJulianDate(),
+                prop -> objListPanel.addSat2List(prop),
+                refreshUi ? this::updateTime : () -> {});
+    }
+
+    private void openPayloadTleImportDialog(LaunchRecord launch) {
+        if (liveAwarenessService == null || launch == null) {
+            return;
+        }
+        Set<String> existingNames = new HashSet<>();
+        Set<Integer> existingNoradIds = new HashSet<>();
+        collectExistingSatelliteIdentifiers(satHash, existingNames, existingNoradIds);
+
+        List<PayloadTleMatch> matches = liveAwarenessService.getMatchedTles(
+                launch, existingNames, existingNoradIds);
+        if (matches.isEmpty()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "No matching TLEs were found yet in the loaded catalogs for \"" + launch.getMissionName() + "\".",
+                    "Payload TLE Import",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        PayloadTleImportDialog dialog = new PayloadTleImportDialog(this, launch, matches);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+        if (!dialog.isConfirmed()) {
+            return;
+        }
+
+        boolean updateExisting = dialog.isUpdateExistingEnabled();
+        int changedCount = 0;
+        for (PayloadTleMatch match : dialog.getSelectedMatches()) {
+            if (match != null && match.tle() != null
+                    && addOrUpdateSatelliteFromTleInternal(match.tle(), updateExisting, false)) {
+                changedCount++;
+            }
+        }
+        if (changedCount > 0) {
+            updateTime();
+            setStatusMessage("Imported/updated " + changedCount + " payload TLE(s) from " + launch.getMissionName());
+        }
+    }
+
+    public static TimeZone resolveDisplayTimeZone(boolean localSelected, TimeZone localTz) {
+        return (localSelected && localTz != null) ? localTz : TimeZone.getTimeZone("UTC");
+    }
+
+    public static void applyJumpToEpochMillis(
+            Time currentJulianDate,
+            long epochMillis,
+            boolean realTimeActive,
+            Runnable disableRealTimeMode,
+            DoubleConsumer groundTrackResetter,
+            Runnable clearPlayDirection,
+            Runnable onUpdateTime) {
+        if (currentJulianDate == null) {
+            return;
+        }
+        if (realTimeActive && disableRealTimeMode != null) {
+            disableRealTimeMode.run();
+        }
+        double prevJulDate = currentJulianDate.getJulianDate();
+        currentJulianDate.setTimeInMillis(epochMillis);
+        double timeDiffDays = Math.abs(currentJulianDate.getJulianDate() - prevJulDate);
+        if (groundTrackResetter != null) {
+            groundTrackResetter.accept(timeDiffDays);
+        }
+        if (clearPlayDirection != null) {
+            clearPlayDirection.run();
+        }
+        if (onUpdateTime != null) {
+            onUpdateTime.run();
+        }
+    }
+
+    public static void centerMapsOn(
+            Collection<J2DEarthPanel> twoDPanels,
+            Collection<J2DPolarEarthPanel> polarPanels,
+            Collection<J3DEarthPanel> threeDExtPanels,
+            Collection<J3DEarthInternalPanel> threeDIntPanels,
+            double latDeg,
+            double lonDeg) {
+        if (!Double.isFinite(latDeg) || !Double.isFinite(lonDeg)) {
+            return;
+        }
+        forEachPanel(twoDPanels, p -> p.centerOnLatLon(latDeg, lonDeg));
+        forEachPanel(polarPanels, p -> p.centerOnLatLon(latDeg, lonDeg));
+        forEachPanel(threeDExtPanels, p -> p.centerOnLatLon(latDeg, lonDeg));
+        forEachPanel(threeDIntPanels, p -> p.centerOnLatLon(latDeg, lonDeg));
+    }
+
+    private static <T> void forEachPanel(Collection<T> panels, Consumer<T> action) {
+        if (panels == null) {
+            return;
+        }
+        for (T panel : panels) {
+            if (panel != null) {
+                action.accept(panel);
+            }
+        }
+    }
+
+    public static void collectExistingSatelliteIdentifiers(
+            Map<String, AbstractSatellite> satHash,
+            Set<String> existingNames,
+            Set<Integer> existingNoradIds) {
+        if (satHash == null || satHash.isEmpty()) {
+            return;
+        }
+        for (AbstractSatellite sat : satHash.values()) {
+            if (sat == null) {
+                continue;
+            }
+            if (existingNames != null && sat.getName() != null && !sat.getName().isBlank()) {
+                existingNames.add(sat.getName().trim());
+            }
+            if (existingNoradIds != null && sat instanceof SatelliteTleSGP4 sgp4) {
+                int norad = PayloadTleMatcher.extractNoradId(sgp4.getTle());
+                if (norad > 0) {
+                    existingNoradIds.add(norad);
+                }
+            }
+        }
+    }
+
+    public static boolean addOrUpdateSatelliteFromTle(
+            Map<String, AbstractSatellite> satHash,
+            TLE tle,
+            boolean updateIfPresent,
+            double julDate,
+            Consumer<SatelliteTleSGP4> onNewSat,
+            Runnable onAfterChange) {
+        if (satHash == null || tle == null
+                || tle.getLine1() == null || tle.getLine1().isBlank()
+                || tle.getLine2() == null || tle.getLine2().isBlank()) {
+            return false;
+        }
+        int noradId = PayloadTleMatcher.extractNoradId(tle);
+        String satName = (tle.getSatName() != null && !tle.getSatName().isBlank())
+                ? tle.getSatName()
+                : (noradId > 0 ? "NORAD " + noradId : "");
+        if (satName.isBlank()) {
+            return false;
+        }
+
+        AbstractSatellite existing = findMatchingSatellite(satHash, satName, noradId);
+        if (existing != null) {
+            if (!updateIfPresent || !(existing instanceof SatelliteTleSGP4)) {
+                return false;
+            }
+            TLE effectiveTle = Objects.equals(existing.getName(), tle.getSatName())
+                    ? tle
+                    : new TLE(existing.getName(), tle.getLine1(), tle.getLine2());
+            existing.updateTleData(effectiveTle);
+            existing.propogate2JulDate(julDate);
+            if (onAfterChange != null) {
+                onAfterChange.run();
+            }
+            return true;
+        }
+
+        try {
+            SatelliteTleSGP4 created = new SatelliteTleSGP4(satName, tle.getLine1(), tle.getLine2());
+            if (onNewSat != null) {
+                onNewSat.accept(created);
+            } else {
+                satHash.put(created.getName(), created);
+            }
+            created.propogate2JulDate(julDate);
+            if (onAfterChange != null) {
+                onAfterChange.run();
+            }
+            return true;
+        } catch (Exception e) {
+            System.err.println("[JOreSatTrak] Error adding satellite from TLE (" + satName + "): " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static AbstractSatellite findMatchingSatellite(
+            Map<String, AbstractSatellite> satHash,
+            String candidateName,
+            int candidateNoradId) {
+        AbstractSatellite exact = satHash.get(candidateName);
+        if (exact != null) {
+            return exact;
+        }
+        String normalizedCandidate = candidateName.trim();
+        for (AbstractSatellite sat : satHash.values()) {
+            if (sat == null) {
+                continue;
+            }
+            String existingName = sat.getName();
+            if (existingName != null && existingName.trim().equalsIgnoreCase(normalizedCandidate)) {
+                return sat;
+            }
+        }
+        if (candidateNoradId > 0) {
+            for (AbstractSatellite sat : satHash.values()) {
+                if (sat instanceof SatelliteTleSGP4 sgp4
+                        && PayloadTleMatcher.extractNoradId(sgp4.getTle()) == candidateNoradId) {
+                    return sat;
+                }
+            }
+        }
+        return null;
+    }
 
     public static int getJavaMajorVersion() {
         String version = System.getProperty("java.version");

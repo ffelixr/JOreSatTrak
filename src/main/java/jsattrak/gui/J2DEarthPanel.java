@@ -34,6 +34,9 @@ import java.awt.image.*;
 import java.io.File;
 import java.util.Hashtable;
 import java.util.Vector;
+import jsattrak.awareness.AwarenessStateListener;
+import jsattrak.awareness.LiveAwarenessService;
+import jsattrak.awareness.map.LaunchOverlay2DRenderer;
 import jsattrak.coverage.JSatTrakRenderable;
 import jsattrak.objects.AbstractSatellite;
 import jsattrak.utilities.LandMassRegions;
@@ -51,6 +54,8 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
     
     public transient JPopupMenu popup;
     private transient JMenuItem latlonLinesMenu, moreOptionsMenu; // , earthPeMenu, earthNoaaMenu
+    private transient JMenu overlaysMenu;
+    private transient JCheckBoxMenuItem upcomingLaunchesMenuItem;
     //private transient ImageIcon checkMark;
     
     //private int imageMapNum = 0; //0=blue marble, 1=NOAA
@@ -81,6 +86,12 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
      
      // sun
      private Sun sun;
+
+    // Live Awareness launch overlay state
+    private boolean showUpcomingLaunches = true;
+    private transient LiveAwarenessService awarenessService;
+    private transient AwarenessStateListener awarenessListener;
+    private transient LaunchOverlay2DRenderer overlayRenderer = new LaunchOverlay2DRenderer();
      
      
      // land mass  --  only hard coded for now
@@ -207,10 +218,17 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
 //                    
 //                    imageMapNum =1; //0=PE, 1=NOAA
 //                }
+                else if( event.getSource() == upcomingLaunchesMenuItem)
+                {
+                    setShowUpcomingLaunches(upcomingLaunchesMenuItem.isSelected());
+                }
                 else if( event.getSource() == moreOptionsMenu)
                 {
                     // open more options
-                    getApp().open2dWindowOptions();
+                    if (getApp() != null)
+                    {
+                        getApp().open2dWindowOptions();
+                    }
                     
                 }
                 
@@ -225,6 +243,12 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
         popup.add( latlonLinesMenu );
         latlonLinesMenu.setHorizontalTextPosition(JMenuItem.RIGHT);
         latlonLinesMenu.addActionListener(menuListener);
+
+        overlaysMenu = new JMenu("Overlays");
+        upcomingLaunchesMenuItem = new JCheckBoxMenuItem("Upcoming Launches", showUpcomingLaunches);
+        upcomingLaunchesMenuItem.addActionListener(menuListener);
+        overlaysMenu.add(upcomingLaunchesMenuItem);
+        popup.add(overlaysMenu);
         
         popup.addSeparator();
         
@@ -456,6 +480,10 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
         // this is called when the screen has been resize, or zoomed
         // rescales background image and if neeeded earth lights and recreates background image
         bimageScaled = scaleImageMap(bimage);
+        if (bimageScaled == null)
+        {
+            return;
+        }
         
         if(this.isShowEarthLightsMask()) // need to scale Earth Lights mask 
         {
@@ -760,7 +788,7 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
                 System.out.println("Loc (l,l): " + ll[0] + ", " + ll[1] +"\n");
             }
             
-            if(e.getButton() == 1 && zoomInToggleButton.isSelected())
+            if(e.getButton() == 1 && zoomInToggleButton != null && zoomInToggleButton.isSelected())
             {
                 // get lat/long click first before setting new zoom factor
                 double[] ll =  imageMap.findLLfromXY(e.getX(), e.getY(), imageMap.getLastTotalWidth(), imageMap.getLastTotalHeight(), imageMap.getImageWidth(), imageMap.getImageHeight());
@@ -781,7 +809,7 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
                 
             } // zoom in
             
-            if(e.getButton() == 1 && zoomOutToggleButton.isSelected())
+            if(e.getButton() == 1 && zoomOutToggleButton != null && zoomOutToggleButton.isSelected())
             {
                 // get lat/long click first before setting new zoom factor
                 double[] ll =  imageMap.findLLfromXY(e.getX(), e.getY(), imageMap.getLastTotalWidth(), imageMap.getLastTotalHeight(), imageMap.getImageWidth(), imageMap.getImageHeight());
@@ -811,7 +839,7 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
                 rescaleAndSetBackgroundImage();
             }
             
-            if(e.getButton() == 1 && recenterToggleButton.isSelected())
+            if(e.getButton() == 1 && recenterToggleButton != null && recenterToggleButton.isSelected())
             {
                 // just recenter
                 double[] ll =  imageMap.findLLfromXY(e.getX(), e.getY(), imageMap.getLastTotalWidth(), imageMap.getLastTotalHeight(), imageMap.getImageWidth(), imageMap.getImageHeight());
@@ -840,11 +868,20 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
             }
             
             // if middle button hit, turn off zoom in/out  buttons
-            if(e.getButton() == e.BUTTON2)
+            if(e.getButton() == MouseEvent.BUTTON2)
             {
-                zoomInToggleButton.setSelected(false);
-                zoomOutToggleButton.setSelected(false); 
-                recenterToggleButton.setSelected(false);
+                if (zoomInToggleButton != null)
+                {
+                    zoomInToggleButton.setSelected(false);
+                }
+                if (zoomOutToggleButton != null)
+                {
+                    zoomOutToggleButton.setSelected(false);
+                }
+                if (recenterToggleButton != null)
+                {
+                    recenterToggleButton.setSelected(false);
+                }
             }
             
         } // mousePressed
@@ -852,6 +889,17 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
         public void mouseClicked(MouseEvent e)
         {
             checkPopup(e);
+            if (!e.isPopupTrigger()
+                    && e.getButton() == MouseEvent.BUTTON1
+                    && e.getClickCount() == 1
+                    && !isZoomOrRecenterModeActive())
+            {
+                Point pt = SwingUtilities.convertPoint(J2DEarthPanel.this, e.getPoint(), imageMap);
+                if (getOverlayRenderer().handleLeftClick(pt.x, pt.y, 14.0, awarenessService, showUpcomingLaunches))
+                {
+                    imageMap.repaint();
+                }
+            }
         }
         
         public void mouseReleased(MouseEvent e)
@@ -860,6 +908,25 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
 
             prevll[0] = Double.NaN;
             prevll[1] = Double.NaN;
+        }
+
+        public void mouseMoved(MouseEvent e)
+        {
+            Point pt = SwingUtilities.convertPoint(J2DEarthPanel.this, e.getPoint(), imageMap);
+            long simEpoch = currentTime != null ? currentTime.getTimeInMillis() : System.currentTimeMillis();
+            getOverlayRenderer().updateHoverTooltip(
+                    J2DEarthPanel.this,
+                    pt.x,
+                    pt.y,
+                    14.0,
+                    awarenessService,
+                    showUpcomingLaunches,
+                    simEpoch);
+        }
+
+        public void mouseExited(MouseEvent e)
+        {
+            setToolTipText(null);
         }
 
         public void mouseDragged(MouseEvent e)
@@ -925,17 +992,31 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
         {
             if (e.isPopupTrigger())
             {
+                if (upcomingLaunchesMenuItem != null)
+                {
+                    upcomingLaunchesMenuItem.setSelected(showUpcomingLaunches);
+                }
                 popup.show(J2DEarthPanel.this, e.getX(), e.getY());
             }
         }
     } // MousePopupListener class
+
+    private boolean isZoomOrRecenterModeActive()
+    {
+        return (zoomInToggleButton != null && zoomInToggleButton.isSelected())
+                || (zoomOutToggleButton != null && zoomOutToggleButton.isSelected())
+                || (recenterToggleButton != null && recenterToggleButton.isSelected());
+    }
     
     // An inner class to show when popup events occur
     class PopupPrintListener implements PopupMenuListener
     {
         public void popupMenuWillBecomeVisible(PopupMenuEvent e)
         {
-            //System.out.println("Popup menu will be visible!");
+            if (upcomingLaunchesMenuItem != null)
+            {
+                upcomingLaunchesMenuItem.setSelected(showUpcomingLaunches);
+            }
         }
         
         public void popupMenuWillBecomeInvisible(PopupMenuEvent e)
@@ -1414,10 +1495,103 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
      */
     public BufferedImage offScreenRender()
     {
-        BufferedImage buff = new BufferedImage(this.getWidth(), this.getHeight(), BufferedImage.TYPE_INT_RGB );
+        int w = Math.max(1, this.getWidth());
+        int h = Math.max(1, this.getHeight());
+        BufferedImage buff = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
         Graphics g = buff.getGraphics();
         getImageMap().paintComponent(g);
+        g.dispose();
         return buff;
+    }
+
+    public boolean isShowUpcomingLaunches()
+    {
+        return showUpcomingLaunches;
+    }
+
+    public void setShowUpcomingLaunches(boolean show)
+    {
+        this.showUpcomingLaunches = show;
+        if (upcomingLaunchesMenuItem != null)
+        {
+            upcomingLaunchesMenuItem.setSelected(show);
+        }
+        if (imageMap != null)
+        {
+            imageMap.repaint();
+        }
+    }
+
+    public void centerOnLatLon(double latDeg, double lonDeg)
+    {
+        if (!Double.isFinite(latDeg) || !Double.isFinite(lonDeg) || imageMap == null)
+        {
+            return;
+        }
+        double clampedLat = Math.max(-90.0, Math.min(90.0, latDeg));
+        double normLon = lonDeg;
+        while (normLon > 180.0)
+        {
+            normLon -= 360.0;
+        }
+        while (normLon < -180.0)
+        {
+            normLon += 360.0;
+        }
+        if (imageMap.getZoomFactor() < 2.0)
+        {
+            imageMap.setZoomFactor(2.0);
+        }
+        imageMap.setCenterLat(clampedLat);
+        imageMap.setCenterLong(normLon);
+        if (imageMap.getWidth() > 0 && imageMap.getHeight() > 0)
+        {
+            rescaleAndSetBackgroundImage();
+        }
+        else
+        {
+            imageMap.repaint();
+        }
+    }
+
+    public void setAwarenessService(LiveAwarenessService service)
+    {
+        if (this.awarenessService == service)
+        {
+            return;
+        }
+        if (this.awarenessService != null && this.awarenessListener != null)
+        {
+            this.awarenessService.removeListener(this.awarenessListener);
+        }
+        this.awarenessService = service;
+        if (service != null)
+        {
+            this.awarenessListener = LaunchOverlay2DRenderer.createRepaintListener(imageMap);
+            service.addListener(this.awarenessListener);
+        }
+        else
+        {
+            this.awarenessListener = null;
+        }
+        if (imageMap != null)
+        {
+            imageMap.repaint();
+        }
+    }
+
+    public LiveAwarenessService getAwarenessService()
+    {
+        return awarenessService;
+    }
+
+    public LaunchOverlay2DRenderer getOverlayRenderer()
+    {
+        if (overlayRenderer == null)
+        {
+            overlayRenderer = new LaunchOverlay2DRenderer();
+        }
+        return overlayRenderer;
     }
  
     // SEG v4.2 -- new settings

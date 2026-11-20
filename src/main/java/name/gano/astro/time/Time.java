@@ -171,11 +171,29 @@ public class Time implements java.io.Serializable
      */
     public void set(long milliseconds)
     {
-        currentTime.setTimeInMillis(milliseconds);
-        
+        setTimeInMillis(milliseconds);
+    } // set
+
+    /**
+     * Get the current time (UT) in epoch milliseconds.
+     * @return current epoch time in milliseconds
+     */
+    public long getTimeInMillis()
+    {
+        return currentTime.getTimeInMillis();
+    }
+
+    /**
+     * Set the current time (UT) to the given epoch milliseconds.
+     * @param epochMillis epoch time in milliseconds
+     */
+    public void setTimeInMillis(long epochMillis)
+    {
+        currentTime.setTimeInMillis(epochMillis);
+
         // update other time formats
         updateTimeMeasures();
-    } // set
+    }
     
      /**
      * Add specified value in specified time unit to current time
