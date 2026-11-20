@@ -22,6 +22,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Point;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Proxy;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -373,6 +374,153 @@ public class LaunchSitesLayerTest {
         }
     }
 
+    @Test
+    public void testViewCoordinatorDisposeAndWeakListenerGcCleanup(@TempDir Path tmp) throws Exception {
+        long now = 1_795_132_800_000L;
+        LaunchRecord launch = sampleLaunch("l1", "Alpha", "SLC-40", "CCSFS", 28.56, -80.58, now + 6L * 3600_000L);
+        LiveAwarenessService svc = LiveAwarenessService.createForTestWithLaunches(tmp, List.of(launch));
+        try {
+            List<SelectListener> attached = new ArrayList<>();
+            WorldWindow stubWwd = (WorldWindow) Proxy.newProxyInstance(
+                    WorldWindow.class.getClassLoader(),
+                    new Class<?>[] { WorldWindow.class },
+                    (proxy, method, args) -> switch (method.getName()) {
+                        case "addSelectListener" -> {
+                            attached.add((SelectListener) args[0]);
+                            yield null;
+                        }
+                        case "removeSelectListener" -> {
+                            attached.remove((SelectListener) args[0]);
+                            yield null;
+                        }
+                        default -> defaultReturn(method.getReturnType());
+                    });
+
+            // 1. Explicit dispose() detaches listener & clears renderables immediately
+            CountingLayer layer1 = new CountingLayer(null);
+            LaunchSitesLayer.ViewCoordinator coord1 = new LaunchSitesLayer.ViewCoordinator(stubWwd, layer1, now);
+            coord1.setAwarenessService(svc);
+            assertEq(1, attached.size());
+            int countBeforeDispose = layer1.applyCount.get();
+
+            coord1.dispose();
+            assertEq(0, attached.size());
+            assertEq(null, coord1.getAwarenessService());
+            assertEq(0, layer1.getNumRenderables());
+            int countAfterDispose = layer1.applyCount.get();
+            svc.setGlobalMapOverlayEnabled(false);
+            SwingUtilities.invokeAndWait(() -> { });
+            assertEq(countAfterDispose, layer1.applyCount.get());
+            assertTrue("Expected dispose/initial attaches to build cleanly", countBeforeDispose >= 1);
+
+            // 2. WeakReference auto-cleanup when ViewCoordinator is GC'd without explicit dispose()
+            svc.setGlobalMapOverlayEnabled(true);
+            CountingLayer layer2 = new CountingLayer(null);
+            LaunchSitesLayer.ViewCoordinator coord2 = new LaunchSitesLayer.ViewCoordinator(stubWwd, layer2, now);
+            coord2.setAwarenessService(svc);
+            int afterAttach = layer2.applyCount.get();
+
+            svc.selectLaunch("l1");
+            SwingUtilities.invokeAndWait(() -> { });
+            assertTrue("Active coordinator should react to service callbacks", layer2.applyCount.get() > afterAttach);
+
+            WeakReference<LaunchSitesLayer.ViewCoordinator> coordRef = new WeakReference<>(coord2);
+            coord2 = null;
+            for (int i = 0; i < 60 && coordRef.get() != null; i++) {
+                System.gc();
+                Thread.sleep(20);
+            }
+            assertEq(null, coordRef.get());
+
+            int countAtGc = layer2.applyCount.get();
+            svc.setGlobalMapOverlayEnabled(false);
+            svc.selectLaunch(null);
+            SwingUtilities.invokeAndWait(() -> { });
+            assertEq(countAtGc, layer2.applyCount.get());
+        } finally {
+            svc.shutdown();
+        }
+    }
+
+    @Test
+    public void testRefreshForMjdRespectsAltitudeHysteresisAndSecondaryHoverCountdown(@TempDir Path tmp) {
+        long t0 = LaunchSitesLayer.mjdToEpochMillis(61000.0);
+        // Primary launch stays "In Window" across t0 and t0 + 60s so compactLabel is unchanged
+        LaunchRecord primary = LaunchRecord.builder()
+                .id("p1")
+                .missionName("Primary Window")
+                .provider("SpaceX")
+                .vehicle("Falcon 9")
+                .netEpochMillis(t0 - 60_000L)
+                .windowStartMillis(t0 - 60_000L)
+                .windowEndMillis(t0 + 3600_000L)
+                .status("Go")
+                .orbital(true)
+                .padName("SLC-40")
+                .spaceportName("Cape Canaveral")
+                .country("USA")
+                .latDeg(28.5619)
+                .lonDeg(-80.5774)
+                .fixedLandPad(true)
+                .build();
+        // Secondary launch at KSC clusters globally at 1.5e7m and changes countdown T-06h 00m -> T-05h 59m
+        LaunchRecord secondary = sampleLaunch(
+                "s2", "Secondary Shot", "LC-39A", "Cape Canaveral", 28.6084, -80.6043, t0 + 6L * 3600_000L);
+
+        LiveAwarenessService svc = LiveAwarenessService.createForTestWithLaunches(tmp, List.of(primary, secondary));
+        try {
+            AutoClipBasicOrbitView orbitView = new AutoClipBasicOrbitView();
+            orbitView.setZoom(1.5e7);
+            WorldWindow stubWwd = (WorldWindow) Proxy.newProxyInstance(
+                    WorldWindow.class.getClassLoader(),
+                    new Class<?>[] { WorldWindow.class },
+                    (proxy, method, args) -> "getView".equals(method.getName()) ? orbitView : defaultReturn(method.getReturnType()));
+
+            CountingLayer layer = new CountingLayer(null);
+            LaunchSitesLayer.ViewCoordinator coord = new LaunchSitesLayer.ViewCoordinator(stubWwd, layer, t0);
+            coord.setAwarenessService(svc);
+            assertEq(1, layer.applyCount.get());
+            assertEq(1, collectRenderables(layer, PointPlacemark.class).size());
+
+            // Sub-12% eye-altitude jitter must NOT force marker rebuilds during refreshForMjd
+            orbitView.setZoom(1.45e7);
+            coord.refreshForMjd(61000.0);
+            orbitView.setZoom(1.48e7);
+            coord.refreshForMjd(61000.0);
+            assertEq(1, layer.applyCount.get());
+
+            // Advancing time by 60s leaves primary compactLabel ("In Window") identical,
+            // but secondary hover countdown shifts T-06h 00m -> T-05h 59m, so ClusterSignature must trigger rebuild
+            coord.refreshForMjd(61000.0 + (60_000.0 / 86_400_000.0));
+            assertEq(2, layer.applyCount.get());
+            String updatedHover = collectRenderables(layer, PointPlacemark.class).get(0).getStringValue(AVKey.HOVER_TEXT);
+            assertTrue("Expected updated secondary countdown T-05h 59m in hover text, got: " + updatedHover,
+                    updatedHover != null && updatedHover.contains("T-05h 59m"));
+
+            // Zooming in >= 12% (1.5e7 -> 1.0e5) triggers rebuild and splits the two pads
+            orbitView.setZoom(1.0e5);
+            coord.refreshForMjd(61000.0 + (60_000.0 / 86_400_000.0));
+            assertEq(3, layer.applyCount.get());
+            assertEq(2, collectRenderables(layer, PointPlacemark.class).size());
+        } finally {
+            svc.shutdown();
+        }
+    }
+
+    private static final class CountingLayer extends LaunchSitesLayer {
+        final AtomicInteger applyCount = new AtomicInteger();
+
+        CountingLayer(LiveAwarenessService svc) {
+            super(svc);
+        }
+
+        @Override
+        void applyPreparedClusters(List<PreparedCluster> clusters, long simEpochMillis, double safeEyeAlt) {
+            applyCount.incrementAndGet();
+            super.applyPreparedClusters(clusters, simEpochMillis, safeEyeAlt);
+        }
+    }
+
     private static final class StubEarthComponent implements J3DEarthComponent {
         private final WorldWindow wwd;
         private final LayerList layers;
@@ -397,6 +545,7 @@ public class LaunchSitesLayerTest {
         @Override public boolean isShowUpcomingLaunches() { return coordinator.isShowUpcomingLaunches(); }
         @Override public void setShowUpcomingLaunches(boolean enabled) { coordinator.setShowUpcomingLaunches(enabled); }
         @Override public void refreshLaunchOverlay(long simEpochMillis) { coordinator.refreshLaunchOverlay(simEpochMillis); }
+        @Override public void dispose() { coordinator.dispose(); }
 
         @Override public boolean getTerrainProfileEnabled() { return false; }
         @Override public String getTerrainProfileSat() { return ""; }

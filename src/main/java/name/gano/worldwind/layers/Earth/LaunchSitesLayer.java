@@ -18,6 +18,7 @@ import gov.nasa.worldwind.render.Highlightable;
 import gov.nasa.worldwind.render.Offset;
 import gov.nasa.worldwind.render.PointPlacemark;
 import gov.nasa.worldwind.render.PointPlacemarkAttributes;
+import gov.nasa.worldwind.render.Renderable;
 import gov.nasa.worldwind.view.orbit.BasicOrbitView;
 import gov.nasa.worldwindx.examples.util.ToolTipAnnotation;
 import java.awt.BasicStroke;
@@ -61,6 +62,7 @@ public class LaunchSitesLayer extends RenderableLayer {
     private static final double MIN_CLUSTER_RADIUS_DEG = 0.02;
     private static final double REFERENCE_ALTITUDE_METERS = 1.5e7;
     private static final double REFERENCE_CLUSTER_RADIUS_DEG = 2.5;
+    private static final double ALTITUDE_THRESHOLD_HYSTERESIS_RATIO = 0.12;
     private static final double DEFAULT_PAN_ZOOM_METERS = 2_500_000.0;
     private static final long PAN_DURATION_MILLIS = 900L;
     private static final double MJD_EPOCH_1970 = 40587.0;
@@ -80,12 +82,13 @@ public class LaunchSitesLayer extends RenderableLayer {
     private static final Color TOOLTIP_BG = new Color(18, 22, 28, 232);
     private static final Color TOOLTIP_BORDER = new Color(144, 202, 249, 190);
 
+    private final Object renderLock = new Object();
     private volatile LiveAwarenessService awarenessService;
-    private volatile long lastSimEpochMillis;
-    private volatile double lastEyeAltitudeMeters = DEFAULT_EYE_ALTITUDE_METERS;
-    private volatile boolean hasRebuildEpoch;
-    private volatile ToolTipAnnotation hoverTooltip;
-    private volatile String activeHoverTooltipText;
+    private long lastSimEpochMillis;
+    private double lastEyeAltitudeMeters = DEFAULT_EYE_ALTITUDE_METERS;
+    private boolean hasRebuildEpoch;
+    private ToolTipAnnotation hoverTooltip;
+    private String activeHoverTooltipText;
 
     public LaunchSitesLayer(LiveAwarenessService awarenessService) {
         super();
@@ -101,57 +104,121 @@ public class LaunchSitesLayer extends RenderableLayer {
 
     public void setAwarenessService(LiveAwarenessService awarenessService) {
         this.awarenessService = awarenessService;
-        if (awarenessService == null) {
-            clearHoverTooltip();
-            removeAllRenderables();
-        } else if (hasRebuildEpoch) {
-            rebuildMarkers(lastSimEpochMillis, lastEyeAltitudeMeters);
+        long simEpoch;
+        double eyeAlt;
+        boolean shouldRebuild;
+        synchronized (renderLock) {
+            if (awarenessService == null) {
+                clearHoverTooltipLocked();
+                removeAllRenderables();
+                return;
+            }
+            shouldRebuild = this.hasRebuildEpoch;
+            simEpoch = this.lastSimEpochMillis;
+            eyeAlt = this.lastEyeAltitudeMeters;
+        }
+        if (shouldRebuild) {
+            rebuildMarkers(simEpoch, eyeAlt);
         }
     }
 
     @Override
     public void setEnabled(boolean enabled) {
         super.setEnabled(enabled);
-        if (!enabled) {
-            clearHoverTooltip();
-            removeAllRenderables();
-        } else if (hasRebuildEpoch) {
-            rebuildMarkers(lastSimEpochMillis, lastEyeAltitudeMeters);
+        long simEpoch;
+        double eyeAlt;
+        boolean shouldRebuild;
+        synchronized (renderLock) {
+            if (!enabled) {
+                clearHoverTooltipLocked();
+                removeAllRenderables();
+                return;
+            }
+            shouldRebuild = this.hasRebuildEpoch;
+            simEpoch = this.lastSimEpochMillis;
+            eyeAlt = this.lastEyeAltitudeMeters;
+        }
+        if (shouldRebuild) {
+            rebuildMarkers(simEpoch, eyeAlt);
         }
     }
 
     public String getActiveHoverTooltipText() {
-        return activeHoverTooltipText;
+        synchronized (renderLock) {
+            return activeHoverTooltipText;
+        }
     }
 
     public void showHoverTooltip(String text, Point pickPoint) {
-        if (text == null || text.isBlank() || pickPoint == null) {
-            clearHoverTooltip();
-            return;
+        synchronized (renderLock) {
+            if (text == null || text.isBlank() || pickPoint == null) {
+                clearHoverTooltipLocked();
+                return;
+            }
+            ToolTipAnnotation tip = this.hoverTooltip;
+            if (tip == null) {
+                tip = createTooltipAnnotation(text);
+                this.hoverTooltip = tip;
+            } else {
+                tip.setText(text);
+            }
+            tip.setScreenPoint(new Point(pickPoint));
+            this.activeHoverTooltipText = text;
         }
-        ToolTipAnnotation tip = this.hoverTooltip;
-        if (tip == null) {
-            tip = createTooltipAnnotation(text);
-            this.hoverTooltip = tip;
-        } else {
-            tip.setText(text);
-        }
-        tip.setScreenPoint(new Point(pickPoint));
-        this.activeHoverTooltipText = text;
     }
 
     public void clearHoverTooltip() {
+        synchronized (renderLock) {
+            clearHoverTooltipLocked();
+        }
+    }
+
+    private void clearHoverTooltipLocked() {
         this.hoverTooltip = null;
         this.activeHoverTooltipText = null;
     }
 
     @Override
+    public int getNumRenderables() {
+        synchronized (renderLock) {
+            return super.getNumRenderables();
+        }
+    }
+
+    @Override
+    public Iterable<Renderable> getRenderables() {
+        synchronized (renderLock) {
+            List<Renderable> snapshot = new ArrayList<>();
+            for (Renderable renderable : super.getRenderables()) {
+                snapshot.add(renderable);
+            }
+            return List.copyOf(snapshot);
+        }
+    }
+
+    @Override
+    protected void doPreRender(DrawContext dc) {
+        synchronized (renderLock) {
+            super.doPreRender(dc);
+        }
+    }
+
+    @Override
+    protected void doPick(DrawContext dc, Point pickPoint) {
+        synchronized (renderLock) {
+            super.doPick(dc, pickPoint);
+        }
+    }
+
+    @Override
     protected void doRender(DrawContext dc) {
-        super.doRender(dc);
-        LiveAwarenessService svc = this.awarenessService;
-        ToolTipAnnotation tip = this.hoverTooltip;
-        if (tip != null && isEnabled() && svc != null && svc.isGlobalMapOverlayEnabled()) {
-            tip.render(dc);
+        synchronized (renderLock) {
+            super.doRender(dc);
+            LiveAwarenessService svc = this.awarenessService;
+            ToolTipAnnotation tip = this.hoverTooltip;
+            if (tip != null && isEnabled() && svc != null && svc.isGlobalMapOverlayEnabled()) {
+                tip.render(dc);
+            }
         }
     }
 
@@ -160,52 +227,34 @@ public class LaunchSitesLayer extends RenderableLayer {
      * {@link LiveAwarenessService} state without requiring an active OpenGL context.
      */
     public void rebuildMarkers(long simEpochMillis, double eyeAltitudeMeters) {
-        double safeEyeAlt = Double.isFinite(eyeAltitudeMeters)
-                ? Math.max(0.0, eyeAltitudeMeters)
-                : DEFAULT_EYE_ALTITUDE_METERS;
-        this.lastSimEpochMillis = simEpochMillis;
-        this.lastEyeAltitudeMeters = safeEyeAlt;
-        this.hasRebuildEpoch = true;
-
+        double safeEyeAlt = sanitizeEyeAltitude(eyeAltitudeMeters);
         LiveAwarenessService svc = this.awarenessService;
         if (!isEnabled() || svc == null || !svc.isGlobalMapOverlayEnabled()) {
-            clearHoverTooltip();
+            applyPreparedClusters(List.of(), simEpochMillis, safeEyeAlt);
+            return;
+        }
+        List<PreparedCluster> prepared = prepareClusters(svc, simEpochMillis, safeEyeAlt);
+        applyPreparedClusters(prepared, simEpochMillis, safeEyeAlt);
+    }
+
+    /**
+     * Builds the renderable list outside {@code renderLock}, then atomically swaps the layer contents.
+     */
+    void applyPreparedClusters(List<PreparedCluster> prepared, long simEpochMillis, double safeEyeAlt) {
+        List<Renderable> nextRenderables = buildRenderables(prepared);
+        synchronized (renderLock) {
+            this.lastSimEpochMillis = simEpochMillis;
+            this.lastEyeAltitudeMeters = safeEyeAlt;
+            this.hasRebuildEpoch = true;
+
+            LiveAwarenessService svc = this.awarenessService;
+            if (!isEnabled() || svc == null || !svc.isGlobalMapOverlayEnabled() || nextRenderables.isEmpty()) {
+                clearHoverTooltipLocked();
+                removeAllRenderables();
+                return;
+            }
             removeAllRenderables();
-            return;
-        }
-
-        List<LaunchCluster> clusters = computeClusters(svc, simEpochMillis, safeEyeAlt);
-        removeAllRenderables();
-        if (clusters.isEmpty()) {
-            clearHoverTooltip();
-            return;
-        }
-
-        for (LaunchCluster cluster : clusters) {
-            LaunchRecord soonest = cluster.soonest();
-            Position pos = Position.fromDegrees(cluster.centroidLatDeg, cluster.centroidLonDeg, 0.0);
-            Color urgencyColor = LaunchOverlay2DRenderer.colorForUrgency(cluster.urgency);
-            String hoverText = buildHoverText(cluster, simEpochMillis);
-            String compactLabel = buildCompactLabel(cluster, simEpochMillis);
-
-            PointPlacemark placemark = new PointPlacemark(pos);
-            placemark.setAltitudeMode(WorldWind.CLAMP_TO_GROUND);
-            placemark.setDragEnabled(false);
-            placemark.setAlwaysOnTop(cluster.selected);
-            placemark.setAttributes(getOrCreatePlacemarkAttributes(cluster.urgency, cluster.selected));
-            placemark.setHighlightAttributes(getOrCreateHighlightAttributes(cluster.urgency));
-            applyLaunchMetadata(placemark, soonest.getId(), urgencyColor, hoverText);
-            addRenderable(placemark);
-
-            GlobeAnnotation annotation = new GlobeAnnotation(
-                    compactLabel,
-                    pos,
-                    createLabelAttributes(cluster.selected));
-            annotation.setAltitudeMode(WorldWind.CLAMP_TO_GROUND);
-            annotation.setDragEnabled(false);
-            annotation.setAlwaysOnTop(cluster.selected);
-            applyLaunchMetadata(annotation, soonest.getId(), urgencyColor, hoverText);
-            addRenderable(annotation);
+            addRenderables(nextRenderables);
         }
     }
 
@@ -213,27 +262,36 @@ public class LaunchSitesLayer extends RenderableLayer {
      * Rebuilds markers only when eye altitude has changed sufficiently to affect angular clustering.
      */
     public boolean rebuildIfAltitudeChanged(long simEpochMillis, double eyeAltitudeMeters) {
-        double safeEyeAlt = Double.isFinite(eyeAltitudeMeters)
+        double safeEyeAlt = sanitizeEyeAltitude(eyeAltitudeMeters);
+        synchronized (renderLock) {
+            if (this.hasRebuildEpoch) {
+                double oldRadius = computeClusterRadiusDeg(this.lastEyeAltitudeMeters);
+                double newRadius = computeClusterRadiusDeg(safeEyeAlt);
+                if (!isThresholdChangeSignificant(oldRadius, newRadius)) {
+                    return false;
+                }
+            }
+        }
+        rebuildMarkers(simEpochMillis, safeEyeAlt);
+        return true;
+    }
+
+    static boolean isThresholdChangeSignificant(double previousThresholdDeg, double nextThresholdDeg) {
+        if (!Double.isFinite(previousThresholdDeg)) {
+            return true;
+        }
+        double denom = Math.max(previousThresholdDeg, 1e-6);
+        return Math.abs(nextThresholdDeg - previousThresholdDeg) / denom >= ALTITUDE_THRESHOLD_HYSTERESIS_RATIO;
+    }
+
+    static double sanitizeEyeAltitude(double eyeAltitudeMeters) {
+        return Double.isFinite(eyeAltitudeMeters)
                 ? Math.max(0.0, eyeAltitudeMeters)
                 : DEFAULT_EYE_ALTITUDE_METERS;
-        if (!hasRebuildEpoch) {
-            rebuildMarkers(simEpochMillis, safeEyeAlt);
-            return true;
-        }
-        double oldRadius = computeClusterRadiusDeg(this.lastEyeAltitudeMeters);
-        double newRadius = computeClusterRadiusDeg(safeEyeAlt);
-        double denom = Math.max(oldRadius, 1e-6);
-        if (Math.abs(newRadius - oldRadius) / denom >= 0.12) {
-            rebuildMarkers(simEpochMillis, safeEyeAlt);
-            return true;
-        }
-        return false;
     }
 
     public static double computeClusterRadiusDeg(double eyeAltitudeMeters) {
-        double safeAlt = Double.isFinite(eyeAltitudeMeters)
-                ? Math.max(0.0, eyeAltitudeMeters)
-                : DEFAULT_EYE_ALTITUDE_METERS;
+        double safeAlt = sanitizeEyeAltitude(eyeAltitudeMeters);
         return Math.max(MIN_CLUSTER_RADIUS_DEG, (safeAlt / REFERENCE_ALTITUDE_METERS) * REFERENCE_CLUSTER_RADIUS_DEG);
     }
 
@@ -385,19 +443,68 @@ public class LaunchSitesLayer extends RenderableLayer {
     }
 
     /**
+     * Weak listener wrapper so {@link LiveAwarenessService} never pins a closed 3D window's
+     * {@link ViewCoordinator} in memory; automatically unregisters itself once GC clears the target.
+     */
+    private static final class WeakAwarenessListener implements AwarenessStateListener {
+        private final WeakReference<ViewCoordinator> coordinatorRef;
+        private final WeakReference<LiveAwarenessService> serviceRef;
+
+        WeakAwarenessListener(ViewCoordinator coordinator, LiveAwarenessService service) {
+            this.coordinatorRef = new WeakReference<>(coordinator);
+            this.serviceRef = new WeakReference<>(service);
+        }
+
+        private ViewCoordinator resolveOrUnregister() {
+            ViewCoordinator coordinator = coordinatorRef.get();
+            if (coordinator == null) {
+                LiveAwarenessService svc = serviceRef.get();
+                if (svc != null) {
+                    svc.removeListener(this);
+                }
+                return null;
+            }
+            return coordinator;
+        }
+
+        @Override
+        public void onAwarenessDataChanged() {
+            ViewCoordinator coordinator = resolveOrUnregister();
+            if (coordinator != null) {
+                coordinator.onServiceStateChanged();
+            }
+        }
+
+        @Override
+        public void onSelectionChanged(String selectedLaunchId) {
+            ViewCoordinator coordinator = resolveOrUnregister();
+            if (coordinator != null) {
+                coordinator.onServiceStateChanged();
+            }
+        }
+
+        @Override
+        public void onStatusMessage(String message, boolean isWarning) {
+            resolveOrUnregister();
+        }
+    }
+
+    /**
      * Shared coordinator binding a 3D panel's {@link WorldWindow} and {@link LaunchSitesLayer}
      * to {@link LiveAwarenessService} without duplicating listener/view-switch logic across
      * {@code J3DEarthPanel} and {@code J3DEarthInternalPanel}.
      */
     public static final class ViewCoordinator {
+        private final Object stateLock = new Object();
         private final WorldWindow wwd;
         private final LaunchSitesLayer layer;
         private LiveAwarenessService awarenessService;
         private AwarenessStateListener awarenessListener;
         private SelectListener selectListener;
-        private volatile long lastSimEpochMillis;
+        private long lastSimEpochMillis;
         private List<ClusterSignature> lastRenderedSignature = List.of();
         private double lastRenderedThresholdDeg = Double.NaN;
+        private double lastRenderedEyeAltMeters = DEFAULT_EYE_ALTITUDE_METERS;
         private boolean lastRenderedVisible = false;
 
         public ViewCoordinator(WorldWindow wwd, LaunchSitesLayer layer, long initialSimEpochMillis) {
@@ -407,45 +514,48 @@ public class LaunchSitesLayer extends RenderableLayer {
         }
 
         public LiveAwarenessService getAwarenessService() {
-            return awarenessService;
+            synchronized (stateLock) {
+                return awarenessService;
+            }
         }
 
         public void setAwarenessService(LiveAwarenessService service) {
-            if (this.awarenessService == service) {
-                return;
+            synchronized (stateLock) {
+                if (this.awarenessService == service) {
+                    return;
+                }
+                if (this.awarenessService != null && this.awarenessListener != null) {
+                    this.awarenessService.removeListener(this.awarenessListener);
+                }
+                if (this.selectListener != null) {
+                    wwd.removeSelectListener(this.selectListener);
+                    this.selectListener = null;
+                }
+                this.awarenessService = service;
+                this.layer.setAwarenessService(service);
+                if (service != null) {
+                    this.awarenessListener = new WeakAwarenessListener(this, service);
+                    service.addListener(this.awarenessListener);
+                    this.selectListener = createSelectListener(service, null);
+                    wwd.addSelectListener(this.selectListener);
+                } else {
+                    this.awarenessListener = null;
+                }
+                this.lastRenderedSignature = List.of();
+                this.lastRenderedThresholdDeg = Double.NaN;
+                this.lastRenderedEyeAltMeters = DEFAULT_EYE_ALTITUDE_METERS;
+                this.lastRenderedVisible = false;
+                double eyeAlt = sanitizeEyeAltitude(getEyeAltitudeMeters(wwd));
+                applyCurrentStateLocked(this.lastSimEpochMillis, eyeAlt, true);
             }
-            if (this.awarenessService != null && this.awarenessListener != null) {
-                this.awarenessService.removeListener(this.awarenessListener);
-            }
-            if (this.selectListener != null) {
-                wwd.removeSelectListener(this.selectListener);
-                this.selectListener = null;
-            }
-            this.awarenessService = service;
-            this.layer.setAwarenessService(service);
-            if (service != null) {
-                this.awarenessListener = new AwarenessStateListener() {
-                    @Override
-                    public void onAwarenessDataChanged() {
-                        refreshLaunchOverlay(lastSimEpochMillis);
-                    }
+            wwd.redraw();
+        }
 
-                    @Override
-                    public void onSelectionChanged(String selectedLaunchId) {
-                        refreshLaunchOverlay(lastSimEpochMillis);
-                    }
-
-                    @Override
-                    public void onStatusMessage(String message, boolean isWarning) {
-                    }
-                };
-                service.addListener(this.awarenessListener);
-                this.selectListener = createSelectListener(service, null);
-                wwd.addSelectListener(this.selectListener);
-            } else {
-                this.awarenessListener = null;
-            }
-            refreshLaunchOverlay(lastSimEpochMillis);
+        /**
+         * Detaches listeners and clears layer renderables when the owning 3D window closes.
+         */
+        public void dispose() {
+            setAwarenessService(null);
         }
 
         /**
@@ -453,9 +563,11 @@ public class LaunchSitesLayer extends RenderableLayer {
          * {@link WorldWindow}'s {@code InputHandler}.
          */
         public void reattachSelectListener() {
-            if (this.selectListener != null) {
-                wwd.removeSelectListener(this.selectListener);
-                wwd.addSelectListener(this.selectListener);
+            synchronized (stateLock) {
+                if (this.selectListener != null) {
+                    wwd.removeSelectListener(this.selectListener);
+                    wwd.addSelectListener(this.selectListener);
+                }
             }
         }
 
@@ -465,77 +577,168 @@ public class LaunchSitesLayer extends RenderableLayer {
 
         public void setShowUpcomingLaunches(boolean enabled) {
             layer.setEnabled(enabled);
-            refreshLaunchOverlay(lastSimEpochMillis);
+            synchronized (stateLock) {
+                double eyeAlt = sanitizeEyeAltitude(getEyeAltitudeMeters(wwd));
+                applyCurrentStateLocked(this.lastSimEpochMillis, eyeAlt, true);
+            }
+            wwd.redraw();
         }
 
         public void refreshLaunchOverlay(long simEpochMillis) {
-            this.lastSimEpochMillis = simEpochMillis;
-            double eyeAlt = getEyeAltitudeMeters(wwd);
-            layer.rebuildMarkers(simEpochMillis, eyeAlt);
-            recordRenderedState(simEpochMillis, eyeAlt);
+            synchronized (stateLock) {
+                this.lastSimEpochMillis = simEpochMillis;
+                double eyeAlt = sanitizeEyeAltitude(getEyeAltitudeMeters(wwd));
+                applyCurrentStateLocked(simEpochMillis, eyeAlt, true);
+            }
+            wwd.redraw();
+        }
+
+        void onServiceStateChanged() {
+            synchronized (stateLock) {
+                if (this.awarenessService == null) {
+                    return;
+                }
+                double eyeAlt = sanitizeEyeAltitude(getEyeAltitudeMeters(wwd));
+                applyCurrentStateLocked(this.lastSimEpochMillis, eyeAlt, true);
+            }
             wwd.redraw();
         }
 
         public void refreshForMjd(double mjd) {
             long simEpochMillis = mjdToEpochMillis(mjd);
-            this.lastSimEpochMillis = simEpochMillis;
-            LiveAwarenessService svc = this.awarenessService;
-            boolean shouldBeVisible = svc != null && layer.isEnabled() && svc.isGlobalMapOverlayEnabled();
-            if (!shouldBeVisible) {
-                if (this.lastRenderedVisible || layer.getNumRenderables() > 0) {
-                    layer.rebuildMarkers(simEpochMillis, getEyeAltitudeMeters(wwd));
-                    this.lastRenderedSignature = List.of();
-                    this.lastRenderedVisible = false;
-                }
-                return;
-            }
-            double eyeAlt = getEyeAltitudeMeters(wwd);
-            double thresholdDeg = computeClusterRadiusDeg(eyeAlt);
-            List<LaunchCluster> clusters = computeClusters(svc, simEpochMillis, eyeAlt);
-            List<ClusterSignature> nextSignature = toSignature(clusters, simEpochMillis);
-            if (!this.lastRenderedVisible
-                    || Double.compare(this.lastRenderedThresholdDeg, thresholdDeg) != 0
-                    || !Objects.equals(this.lastRenderedSignature, nextSignature)) {
-                layer.rebuildMarkers(simEpochMillis, eyeAlt);
-                this.lastRenderedSignature = nextSignature;
-                this.lastRenderedThresholdDeg = thresholdDeg;
-                this.lastRenderedVisible = true;
+            synchronized (stateLock) {
+                this.lastSimEpochMillis = simEpochMillis;
+                double eyeAlt = sanitizeEyeAltitude(getEyeAltitudeMeters(wwd));
+                applyCurrentStateLocked(simEpochMillis, eyeAlt, false);
             }
         }
 
         public void onViewMoved() {
-            double eyeAlt = getEyeAltitudeMeters(wwd);
-            if (layer.rebuildIfAltitudeChanged(lastSimEpochMillis, eyeAlt)) {
-                recordRenderedState(lastSimEpochMillis, eyeAlt);
+            boolean updated;
+            synchronized (stateLock) {
+                double eyeAlt = sanitizeEyeAltitude(getEyeAltitudeMeters(wwd));
+                double nextThresholdDeg = computeClusterRadiusDeg(eyeAlt);
+                if (this.lastRenderedVisible
+                        && !isThresholdChangeSignificant(this.lastRenderedThresholdDeg, nextThresholdDeg)) {
+                    return;
+                }
+                updated = applyCurrentStateLocked(this.lastSimEpochMillis, eyeAlt, false);
+            }
+            if (updated) {
                 wwd.redraw();
             }
         }
 
-        private void recordRenderedState(long simEpochMillis, double eyeAlt) {
+        private boolean applyCurrentStateLocked(long simEpochMillis, double eyeAlt, boolean forceRebuild) {
             LiveAwarenessService svc = this.awarenessService;
-            boolean visible = svc != null && layer.isEnabled() && svc.isGlobalMapOverlayEnabled();
-            this.lastRenderedVisible = visible;
-            this.lastRenderedThresholdDeg = computeClusterRadiusDeg(eyeAlt);
-            this.lastRenderedSignature = visible
-                    ? toSignature(computeClusters(svc, simEpochMillis, eyeAlt), simEpochMillis)
-                    : List.of();
+            boolean shouldBeVisible = svc != null && layer.isEnabled() && svc.isGlobalMapOverlayEnabled();
+            if (!shouldBeVisible) {
+                boolean needsClear = forceRebuild || this.lastRenderedVisible || layer.getNumRenderables() > 0;
+                if (needsClear) {
+                    layer.applyPreparedClusters(List.of(), simEpochMillis, eyeAlt);
+                }
+                this.lastRenderedSignature = List.of();
+                this.lastRenderedThresholdDeg = Double.NaN;
+                this.lastRenderedEyeAltMeters = eyeAlt;
+                this.lastRenderedVisible = false;
+                return needsClear;
+            }
+
+            double candidateThresholdDeg = computeClusterRadiusDeg(eyeAlt);
+            boolean thresholdChanged = !this.lastRenderedVisible
+                    || isThresholdChangeSignificant(this.lastRenderedThresholdDeg, candidateThresholdDeg);
+            double effectiveEyeAlt = (forceRebuild || thresholdChanged) ? eyeAlt : this.lastRenderedEyeAltMeters;
+            double effectiveThresholdDeg = computeClusterRadiusDeg(effectiveEyeAlt);
+
+            List<PreparedCluster> prepared = prepareClusters(svc, simEpochMillis, effectiveEyeAlt);
+            List<ClusterSignature> nextSignature = extractSignatures(prepared);
+            if (!forceRebuild
+                    && this.lastRenderedVisible
+                    && !thresholdChanged
+                    && Objects.equals(this.lastRenderedSignature, nextSignature)) {
+                return false;
+            }
+
+            layer.applyPreparedClusters(prepared, simEpochMillis, effectiveEyeAlt);
+            this.lastRenderedSignature = nextSignature;
+            this.lastRenderedThresholdDeg = effectiveThresholdDeg;
+            this.lastRenderedEyeAltMeters = effectiveEyeAlt;
+            this.lastRenderedVisible = true;
+            return true;
         }
     }
 
-    private static List<ClusterSignature> toSignature(List<LaunchCluster> clusters, long simEpochMillis) {
+    private static List<PreparedCluster> prepareClusters(
+            LiveAwarenessService service,
+            long simEpochMillis,
+            double eyeAltitudeMeters) {
+        List<LaunchCluster> clusters = computeClusters(service, simEpochMillis, eyeAltitudeMeters);
         if (clusters.isEmpty()) {
             return List.of();
         }
-        List<ClusterSignature> sig = new ArrayList<>(clusters.size());
-        for (LaunchCluster c : clusters) {
-            sig.add(new ClusterSignature(
-                    c.soonest().getId(),
-                    c.launches.size(),
-                    c.urgency,
-                    c.selected,
-                    buildCompactLabel(c, simEpochMillis)));
+        List<PreparedCluster> prepared = new ArrayList<>(clusters.size());
+        for (LaunchCluster cluster : clusters) {
+            String compactLabel = buildCompactLabel(cluster, simEpochMillis);
+            String hoverText = buildHoverText(cluster, simEpochMillis);
+            List<String> memberIds = new ArrayList<>(cluster.launches.size());
+            for (LaunchRecord r : cluster.launches) {
+                memberIds.add(r.getId());
+            }
+            ClusterSignature signature = new ClusterSignature(
+                    List.copyOf(memberIds),
+                    Math.round(cluster.centroidLatDeg * 1_000_000.0),
+                    Math.round(cluster.centroidLonDeg * 1_000_000.0),
+                    cluster.urgency,
+                    cluster.selected,
+                    compactLabel,
+                    hoverText);
+            prepared.add(new PreparedCluster(cluster, compactLabel, hoverText, signature));
         }
-        return sig;
+        return prepared;
+    }
+
+    private static List<ClusterSignature> extractSignatures(List<PreparedCluster> prepared) {
+        if (prepared.isEmpty()) {
+            return List.of();
+        }
+        List<ClusterSignature> sigs = new ArrayList<>(prepared.size());
+        for (PreparedCluster item : prepared) {
+            sigs.add(item.signature);
+        }
+        return sigs;
+    }
+
+    private static List<Renderable> buildRenderables(List<PreparedCluster> prepared) {
+        if (prepared == null || prepared.isEmpty()) {
+            return List.of();
+        }
+        List<Renderable> result = new ArrayList<>(prepared.size() * 2);
+        for (PreparedCluster item : prepared) {
+            LaunchCluster cluster = item.cluster;
+            LaunchRecord soonest = cluster.soonest();
+            Position pos = Position.fromDegrees(cluster.centroidLatDeg, cluster.centroidLonDeg, 0.0);
+            Color urgencyColor = LaunchOverlay2DRenderer.colorForUrgency(cluster.urgency);
+
+            PointPlacemark placemark = new PointPlacemark(pos);
+            placemark.setAltitudeMode(WorldWind.CLAMP_TO_GROUND);
+            placemark.setDragEnabled(false);
+            placemark.setAlwaysOnTop(cluster.selected);
+            placemark.setAttributes(getOrCreatePlacemarkAttributes(cluster.urgency, cluster.selected));
+            placemark.setHighlightAttributes(getOrCreateHighlightAttributes(cluster.urgency));
+            applyLaunchMetadata(placemark, soonest.getId(), urgencyColor, item.hoverText);
+            result.add(placemark);
+
+            GlobeAnnotation annotation = new GlobeAnnotation(
+                    item.compactLabel,
+                    pos,
+                    createLabelAttributes(cluster.selected));
+            annotation.setAltitudeMode(WorldWind.CLAMP_TO_GROUND);
+            annotation.setDragEnabled(false);
+            annotation.setAlwaysOnTop(cluster.selected);
+            applyLaunchMetadata(annotation, soonest.getId(), urgencyColor, item.hoverText);
+            result.add(annotation);
+        }
+        return result;
     }
 
     private static String extractLaunchId(Object topObject) {
@@ -873,12 +1076,32 @@ public class LaunchSitesLayer extends RenderableLayer {
         return tip;
     }
 
+    static final class PreparedCluster {
+        final LaunchCluster cluster;
+        final String compactLabel;
+        final String hoverText;
+        final ClusterSignature signature;
+
+        PreparedCluster(
+                LaunchCluster cluster,
+                String compactLabel,
+                String hoverText,
+                ClusterSignature signature) {
+            this.cluster = cluster;
+            this.compactLabel = compactLabel;
+            this.hoverText = hoverText;
+            this.signature = signature;
+        }
+    }
+
     private record ClusterSignature(
-            String soonestId,
-            int count,
+            List<String> memberIds,
+            long latMicroDeg,
+            long lonMicroDeg,
             LaunchUrgency urgency,
             boolean selected,
-            String label) {
+            String compactLabel,
+            String hoverText) {
     }
 
     private static final class ClusterBuilder {

@@ -1569,6 +1569,7 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     
     public void closeWindow()
     {
+        dispose();
         try
         {
             parent.dispose(); // could setClosed(true)
@@ -1702,6 +1703,15 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
         if (launchCoordinator != null)
         {
             launchCoordinator.refreshLaunchOverlay(simEpochMillis);
+        }
+    }
+
+    @Override
+    public void dispose()
+    {
+        if (launchCoordinator != null)
+        {
+            launchCoordinator.dispose();
         }
     }
     

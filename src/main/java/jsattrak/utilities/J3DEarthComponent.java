@@ -92,5 +92,6 @@ public interface  J3DEarthComponent
     public boolean isShowUpcomingLaunches();
     public void setShowUpcomingLaunches(boolean enabled);
     public void refreshLaunchOverlay(long simEpochMillis);
+    public void dispose();
 
 }
