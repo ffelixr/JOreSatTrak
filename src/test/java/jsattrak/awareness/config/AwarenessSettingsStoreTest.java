@@ -21,6 +21,10 @@ public class AwarenessSettingsStoreTest {
         assertEq(7, defaults.getDefaultHorizonDays());
         assertEq(1, defaults.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.LAUNCH).size());
         assertEq(2, defaults.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.TLE).size());
+        assertEq(15, new DataSourceConfig().getRefreshIntervalMinutes());
+        for (DataSourceConfig defaultSource : defaults.getSources()) {
+            assertEq(15, defaultSource.getRefreshIntervalMinutes());
+        }
 
         defaults.setAutoFetchOnStartup(true);
         defaults.setDefaultHorizonDays(14);

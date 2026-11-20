@@ -23,7 +23,7 @@ public class DataSourceConfig {
     private String authKeyName = "";
     private String authSecret = "";
     private String authUsername = "";
-    private int refreshIntervalMinutes = 60;
+    private int refreshIntervalMinutes = 15;
     private boolean syncFixedPadsToGroundStations;
 
     public DataSourceConfig() {

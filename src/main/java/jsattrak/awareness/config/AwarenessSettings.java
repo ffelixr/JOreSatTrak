@@ -37,7 +37,7 @@ public class AwarenessSettings {
                 "",
                 "",
                 "",
-                60,
+                15,
                 false
         ));
         defaults.add(new DataSourceConfig(
@@ -51,7 +51,7 @@ public class AwarenessSettings {
                 "",
                 "",
                 "",
-                60,
+                15,
                 false
         ));
         defaults.add(new DataSourceConfig(
@@ -65,7 +65,7 @@ public class AwarenessSettings {
                 "",
                 "",
                 "",
-                60,
+                15,
                 false
         ));
         settings.setSources(defaults);
