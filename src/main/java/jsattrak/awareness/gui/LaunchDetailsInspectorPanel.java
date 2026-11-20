@@ -17,6 +17,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.TimeZone;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -71,6 +72,10 @@ public class LaunchDetailsInspectorPanel extends JPanel {
     private final JButton openSatBrowserButton;
 
     private LaunchRecord currentLaunch;
+    private LaunchTleStatus currentTleStatus;
+    private int currentMatchCount = -1;
+    private String currentDisplayTzId;
+    private String currentDescriptionText = "";
     private String currentWebcastUrl = "";
 
     public LaunchDetailsInspectorPanel(
@@ -206,8 +211,19 @@ public class LaunchDetailsInspectorPanel extends JPanel {
      * Populates the inspector with the given launch, TLE availability status, and display timezone.
      */
     public void setLaunch(LaunchRecord launch, LaunchTleStatus tleStatus, int matchCount, TimeZone displayTz) {
-        this.currentLaunch = launch;
+        TimeZone effectiveTz = displayTz != null ? displayTz : TimeZone.getTimeZone("UTC");
+        String tzId = effectiveTz.getID();
+        LaunchTleStatus effectiveStatus = tleStatus != null ? tleStatus : LaunchTleStatus.AWAITING_TLE;
+
         if (launch == null) {
+            if (this.currentLaunch == null && this.currentDisplayTzId != null) {
+                return;
+            }
+            this.currentLaunch = null;
+            this.currentTleStatus = LaunchTleStatus.NO_ORBITAL_PAYLOAD;
+            this.currentMatchCount = 0;
+            this.currentDisplayTzId = tzId;
+            this.currentDescriptionText = "";
             missionTitleLabel.setText("Select a launch to inspect mission details.");
             providerValueLabel.setText("\u2014");
             vehicleValueLabel.setText("\u2014");
@@ -232,27 +248,42 @@ public class LaunchDetailsInspectorPanel extends JPanel {
             return;
         }
 
+        if (Objects.equals(this.currentLaunch, launch)
+                && this.currentTleStatus == effectiveStatus
+                && this.currentMatchCount == matchCount
+                && Objects.equals(this.currentDisplayTzId, tzId)) {
+            return;
+        }
+
+        boolean sameLaunchId = this.currentLaunch != null && Objects.equals(this.currentLaunch.getId(), launch.getId());
+        this.currentLaunch = launch;
+        this.currentTleStatus = effectiveStatus;
+        this.currentMatchCount = matchCount;
+        this.currentDisplayTzId = tzId;
+
         missionTitleLabel.setText(nonBlankOr(launch.getMissionName(), "Scheduled Launch"));
         providerValueLabel.setText(nonBlankOr(launch.getProvider(), "\u2014"));
         vehicleValueLabel.setText(nonBlankOr(launch.getVehicle(), "\u2014"));
         orbitValueLabel.setText(nonBlankOr(launch.getTargetOrbit(), launch.isOrbital() ? "Orbital" : "Suborbital"));
         cosparValueLabel.setText(nonBlankOr(launch.getCosparId(), "Pending"));
-        windowValueLabel.setText(formatLaunchWindow(launch, displayTz));
+        windowValueLabel.setText(formatLaunchWindow(launch, effectiveTz));
         siteValueLabel.setText(formatSite(launch));
         coordsValueLabel.setText(formatCoordinates(launch));
         statusValueLabel.setText(formatStatusAndOutcome(launch));
 
         String desc = launch.getDescription() != null ? launch.getDescription().trim() : "";
-        descriptionArea.setText(desc);
-        descriptionArea.setCaretPosition(0);
-        descriptionScrollPane.setVisible(!desc.isEmpty());
+        if (!sameLaunchId || !Objects.equals(this.currentDescriptionText, desc)) {
+            this.currentDescriptionText = desc;
+            descriptionArea.setText(desc);
+            descriptionArea.setCaretPosition(0);
+            descriptionScrollPane.setVisible(!desc.isEmpty());
+        }
 
         updateWebcastButton(launch.getWebcastUrl());
 
         jumpToT0Button.setEnabled(launch.getNetEpochMillis() > 0L);
         centerMapsButton.setEnabled(Double.isFinite(launch.getLatDeg()) && Double.isFinite(launch.getLonDeg()));
 
-        LaunchTleStatus effectiveStatus = tleStatus != null ? tleStatus : LaunchTleStatus.AWAITING_TLE;
         switch (effectiveStatus) {
             case TLES_READY -> {
                 importTlesButton.setEnabled(true);
@@ -382,6 +413,10 @@ public class LaunchDetailsInspectorPanel extends JPanel {
 
     public JButton getWebcastButton() {
         return webcastButton;
+    }
+
+    public JTextArea getDescriptionArea() {
+        return descriptionArea;
     }
 
     public String getDisplayedWindowText() {

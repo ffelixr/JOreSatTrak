@@ -2,21 +2,32 @@ package jsattrak.awareness.gui;
 
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Graphics2D;
+import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.LookAndFeel;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import javax.swing.event.TableModelEvent;
+import jsattrak.awareness.AwarenessStateListener;
 import jsattrak.awareness.LaunchRecord;
+import jsattrak.awareness.LaunchUrgency;
 import jsattrak.awareness.LiveAwarenessService;
 import jsattrak.awareness.config.AuthMode;
 import jsattrak.awareness.config.AwarenessSettings;
@@ -572,6 +583,285 @@ public class LiveAwarenessGuiTest {
         } finally {
             service.shutdown();
         }
+    }
+
+    @Test
+    public void testOffEdtAwarenessStateListenerMarshalsToEdt(@TempDir Path tmp) throws Exception {
+        long now = 1_795_132_800_000L;
+        LaunchRecord l1 = sample("l1", "Launch One", "SpaceX", "Falcon 9", "Cape Canaveral",
+                now + 4L * 3600_000L, now + 5L * 3600_000L);
+        LaunchRecord l2 = sample("l2", "Launch Two", "Rocket Lab", "Electron", "Mahia",
+                now + 12L * 3600_000L, now + 13L * 3600_000L);
+
+        AwarenessSettingsStore store = new AwarenessSettingsStore(tmp.resolve("settings.json"));
+        LaunchApiClient mockLaunch = new LaunchApiClient() {
+            @Override
+            public LaunchFetchResult fetchUpcomingAndRecent(List<DataSourceConfig> sources, long nowMillis) {
+                return new LaunchFetchResult(List.of(l1, l2), List.of(), "OffEdtMock");
+            }
+        };
+        TleFeedClient emptyTle = new TleFeedClient() {
+            @Override
+            public List<TLE> fetchTleCatalog(DataSourceConfig source) {
+                return List.of();
+            }
+        };
+        GroundStationCatalogRepository repo = new GroundStationCatalogRepository(
+                tmp.resolve("base.csv").toFile(),
+                tmp.resolve("custom.csv").toFile(),
+                tmp.resolve("launches.csv").toFile());
+
+        List<AwarenessStateListener> capturedListeners = new ArrayList<>();
+        LiveAwarenessService service = new LiveAwarenessService(
+                store, tmp.resolve("cache.json"), mockLaunch, emptyTle, repo) {
+            @Override
+            public void addListener(AwarenessStateListener listener) {
+                super.addListener(listener);
+                if (listener != null) {
+                    capturedListeners.add(listener);
+                }
+            }
+        };
+
+        try {
+            AtomicReference<LiveAwarenessInternalFrame> frameRef = new AtomicReference<>();
+            AtomicBoolean offEdtSwingMutation = new AtomicBoolean(false);
+            AtomicInteger edtEventsObserved = new AtomicInteger(0);
+
+            runOnEdt(() -> {
+                LiveAwarenessInternalFrame frame = new LiveAwarenessInternalFrame(
+                        service, t -> {}, (lat, lon) -> {}, r -> {}, () -> {}, () -> {});
+                frame.refreshDisplay(now, false, TimeZone.getTimeZone("UTC"));
+                frame.getSyncStatusLabel().addPropertyChangeListener("text", evt -> {
+                    if (!SwingUtilities.isEventDispatchThread()) {
+                        offEdtSwingMutation.set(true);
+                    } else {
+                        edtEventsObserved.incrementAndGet();
+                    }
+                });
+                frame.getLaunchesTab().getLaunchesTable().getModel().addTableModelListener(evt -> {
+                    if (!SwingUtilities.isEventDispatchThread()) {
+                        offEdtSwingMutation.set(true);
+                    } else {
+                        edtEventsObserved.incrementAndGet();
+                    }
+                });
+                frame.getLaunchesTab().getLaunchesTable().getSelectionModel().addListSelectionListener(evt -> {
+                    if (!SwingUtilities.isEventDispatchThread()) {
+                        offEdtSwingMutation.set(true);
+                    } else {
+                        edtEventsObserved.incrementAndGet();
+                    }
+                });
+                frameRef.set(frame);
+            });
+
+            AtomicReference<Throwable> workerError = new AtomicReference<>();
+            Thread bg = new Thread(() -> {
+                try {
+                    service.refreshBlockingForTest();
+                    for (AwarenessStateListener listener : List.copyOf(capturedListeners)) {
+                        listener.onSelectionChanged("l2");
+                        listener.onStatusMessage("Background status update", false);
+                    }
+                } catch (Throwable t) {
+                    workerError.set(t);
+                }
+            }, "test-off-edt-notifier");
+            bg.start();
+            bg.join(5000);
+            if (workerError.get() != null) {
+                throw new AssertionError("Background notification threw exception", workerError.get());
+            }
+
+            runOnEdt(() -> {});
+            assertEq(false, offEdtSwingMutation.get());
+            assertEq(true, edtEventsObserved.get() > 0);
+
+            runOnEdt(() -> {
+                LiveAwarenessInternalFrame frame = frameRef.get();
+                assertEq(2, frame.getLaunchesTab().getLaunchesTable().getRowCount());
+                assertEq(1, frame.getLaunchesTab().getLaunchesTable().getSelectedRow());
+                assertEq("Background status update", frame.getSyncStatusLabel().getToolTipText());
+                frame.dispose();
+            });
+        } finally {
+            service.shutdown();
+        }
+    }
+
+    @Test
+    public void testRefreshDisplayPreservesTableAndInspectorScrollState(@TempDir Path tmp) throws Exception {
+        long baseNow = 1_795_132_800_000L;
+        LaunchRecord l1 = LaunchRecord.builder()
+                .id("l1")
+                .missionName("Long Desc Mission")
+                .provider("SpaceX")
+                .vehicle("Falcon 9")
+                .spaceportName("Cape Canaveral")
+                .padName("SLC-40")
+                .country("US")
+                .targetOrbit("LEO")
+                .cosparId("2026-142")
+                .netEpochMillis(baseNow + 25L * 3600_000L)
+                .windowStartMillis(baseNow + 25L * 3600_000L)
+                .windowEndMillis(baseNow + 26L * 3600_000L)
+                .status("Go")
+                .orbital(true)
+                .latDeg(28.56)
+                .lonDeg(-80.58)
+                .description("First line of mission profile describing ascent trajectory and payload deployment.")
+                .fixedLandPad(true)
+                .build();
+        LaunchRecord l2 = LaunchRecord.builder()
+                .id("l2")
+                .missionName("Second Mission")
+                .provider("Arianespace")
+                .vehicle("Ariane 6")
+                .spaceportName("Kourou")
+                .padName("ELA-4")
+                .country("FR")
+                .targetOrbit("GTO")
+                .netEpochMillis(baseNow + 48L * 3600_000L)
+                .windowStartMillis(baseNow + 48L * 3600_000L)
+                .windowEndMillis(baseNow + 49L * 3600_000L)
+                .status("TBC")
+                .orbital(true)
+                .latDeg(5.23)
+                .lonDeg(-52.76)
+                .description("Different launch description for second mission.")
+                .fixedLandPad(true)
+                .build();
+
+        List<LaunchRecord> manyLaunches = new ArrayList<>();
+        manyLaunches.add(l1);
+        manyLaunches.add(l2);
+        for (int i = 3; i <= 15; i++) {
+            manyLaunches.add(sample("l" + i, "Mission " + i, "Provider", "Vehicle", "Site",
+                    baseNow + (48L + i) * 3600_000L, baseNow + (49L + i) * 3600_000L));
+        }
+
+        AwarenessSettingsStore store = new AwarenessSettingsStore(tmp.resolve("settings.json"));
+        LaunchApiClient mockLaunch = new LaunchApiClient() {
+            @Override
+            public LaunchFetchResult fetchUpcomingAndRecent(List<DataSourceConfig> sources, long nowMillis) {
+                return new LaunchFetchResult(manyLaunches, List.of(), "MockTick");
+            }
+        };
+        TleFeedClient emptyTle = new TleFeedClient() {
+            @Override
+            public List<TLE> fetchTleCatalog(DataSourceConfig source) {
+                return List.of();
+            }
+        };
+        GroundStationCatalogRepository repo = new GroundStationCatalogRepository(
+                tmp.resolve("base.csv").toFile(),
+                tmp.resolve("custom.csv").toFile(),
+                tmp.resolve("launches.csv").toFile());
+
+        AtomicInteger matchedTleCalls = new AtomicInteger(0);
+        LiveAwarenessService service = new LiveAwarenessService(
+                store, tmp.resolve("cache.json"), mockLaunch, emptyTle, repo) {
+            @Override
+            public List<PayloadTleMatch> getMatchedTles(
+                    LaunchRecord launch, Set<String> existingSatNames, Set<Integer> existingNoradIds) {
+                matchedTleCalls.incrementAndGet();
+                return super.getMatchedTles(launch, existingSatNames, existingNoradIds);
+            }
+        };
+
+        try {
+            service.refreshBlockingForTest();
+            runOnEdt(() -> {
+                LiveAwarenessInternalFrame frame = new LiveAwarenessInternalFrame(
+                        service, t -> {}, (lat, lon) -> {}, r -> {}, () -> {}, () -> {});
+                frame.setSize(780, 440);
+                frame.doLayout();
+                LaunchesAwarenessTab tab = frame.getLaunchesTab();
+                tab.doLayout();
+                JTextArea descArea = tab.getInspectorPanel().getDescriptionArea();
+                JScrollPane tableScroll = findFirstComponent(tab, JScrollPane.class);
+                tableScroll.setSize(760, 140);
+                tableScroll.doLayout();
+
+                frame.refreshDisplay(baseNow, false, TimeZone.getTimeZone("UTC"));
+                tab.getLaunchesTable().setRowSelectionInterval(0, 0);
+                assertEq(LaunchUrgency.SOON_1_TO_3D, tab.getLaunchesTable().getValueAt(0, 0));
+                assertEq("T-1d 01h", tab.getLaunchesTable().getValueAt(0, 1));
+
+                // Scroll table viewport down away from row 0 and select text in inspector description
+                tab.getLaunchesTable().scrollRectToVisible(tab.getLaunchesTable().getCellRect(14, 0, true));
+                Point scrolledViewPos = tableScroll.getViewport().getViewPosition();
+                assertEq(true, scrolledViewPos.y > 0);
+                descArea.select(12, 28);
+                assertEq(28, descArea.getCaretPosition());
+
+                AtomicInteger structuralResetEvents = new AtomicInteger(0);
+                AtomicInteger totalTableEvents = new AtomicInteger(0);
+                tab.getLaunchesTable().getModel().addTableModelListener(evt -> {
+                    totalTableEvents.incrementAndGet();
+                    if (evt.getLastRow() == Integer.MAX_VALUE || evt.getFirstRow() == TableModelEvent.HEADER_ROW) {
+                        structuralResetEvents.incrementAndGet();
+                    }
+                });
+                matchedTleCalls.set(0);
+
+                // Tick +2 hours: same launch list, urgency crosses 24h threshold and countdown changes
+                frame.refreshDisplay(baseNow + 2L * 3600_000L, false, TimeZone.getTimeZone("UTC"));
+                assertEq(0, tab.getLaunchesTable().getSelectedRow());
+                assertEq(scrolledViewPos, tableScroll.getViewport().getViewPosition());
+                assertEq(LaunchUrgency.IMMINENT_OR_IN_WINDOW, tab.getLaunchesTable().getValueAt(0, 0));
+                assertEq("T-23h 00m", tab.getLaunchesTable().getValueAt(0, 1));
+                assertEq(0, structuralResetEvents.get());
+                assertEq(0, matchedTleCalls.get());
+                assertEq(12, descArea.getSelectionStart());
+                assertEq(28, descArea.getSelectionEnd());
+                assertEq(28, descArea.getCaretPosition());
+
+                // Identical tick fires zero table model events and preserves caret/selection & scroll
+                totalTableEvents.set(0);
+                frame.refreshDisplay(baseNow + 2L * 3600_000L, false, TimeZone.getTimeZone("UTC"));
+                assertEq(0, totalTableEvents.get());
+                assertEq(scrolledViewPos, tableScroll.getViewport().getViewPosition());
+                assertEq(28, descArea.getCaretPosition());
+
+                // Switching selection to a different launch resets description caret to 0
+                tab.getLaunchesTable().setRowSelectionInterval(1, 1);
+                assertEq(0, descArea.getCaretPosition());
+
+                // External selection (e.g. map click) DOES scroll table back to the selected row
+                service.selectLaunch("l1");
+                assertEq(0, tab.getLaunchesTable().getSelectedRow());
+                assertEq(0, tableScroll.getViewport().getViewPosition().y);
+
+                frame.dispose();
+            });
+        } finally {
+            service.shutdown();
+        }
+    }
+
+    private static <T extends Component> T findFirstComponent(Container root, Class<T> type) {
+        T found = findFirstComponentOrNull(root, type);
+        if (found == null) {
+            throw new AssertionError("Component not found: " + type.getName());
+        }
+        return found;
+    }
+
+    private static <T extends Component> T findFirstComponentOrNull(Container root, Class<T> type) {
+        for (Component child : root.getComponents()) {
+            if (type.isInstance(child)) {
+                return type.cast(child);
+            }
+            if (child instanceof Container nested) {
+                T found = findFirstComponentOrNull(nested, type);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private static LaunchRecord sample(

@@ -24,6 +24,7 @@ import javax.swing.JInternalFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
+import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import jsattrak.awareness.AwarenessFeed;
@@ -45,7 +46,9 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
     private final JButton sourcesButton;
     private final AwarenessStateListener serviceListener;
     private final List<AwarenessFeed> feeds = new ArrayList<>();
+    private final List<Boolean> lastTabOverlayStates = new ArrayList<>();
 
+    private volatile boolean disposed;
     private long lastSimEpochMillis = System.currentTimeMillis();
     private boolean lastRealTimeMode = true;
     private TimeZone lastDisplayTz = TimeZone.getTimeZone("UTC");
@@ -127,7 +130,7 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         this.serviceListener = new AwarenessStateListener() {
             @Override
             public void onAwarenessDataChanged() {
-                updateHeaderAndTabs();
+                runOnEdt(LiveAwarenessInternalFrame.this::updateHeaderAndTabs);
             }
 
             @Override
@@ -136,10 +139,12 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
 
             @Override
             public void onStatusMessage(String message, boolean isWarning) {
-                updateHeaderAndTabs();
-                if (message != null && !message.isBlank()) {
-                    syncStatusLabel.setToolTipText(message);
-                }
+                runOnEdt(() -> {
+                    updateHeaderAndTabs();
+                    if (message != null && !message.isBlank()) {
+                        syncStatusLabel.setToolTipText(message);
+                    }
+                });
             }
         };
         service.addListener(serviceListener);
@@ -153,10 +158,12 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         Objects.requireNonNull(feed, "feed");
         Objects.requireNonNull(component, "component");
         feeds.add(feed);
+        boolean overlayEnabled = feed.isMapOverlayEnabled();
+        lastTabOverlayStates.add(overlayEnabled);
         int idx = feedTabbedPane.getTabCount();
-        feedTabbedPane.addTab(formatTabTitle(feed, countForFeed(feed)), createLayerIcon(feed.isMapOverlayEnabled()),
+        feedTabbedPane.addTab(formatTabTitle(feed, countForFeed(feed)), createLayerIcon(overlayEnabled),
                 component);
-        feedTabbedPane.setToolTipTextAt(idx, feed.isMapOverlayEnabled()
+        feedTabbedPane.setToolTipTextAt(idx, overlayEnabled
                 ? feed.getDisplayName() + " map overlay active"
                 : feed.getDisplayName() + " map overlay muted");
     }
@@ -176,6 +183,7 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
 
     @Override
     public void dispose() {
+        this.disposed = true;
         service.removeListener(serviceListener);
         launchesTab.dispose();
         super.dispose();
@@ -201,40 +209,85 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         return syncStatusLabel;
     }
 
+    private void runOnEdt(Runnable task) {
+        if (disposed) {
+            return;
+        }
+        Runnable guarded = () -> {
+            if (!disposed) {
+                task.run();
+            }
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            guarded.run();
+        } else {
+            SwingUtilities.invokeLater(guarded);
+        }
+    }
+
     private void updateHeaderAndTabs() {
         boolean refreshing = service.isRefreshing();
-        refreshButton.setEnabled(!refreshing);
+        if (refreshButton.isEnabled() == refreshing) {
+            refreshButton.setEnabled(!refreshing);
+        }
+
+        String statusText;
+        Color statusColor;
+        String statusTooltip;
+        boolean updateTooltip = true;
 
         if (refreshing) {
-            syncStatusLabel.setText("Syncing...");
-            syncStatusLabel.setForeground(defaultForeground());
+            statusText = "Syncing...";
+            statusColor = defaultForeground();
+            statusTooltip = null;
+            updateTooltip = false;
         } else if (service.isDataStale()) {
             long lastSync = service.getLastSuccessfulSyncMillis();
-            String prefix = lastSync > 0L
+            statusText = lastSync > 0L
                     ? "Stale \u00B7 last synced " + LaunchDetailsInspectorPanel.formatDateTime(lastSync, lastDisplayTz)
                     : "Stale \u00B7 sync failed (no cached data)";
-            syncStatusLabel.setText(prefix);
-            syncStatusLabel.setForeground(new Color(0xFB, 0x8C, 0x00));
+            statusColor = new Color(0xFB, 0x8C, 0x00);
             String err = service.getLastErrorMessage();
-            syncStatusLabel.setToolTipText(err != null && !err.isBlank() ? err : "Last refresh failed");
+            statusTooltip = (err != null && !err.isBlank()) ? err : "Last refresh failed";
         } else if (service.getLastSuccessfulSyncMillis() > 0L) {
-            syncStatusLabel.setText("Synced " + LaunchDetailsInspectorPanel.formatDateTime(
-                    service.getLastSuccessfulSyncMillis(), lastDisplayTz));
-            syncStatusLabel.setForeground(mutedForeground());
-            syncStatusLabel.setToolTipText("Last successful sync");
+            statusText = "Synced " + LaunchDetailsInspectorPanel.formatDateTime(
+                    service.getLastSuccessfulSyncMillis(), lastDisplayTz);
+            statusColor = mutedForeground();
+            statusTooltip = "Last successful sync";
         } else {
-            syncStatusLabel.setText("Not synced yet (click Refresh to fetch)");
-            syncStatusLabel.setForeground(mutedForeground());
-            syncStatusLabel.setToolTipText(null);
+            statusText = "Not synced yet (click Refresh to fetch)";
+            statusColor = mutedForeground();
+            statusTooltip = null;
+        }
+
+        if (!Objects.equals(syncStatusLabel.getText(), statusText)) {
+            syncStatusLabel.setText(statusText);
+        }
+        if (!Objects.equals(syncStatusLabel.getForeground(), statusColor)) {
+            syncStatusLabel.setForeground(statusColor);
+        }
+        if (updateTooltip && !Objects.equals(syncStatusLabel.getToolTipText(), statusTooltip)) {
+            syncStatusLabel.setToolTipText(statusTooltip);
         }
 
         for (int i = 0; i < feeds.size() && i < feedTabbedPane.getTabCount(); i++) {
             AwarenessFeed feed = feeds.get(i);
-            feedTabbedPane.setTitleAt(i, formatTabTitle(feed, countForFeed(feed)));
-            feedTabbedPane.setIconAt(i, createLayerIcon(feed.isMapOverlayEnabled()));
-            feedTabbedPane.setToolTipTextAt(i, feed.isMapOverlayEnabled()
-                    ? feed.getDisplayName() + " map overlay active"
-                    : feed.getDisplayName() + " map overlay muted");
+            String title = formatTabTitle(feed, countForFeed(feed));
+            if (!Objects.equals(feedTabbedPane.getTitleAt(i), title)) {
+                feedTabbedPane.setTitleAt(i, title);
+            }
+            boolean overlayEnabled = feed.isMapOverlayEnabled();
+            if (i >= lastTabOverlayStates.size() || lastTabOverlayStates.get(i) != overlayEnabled) {
+                if (i < lastTabOverlayStates.size()) {
+                    lastTabOverlayStates.set(i, overlayEnabled);
+                } else {
+                    lastTabOverlayStates.add(overlayEnabled);
+                }
+                feedTabbedPane.setIconAt(i, createLayerIcon(overlayEnabled));
+                feedTabbedPane.setToolTipTextAt(i, overlayEnabled
+                        ? feed.getDisplayName() + " map overlay active"
+                        : feed.getDisplayName() + " map overlay muted");
+            }
         }
     }
 

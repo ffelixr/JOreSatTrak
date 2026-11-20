@@ -35,6 +35,7 @@ import javax.swing.JTextField;
 import javax.swing.JToggleButton;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
@@ -81,7 +82,9 @@ public class LaunchesAwarenessTab extends JPanel {
 
     private final AwarenessStateListener serviceListener;
 
+    private volatile boolean disposed;
     private boolean upcomingMode = true;
+    private Boolean headerUpcomingMode;
     private long lastSimEpochMillis = System.currentTimeMillis();
     private boolean lastRealTimeMode = true;
     private TimeZone lastDisplayTz = TimeZone.getTimeZone("UTC");
@@ -280,15 +283,22 @@ public class LaunchesAwarenessTab extends JPanel {
         this.serviceListener = new AwarenessStateListener() {
             @Override
             public void onAwarenessDataChanged() {
-                syncControlsFromService();
-                rebuildTable();
+                runOnEdt(() -> {
+                    syncControlsFromService();
+                    refreshOrRebuildTable(false, false);
+                });
             }
 
             @Override
             public void onSelectionChanged(String selectedLaunchId) {
-                if (!updatingTableSelection) {
-                    syncSelectionFromService(selectedLaunchId);
+                if (SwingUtilities.isEventDispatchThread() && updatingTableSelection) {
+                    return;
                 }
+                runOnEdt(() -> {
+                    if (!updatingTableSelection) {
+                        syncSelectionFromService(selectedLaunchId);
+                    }
+                });
             }
 
             @Override
@@ -298,7 +308,7 @@ public class LaunchesAwarenessTab extends JPanel {
         service.addListener(serviceListener);
 
         syncControlsFromService();
-        rebuildTable();
+        refreshOrRebuildTable(false, false);
     }
 
     /**
@@ -309,15 +319,18 @@ public class LaunchesAwarenessTab extends JPanel {
         this.lastRealTimeMode = realTimeMode;
         this.lastDisplayTz = displayTz != null ? displayTz : TimeZone.getTimeZone("UTC");
 
-        simClockPill.setVisible(!realTimeMode);
-        syncControlsFromService();
-        rebuildTable();
+        boolean showPill = !realTimeMode;
+        if (simClockPill.isVisible() != showPill) {
+            simClockPill.setVisible(showPill);
+        }
+        refreshOrRebuildTable(true, false);
     }
 
     /**
      * Unregisters listeners from {@link LiveAwarenessService}.
      */
     public void dispose() {
+        this.disposed = true;
         service.removeListener(serviceListener);
     }
 
@@ -446,12 +459,23 @@ public class LaunchesAwarenessTab extends JPanel {
     private void syncControlsFromService() {
         updatingControls = true;
         try {
-            showOnMapsCheckBox.setSelected(service.isGlobalMapOverlayEnabled());
+            boolean overlayEnabled = service.isGlobalMapOverlayEnabled();
+            if (showOnMapsCheckBox.isSelected() != overlayEnabled) {
+                showOnMapsCheckBox.setSelected(overlayEnabled);
+            }
             int days = service.getSelectedHorizonDays();
-            horizon1dButton.setSelected(days == 1);
-            horizon3dButton.setSelected(days == 3);
-            horizon7dButton.setSelected(days == 7);
-            horizonPanel.setVisible(upcomingMode);
+            if (horizon1dButton.isSelected() != (days == 1)) {
+                horizon1dButton.setSelected(days == 1);
+            }
+            if (horizon3dButton.isSelected() != (days == 3)) {
+                horizon3dButton.setSelected(days == 3);
+            }
+            if (horizon7dButton.isSelected() != (days == 7)) {
+                horizon7dButton.setSelected(days == 7);
+            }
+            if (horizonPanel.isVisible() != upcomingMode) {
+                horizonPanel.setVisible(upcomingMode);
+            }
             updateDynamicColumnHeaders();
         } finally {
             updatingControls = false;
@@ -459,6 +483,10 @@ public class LaunchesAwarenessTab extends JPanel {
     }
 
     private void updateDynamicColumnHeaders() {
+        if (Objects.equals(headerUpcomingMode, upcomingMode)) {
+            return;
+        }
+        headerUpcomingMode = upcomingMode;
         TableColumnModel cm = launchesTable.getColumnModel();
         if (cm.getColumnCount() >= 5) {
             cm.getColumn(1).setHeaderValue(upcomingMode ? "Countdown" : "Since Liftoff");
@@ -467,12 +495,46 @@ public class LaunchesAwarenessTab extends JPanel {
         }
     }
 
+    private void runOnEdt(Runnable task) {
+        if (disposed) {
+            return;
+        }
+        Runnable guarded = () -> {
+            if (!disposed) {
+                task.run();
+            }
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            guarded.run();
+        } else {
+            SwingUtilities.invokeLater(guarded);
+        }
+    }
+
     private void rebuildTable() {
+        refreshOrRebuildTable(false, false);
+    }
+
+    private void refreshOrRebuildTable(boolean tickOnly, boolean scrollToSelection) {
         long refEpoch = upcomingMode ? lastSimEpochMillis : System.currentTimeMillis();
         List<LaunchRecord> baseList = upcomingMode
                 ? service.getVisibleUpcomingLaunches(lastSimEpochMillis)
                 : service.getVisibleRecentLaunches(refEpoch);
         List<LaunchRecord> filtered = applySearchFilter(baseList, searchField.getText());
+
+        if (tickOnly && tableModel.matchesLaunchesAndMode(filtered, upcomingMode)) {
+            for (int i = 0; i < filtered.size(); i++) {
+                LaunchRowEntry existing = tableModel.getRowAt(i);
+                LaunchRecord launch = existing.launch();
+                LaunchUrgency urgency = upcomingMode
+                        ? LaunchTimeEvaluator.evaluateUrgency(launch, lastSimEpochMillis)
+                        : LaunchUrgency.EXPIRED;
+                String countdown = LaunchTimeEvaluator.formatCountdown(launch, refEpoch);
+                tableModel.updateTickEntry(i, urgency, countdown);
+            }
+            updateInspectorFromCurrentSelection();
+            return;
+        }
 
         List<LaunchRowEntry> entries = new ArrayList<>(filtered.size());
         for (LaunchRecord launch : filtered) {
@@ -488,9 +550,29 @@ public class LaunchesAwarenessTab extends JPanel {
         updatingTableSelection = true;
         try {
             tableModel.setRows(entries, upcomingMode);
-            restoreSelection(service.getSelectedLaunchId());
+            restoreSelection(service.getSelectedLaunchId(), scrollToSelection);
         } finally {
             updatingTableSelection = false;
+        }
+    }
+
+    private void updateInspectorFromCurrentSelection() {
+        int selectedRow = launchesTable.getSelectedRow();
+        LaunchRowEntry entry = tableModel.getRowAt(selectedRow);
+        if (entry != null) {
+            inspectorPanel.setLaunch(entry.launch(), entry.tleStatus(), entry.tleMatchCount(), lastDisplayTz);
+            return;
+        }
+        String selectedId = service.getSelectedLaunchId();
+        int byIdRow = tableModel.findRowById(selectedId);
+        if (byIdRow >= 0) {
+            LaunchRowEntry byIdEntry = tableModel.getRowAt(byIdRow);
+            inspectorPanel.setLaunch(byIdEntry.launch(), byIdEntry.tleStatus(), byIdEntry.tleMatchCount(), lastDisplayTz);
+            return;
+        }
+        LaunchRecord selected = service.getSelectedLaunch();
+        if (selected == null) {
+            inspectorPanel.setLaunch(null, LaunchTleStatus.NO_ORBITAL_PAYLOAD, 0, lastDisplayTz);
         }
     }
 
@@ -498,7 +580,9 @@ public class LaunchesAwarenessTab extends JPanel {
         if (selectedLaunchId == null || selectedLaunchId.isBlank()) {
             updatingTableSelection = true;
             try {
-                launchesTable.clearSelection();
+                if (launchesTable.getSelectedRowCount() > 0) {
+                    launchesTable.clearSelection();
+                }
                 inspectorPanel.setLaunch(null, LaunchTleStatus.NO_ORBITAL_PAYLOAD, 0, lastDisplayTz);
             } finally {
                 updatingTableSelection = false;
@@ -524,22 +608,28 @@ public class LaunchesAwarenessTab extends JPanel {
 
         updatingTableSelection = true;
         try {
-            restoreSelection(selectedLaunchId);
+            restoreSelection(selectedLaunchId, true);
         } finally {
             updatingTableSelection = false;
         }
     }
 
-    private void restoreSelection(String selectedLaunchId) {
+    private void restoreSelection(String selectedLaunchId, boolean scrollToSelection) {
         int row = tableModel.findRowById(selectedLaunchId);
         if (row >= 0) {
-            launchesTable.setRowSelectionInterval(row, row);
-            Rectangle cellRect = launchesTable.getCellRect(row, 0, true);
-            launchesTable.scrollRectToVisible(cellRect);
+            if (launchesTable.getSelectedRow() != row || launchesTable.getSelectedRowCount() != 1) {
+                launchesTable.setRowSelectionInterval(row, row);
+            }
+            if (scrollToSelection) {
+                Rectangle cellRect = launchesTable.getCellRect(row, 0, true);
+                launchesTable.scrollRectToVisible(cellRect);
+            }
             LaunchRowEntry entry = tableModel.getRowAt(row);
             inspectorPanel.setLaunch(entry.launch(), entry.tleStatus(), entry.tleMatchCount(), lastDisplayTz);
         } else {
-            launchesTable.clearSelection();
+            if (launchesTable.getSelectedRowCount() > 0) {
+                launchesTable.clearSelection();
+            }
             LaunchRecord selected = service.getSelectedLaunch();
             if (selected != null) {
                 List<PayloadTleMatch> matches = service.getMatchedTles(selected, Set.of(), Set.of());
@@ -632,13 +722,42 @@ public class LaunchesAwarenessTab extends JPanel {
                 "", "Countdown", "Mission / Vehicle", "Spaceport / Pad", "Status", "TLE"
         };
 
-        private List<LaunchRowEntry> rows = List.of();
+        private List<LaunchRowEntry> rows = new ArrayList<>();
         private boolean upcomingMode = true;
 
         void setRows(List<LaunchRowEntry> rows, boolean upcomingMode) {
-            this.rows = rows != null ? rows : List.of();
+            this.rows = rows != null ? new ArrayList<>(rows) : new ArrayList<>();
             this.upcomingMode = upcomingMode;
             fireTableDataChanged();
+        }
+
+        boolean matchesLaunchesAndMode(List<LaunchRecord> launches, boolean mode) {
+            if (this.upcomingMode != mode || launches.size() != rows.size()) {
+                return false;
+            }
+            for (int i = 0; i < launches.size(); i++) {
+                if (!Objects.equals(launches.get(i), rows.get(i).launch())) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void updateTickEntry(int rowIndex, LaunchUrgency urgency, String countdown) {
+            LaunchRowEntry prev = rows.get(rowIndex);
+            boolean urgencyChanged = prev.urgency() != urgency;
+            boolean countdownChanged = !Objects.equals(prev.countdown(), countdown);
+            if (!urgencyChanged && !countdownChanged) {
+                return;
+            }
+            rows.set(rowIndex, new LaunchRowEntry(
+                    prev.launch(), urgency, countdown, prev.tleStatus(), prev.tleMatchCount()));
+            if (urgencyChanged) {
+                fireTableCellUpdated(rowIndex, 0);
+            }
+            if (countdownChanged) {
+                fireTableCellUpdated(rowIndex, 1);
+            }
         }
 
         LaunchRowEntry getRowAt(int row) {
