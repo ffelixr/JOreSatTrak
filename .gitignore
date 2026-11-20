@@ -74,3 +74,7 @@ Thumbs.db
 
 # JSatTrak temporary capture images
 temp_images/
+
+# IA generated files
+docs/superpowers/*
+.superpowers/*
