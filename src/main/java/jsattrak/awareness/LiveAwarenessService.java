@@ -73,8 +73,8 @@ public class LiveAwarenessService implements AwarenessFeed {
 
     private boolean activated;
     private boolean hasSyncedInSession;
-    private boolean refreshInFlight;
-    private boolean shutdown;
+    private volatile boolean refreshInFlight;
+    private volatile boolean shutdown;
     private ScheduledExecutorService executor;
     private ScheduledFuture<?> periodicFuture;
 
@@ -103,7 +103,7 @@ public class LiveAwarenessService implements AwarenessFeed {
         this.gson = new GsonBuilder().setPrettyPrinting().create();
 
         AwarenessSettings loadedSettings = settingsStore.load();
-        this.settings = loadedSettings != null ? loadedSettings : AwarenessSettings.createDefaults();
+        this.settings = loadedSettings != null ? copySettings(loadedSettings) : AwarenessSettings.createDefaults();
         this.selectedHorizonDays = normalizeHorizonDays(this.settings.getDefaultHorizonDays());
         loadCacheQuietly();
     }
@@ -271,13 +271,14 @@ public class LiveAwarenessService implements AwarenessFeed {
     }
 
     public AwarenessSettings getSettings() {
-        return settings;
+        return copySettings(settings);
     }
 
     public void updateSettings(AwarenessSettings updated) throws IOException {
         Objects.requireNonNull(updated, "updated");
-        settingsStore.save(updated);
-        this.settings = updated;
+        AwarenessSettings snapshot = copySettings(updated);
+        settingsStore.save(snapshot);
+        this.settings = snapshot;
         synchronized (lifecycleLock) {
             if (activated && !shutdown) {
                 if (periodicFuture != null) {
@@ -288,6 +289,10 @@ public class LiveAwarenessService implements AwarenessFeed {
             }
         }
         dispatchCallbacks(false, this::notifyDataChanged);
+    }
+
+    public boolean isRefreshing() {
+        return refreshInFlight;
     }
 
     public List<LaunchRecord> getVisibleUpcomingLaunches(long simEpochMillis) {
@@ -418,52 +423,64 @@ public class LiveAwarenessService implements AwarenessFeed {
                 if (launchResult == null) {
                     throw new IOException("Launch API client returned null result");
                 }
-            } catch (IOException e) {
-                this.dataStale = true;
-                String error = nonBlankOr(e.getMessage(), e.getClass().getSimpleName());
-                this.lastErrorMessage = error;
-                String statusMsg = "Launch refresh failed (showing cached data): " + error;
-                dispatchCallbacks(synchronousCallbacks, () -> {
-                    notifyStatusMessage(statusMsg, true);
-                    notifyDataChanged();
-                });
+            } catch (IOException | RuntimeException e) {
+                if (shutdown) {
+                    return;
+                }
+                handleLaunchRefreshFailure(synchronousCallbacks, e);
+                return;
+            }
+
+            if (shutdown) {
                 return;
             }
 
             List<LaunchRecord> newUpcoming = sanitizeLaunchList(launchResult.upcoming());
             List<LaunchRecord> newRecent = sanitizeLaunchList(launchResult.recent());
+            synchronized (lifecycleLock) {
+                if (shutdown) {
+                    return;
+                }
+                this.hasSyncedInSession = true;
+            }
             this.upcomingLaunches = newUpcoming;
             this.recentLaunches = newRecent;
             this.lastSuccessfulSyncMillis = nowMillis;
             this.dataStale = false;
             this.lastErrorMessage = "";
-            synchronized (lifecycleLock) {
-                this.hasSyncedInSession = true;
-            }
 
             boolean selectionCleared = clearSelectionIfMissing(newUpcoming, newRecent);
             List<String> warnings = new ArrayList<>();
 
             DataSourceConfig activeSource = findActiveLaunchSource(launchSources, launchResult.sourceUsed());
-            if (activeSource != null && activeSource.isSyncFixedPadsToGroundStations() && gsRepo != null) {
+            if (!shutdown && activeSource != null && activeSource.isSyncFixedPadsToGroundStations() && gsRepo != null) {
                 try {
                     List<LaunchRecord> allLaunches = new ArrayList<>(newUpcoming.size() + newRecent.size());
                     allLaunches.addAll(newUpcoming);
                     allLaunches.addAll(newRecent);
                     gsRepo.syncLaunchPads(allLaunches);
-                } catch (IOException e) {
+                } catch (IOException | RuntimeException e) {
                     warnings.add("GS pad sync warning: " + nonBlankOr(e.getMessage(), e.getClass().getSimpleName()));
                 }
             }
 
+            if (shutdown) {
+                return;
+            }
             syncTleCatalogs(currentSettings, warnings);
 
+            if (shutdown) {
+                return;
+            }
             try {
                 saveCacheAtomically();
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) {
                 warnings.add("Cache save warning: " + nonBlankOr(e.getMessage(), e.getClass().getSimpleName()));
             }
 
+            if (shutdown) {
+                return;
+            }
             String sourceLabel = nonBlankOr(launchResult.sourceUsed(), "Launch Feed");
             String baseStatus = "Synced " + newUpcoming.size() + " upcoming, "
                     + newRecent.size() + " recent launches (" + sourceLabel + ")";
@@ -480,6 +497,20 @@ public class LiveAwarenessService implements AwarenessFeed {
         }
     }
 
+    private void handleLaunchRefreshFailure(boolean synchronousCallbacks, Throwable errorCause) {
+        if (shutdown) {
+            return;
+        }
+        this.dataStale = true;
+        String error = nonBlankOr(errorCause.getMessage(), errorCause.getClass().getSimpleName());
+        this.lastErrorMessage = error;
+        String statusMsg = "Launch refresh failed (showing cached data): " + error;
+        dispatchCallbacks(synchronousCallbacks, () -> {
+            notifyStatusMessage(statusMsg, true);
+            notifyDataChanged();
+        });
+    }
+
     private void syncTleCatalogs(AwarenessSettings currentSettings, List<String> warnings) {
         List<DataSourceConfig> tleSources = currentSettings.getEnabledSourcesByCategory(
                 DataSourceConfig.FeedCategory.TLE);
@@ -494,12 +525,18 @@ public class LiveAwarenessService implements AwarenessFeed {
         }
 
         TleBatchResult officialBatch = fetchTleGroup(officialSources);
+        if (shutdown) {
+            return;
+        }
         if (officialSources.isEmpty() || officialBatch.anySucceeded) {
             this.officialTleCatalog = officialBatch.tles;
         }
         warnings.addAll(officialBatch.warnings);
 
         TleBatchResult supplementalBatch = fetchTleGroup(supplementalSources);
+        if (shutdown) {
+            return;
+        }
         if (supplementalSources.isEmpty() || supplementalBatch.anySucceeded) {
             this.supplementalTleCatalog = supplementalBatch.tles;
         }
@@ -507,15 +544,21 @@ public class LiveAwarenessService implements AwarenessFeed {
     }
 
     private TleBatchResult fetchTleGroup(List<DataSourceConfig> sources) {
-        if (sources.isEmpty()) {
+        if (sources.isEmpty() || shutdown) {
             return new TleBatchResult(List.of(), false, List.of());
         }
         List<TLE> collected = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
         boolean anySucceeded = false;
         for (DataSourceConfig source : sources) {
+            if (shutdown) {
+                return new TleBatchResult(List.of(), false, List.of());
+            }
             try {
                 List<TLE> fetched = tleFeedClient.fetchTleCatalog(source);
+                if (shutdown) {
+                    return new TleBatchResult(List.of(), false, List.of());
+                }
                 if (fetched != null) {
                     for (TLE tle : fetched) {
                         if (tle != null) {
@@ -524,7 +567,10 @@ public class LiveAwarenessService implements AwarenessFeed {
                     }
                 }
                 anySucceeded = true;
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) {
+                if (shutdown) {
+                    return new TleBatchResult(List.of(), false, List.of());
+                }
                 warnings.add("TLE feed '" + sourceLabel(source) + "' unavailable: "
                         + nonBlankOr(e.getMessage(), e.getClass().getSimpleName()));
             }
@@ -564,6 +610,8 @@ public class LiveAwarenessService implements AwarenessFeed {
     private void executeRefreshTask() {
         try {
             performRefresh(false);
+        } catch (RuntimeException unexpected) {
+            handleLaunchRefreshFailure(false, unexpected);
         } finally {
             synchronized (lifecycleLock) {
                 refreshInFlight = false;
@@ -581,6 +629,16 @@ public class LiveAwarenessService implements AwarenessFeed {
         executeRefreshTask();
     }
 
+    void schedulePeriodicRefreshForTest(long delayMillis) {
+        synchronized (lifecycleLock) {
+            if (shutdown) {
+                return;
+            }
+            activated = true;
+            schedulePeriodicRefreshLocked(delayMillis, TimeUnit.MILLISECONDS);
+        }
+    }
+
     private ScheduledExecutorService ensureExecutorLocked() {
         if (executor == null || executor.isShutdown()) {
             executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -593,23 +651,37 @@ public class LiveAwarenessService implements AwarenessFeed {
     }
 
     private void schedulePeriodicRefreshLocked() {
-        int intervalMinutes = resolveRefreshIntervalMinutes(this.settings);
-        if (intervalMinutes <= 0 || shutdown) {
+        schedulePeriodicRefreshLocked(resolveRefreshIntervalMinutes(this.settings), TimeUnit.MINUTES);
+    }
+
+    private void schedulePeriodicRefreshLocked(long delay, TimeUnit unit) {
+        if (delay <= 0L || shutdown) {
             return;
+        }
+        if (periodicFuture != null) {
+            periodicFuture.cancel(false);
         }
         ScheduledExecutorService exec = ensureExecutorLocked();
         periodicFuture = exec.scheduleWithFixedDelay(
                 this::runScheduledRefresh,
-                intervalMinutes,
-                intervalMinutes,
-                TimeUnit.MINUTES);
+                delay,
+                delay,
+                unit);
     }
 
     private void dispatchCallbacks(boolean synchronous, Runnable task) {
+        if (shutdown) {
+            return;
+        }
+        Runnable guarded = () -> {
+            if (!shutdown) {
+                task.run();
+            }
+        };
         if (synchronous || SwingUtilities.isEventDispatchThread()) {
-            task.run();
+            guarded.run();
         } else {
-            SwingUtilities.invokeLater(task);
+            SwingUtilities.invokeLater(guarded);
         }
     }
 
@@ -700,6 +772,41 @@ public class LiveAwarenessService implements AwarenessFeed {
 
     private static int normalizeHorizonDays(int days) {
         return (days == 1 || days == 3 || days == 7) ? days : DEFAULT_HORIZON_DAYS;
+    }
+
+    private static AwarenessSettings copySettings(AwarenessSettings source) {
+        if (source == null) {
+            return AwarenessSettings.createDefaults();
+        }
+        AwarenessSettings copy = new AwarenessSettings();
+        copy.setAutoFetchOnStartup(source.isAutoFetchOnStartup());
+        copy.setDefaultHorizonDays(source.getDefaultHorizonDays());
+        List<DataSourceConfig> copiedSources = new ArrayList<>();
+        if (source.getSources() != null) {
+            for (DataSourceConfig item : source.getSources()) {
+                if (item != null) {
+                    copiedSources.add(copyDataSource(item));
+                }
+            }
+        }
+        copy.setSources(copiedSources);
+        return copy;
+    }
+
+    private static DataSourceConfig copyDataSource(DataSourceConfig source) {
+        return new DataSourceConfig(
+                source.getId(),
+                source.getFeedCategory(),
+                source.getDisplayName(),
+                source.getEndpointUrl(),
+                source.isEnabled(),
+                source.getPriority(),
+                source.getAuthMode(),
+                source.getAuthKeyName(),
+                source.getAuthSecret(),
+                source.getAuthUsername(),
+                source.getRefreshIntervalMinutes(),
+                source.isSyncFixedPadsToGroundStations());
     }
 
     private static int resolveRefreshIntervalMinutes(AwarenessSettings currentSettings) {

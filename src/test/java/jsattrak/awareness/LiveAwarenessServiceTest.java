@@ -537,6 +537,193 @@ public class LiveAwarenessServiceTest {
         }
     }
 
+    @Test
+    public void testDefensiveCopyIsolationOnSettings(@TempDir Path tmp) throws Exception {
+        AtomicInteger launchCalls = new AtomicInteger();
+        AtomicInteger tleCalls = new AtomicInteger();
+        LiveAwarenessService svc = createServiceWithStubClient(tmp, launchCalls, tleCalls, false, false);
+        try {
+            AwarenessSettings leakedCopy = svc.getSettings();
+            leakedCopy.setAutoFetchOnStartup(true);
+            leakedCopy.getSources().get(0).setEndpointUrl("https://mutated-getter.example/");
+            leakedCopy.getSources().clear();
+
+            AwarenessSettings current = svc.getSettings();
+            assertEq(false, current.isAutoFetchOnStartup());
+            assertEq(2, current.getSources().size());
+            assertEq("https://stub.example/launch/", current.getSources().get(0).getEndpointUrl());
+
+            AwarenessSettings updated = new AwarenessSettings();
+            updated.setAutoFetchOnStartup(true);
+            updated.setDefaultHorizonDays(3);
+            updated.getSources().add(new DataSourceConfig(
+                    "ll2-new", DataSourceConfig.FeedCategory.LAUNCH, "NewLL2",
+                    "https://updated.example/launch/", true, 1, AuthMode.NONE, "", "", "", 15, true));
+            svc.updateSettings(updated);
+
+            // Mutating caller's object after updateSettings() must not affect service state
+            updated.setAutoFetchOnStartup(false);
+            updated.getSources().get(0).setEndpointUrl("https://post-update-mutated.example/");
+            updated.getSources().clear();
+
+            AwarenessSettings afterUpdate = svc.getSettings();
+            assertEq(true, afterUpdate.isAutoFetchOnStartup());
+            assertEq(1, afterUpdate.getSources().size());
+            assertEq("https://updated.example/launch/", afterUpdate.getSources().get(0).getEndpointUrl());
+        } finally {
+            svc.shutdown();
+        }
+    }
+
+    @Test
+    public void testScheduledRefreshSurvivesRuntimeExceptionAndRecovers(@TempDir Path tmp) throws Exception {
+        AwarenessSettingsStore store = new AwarenessSettingsStore(tmp.resolve("awareness-settings.json"));
+        AwarenessSettings settings = new AwarenessSettings();
+        settings.setAutoFetchOnStartup(false);
+        settings.getSources().add(new DataSourceConfig(
+                "ll2-stub", DataSourceConfig.FeedCategory.LAUNCH, "StubLL2",
+                "https://stub.example/launch/", true, 1, AuthMode.NONE, "", "", "", 15, false));
+        store.save(settings);
+
+        AtomicInteger calls = new AtomicInteger();
+        LaunchRecord up1 = sampleLaunch("sched-1", "Scheduled Launch", BASE_NOW + 3600_000L, true);
+        LaunchApiClient flakyRuntimeClient = new LaunchApiClient() {
+            @Override
+            public LaunchFetchResult fetchUpcomingAndRecent(List<DataSourceConfig> sources, long realNowMillis) {
+                int c = calls.incrementAndGet();
+                if (c == 1) {
+                    throw new IllegalStateException("Simulated unexpected parser failure");
+                }
+                return new LaunchFetchResult(List.of(up1), List.of(), "StubLL2");
+            }
+        };
+        TleFeedClient noOpTle = new TleFeedClient() {
+            @Override
+            public List<TLE> fetchTleCatalog(DataSourceConfig source) {
+                return List.of();
+            }
+        };
+
+        LiveAwarenessService svc = new LiveAwarenessService(
+                store, tmp.resolve("awareness-cache.json"), flakyRuntimeClient, noOpTle, testGsRepo(tmp));
+        CountDownLatch warningSeen = new CountDownLatch(1);
+        CountDownLatch recoveredSeen = new CountDownLatch(1);
+        List<String> warningMessages = new CopyOnWriteArrayList<>();
+
+        svc.addListener(new AwarenessStateListener() {
+            @Override
+            public void onAwarenessDataChanged() {
+            }
+
+            @Override
+            public void onSelectionChanged(String selectedLaunchId) {
+            }
+
+            @Override
+            public void onStatusMessage(String message, boolean isWarning) {
+                if (isWarning) {
+                    warningMessages.add(message);
+                    warningSeen.countDown();
+                } else if (warningSeen.getCount() == 0) {
+                    recoveredSeen.countDown();
+                }
+            }
+        });
+
+        try {
+            svc.schedulePeriodicRefreshForTest(25L);
+            assertEq(true, warningSeen.await(5, TimeUnit.SECONDS));
+            assertEq(true, recoveredSeen.await(5, TimeUnit.SECONDS));
+            assertEq(true, calls.get() >= 2);
+            assertEq(false, svc.isDataStale());
+            assertEq("", svc.getLastErrorMessage());
+            assertEq(1, svc.getVisibleUpcomingLaunches(BASE_NOW).size());
+            assertEq(true, warningMessages.get(0).contains("Simulated unexpected parser failure"));
+        } finally {
+            svc.shutdown();
+        }
+    }
+
+    @Test
+    public void testShutdownMidFetchSuppressesStaleFlipAndCallbacks(@TempDir Path tmp) throws Exception {
+        AwarenessSettingsStore store = new AwarenessSettingsStore(tmp.resolve("awareness-settings.json"));
+        AwarenessSettings settings = new AwarenessSettings();
+        settings.setAutoFetchOnStartup(false);
+        settings.getSources().add(new DataSourceConfig(
+                "ll2-stub", DataSourceConfig.FeedCategory.LAUNCH, "StubLL2",
+                "https://stub.example/launch/", true, 1, AuthMode.NONE, "", "", "", 15, false));
+        store.save(settings);
+
+        CountDownLatch enteredFetch = new CountDownLatch(1);
+        CountDownLatch allowThrow = new CountDownLatch(1);
+        AtomicInteger callbackCount = new AtomicInteger();
+
+        LaunchApiClient blockingClient = new LaunchApiClient() {
+            @Override
+            public LaunchFetchResult fetchUpcomingAndRecent(List<DataSourceConfig> sources, long realNowMillis)
+                    throws IOException {
+                enteredFetch.countDown();
+                try {
+                    allowThrow.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    throw new IOException("Launch API request interrupted", interrupted);
+                }
+                throw new IOException("Mid-flight connection closed");
+            }
+        };
+        TleFeedClient noOpTle = new TleFeedClient() {
+            @Override
+            public List<TLE> fetchTleCatalog(DataSourceConfig source) {
+                return List.of();
+            }
+        };
+
+        LiveAwarenessService svc = new LiveAwarenessService(
+                store, tmp.resolve("awareness-cache.json"), blockingClient, noOpTle, testGsRepo(tmp));
+        svc.addListener(new AwarenessStateListener() {
+            @Override
+            public void onAwarenessDataChanged() {
+                callbackCount.incrementAndGet();
+            }
+
+            @Override
+            public void onSelectionChanged(String selectedLaunchId) {
+                callbackCount.incrementAndGet();
+            }
+
+            @Override
+            public void onStatusMessage(String message, boolean isWarning) {
+                callbackCount.incrementAndGet();
+            }
+
+            @Override
+            public void onOpenUiRequested() {
+                callbackCount.incrementAndGet();
+            }
+        });
+
+        try {
+            svc.refreshNowAsync();
+            assertEq(true, enteredFetch.await(5, TimeUnit.SECONDS));
+
+            svc.shutdown();
+            allowThrow.countDown();
+
+            long deadline = System.currentTimeMillis() + 5000L;
+            while (svc.isRefreshing() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(5);
+            }
+            SwingUtilities.invokeAndWait(() -> { });
+
+            assertEq(false, svc.isRefreshing());
+            assertEq(false, svc.isDataStale());
+            assertEq("", svc.getLastErrorMessage());
+            assertEq(0, callbackCount.get());
+        } finally {
+            svc.shutdown();
+        }
+    }
+
     private static LiveAwarenessService createServiceWithStubClient(
             Path tmp,
             AtomicInteger launchCalls,
