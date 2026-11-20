@@ -280,6 +280,89 @@ public class LaunchApiClientTest {
         }
     }
 
+    @Test
+    public void testHttp200HtmlOrMalformedJsonFailsOverAndFailsTestConnection() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/html/", ex -> {
+            byte[] body = "<html><body>Captive Portal</body></html>".getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(200, body.length);
+            ex.getResponseBody().write(body);
+            ex.close();
+        });
+        server.createContext("/no-results/", ex -> {
+            byte[] body = "{\"detail\":\"unexpected schema\"}".getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(200, body.length);
+            ex.getResponseBody().write(body);
+            ex.close();
+        });
+        server.createContext("/good/", ex -> {
+            byte[] body = "{\"results\":[{\"id\":\"g1\",\"name\":\"Good Launch\",\"net\":\"2026-11-21T10:00:00Z\"}]}"
+                    .getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(200, body.length);
+            ex.getResponseBody().write(body);
+            ex.close();
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            DataSourceConfig htmlPrimary = new DataSourceConfig("html1", DataSourceConfig.FeedCategory.LAUNCH, "Portal",
+                    "http://127.0.0.1:" + port + "/html/", true, 1, AuthMode.NONE, "", "", "", 15, false);
+            DataSourceConfig schemaBad = new DataSourceConfig("bad2", DataSourceConfig.FeedCategory.LAUNCH, "BadSchema",
+                    "http://127.0.0.1:" + port + "/no-results/", true, 2, AuthMode.NONE, "", "", "", 15, false);
+            DataSourceConfig goodBackup = new DataSourceConfig("good3", DataSourceConfig.FeedCategory.LAUNCH, "GoodBackup",
+                    "http://127.0.0.1:" + port + "/good/", true, 3, AuthMode.NONE, "", "", "", 15, false);
+
+            LaunchApiClient client = new LaunchApiClient();
+            LaunchApiClient.LaunchFetchResult res = client.fetchUpcomingAndRecent(
+                    List.of(htmlPrimary, schemaBad, goodBackup), 1_795_132_800_000L);
+            assertEq("GoodBackup", res.sourceUsed());
+            assertEq(1, res.upcoming().size());
+
+            ConnectionTestResult htmlTest = client.testConnection(htmlPrimary);
+            assertEq(false, htmlTest.success());
+            assertEq(200, htmlTest.httpStatus());
+
+            ConnectionTestResult schemaTest = client.testConnection(schemaBad);
+            assertEq(false, schemaTest.success());
+            assertEq(200, schemaTest.httpStatus());
+
+            // Non-strict parseResults remains safe for direct callers
+            assertEq(0, LaunchLibrary2Parser.parseResults("<html>bad</html>").size());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testMalformedEndpointUriFailsOverAndFailsTestConnection() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/valid/", ex -> {
+            byte[] body = "{\"results\":[]}".getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(200, body.length);
+            ex.getResponseBody().write(body);
+            ex.close();
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            DataSourceConfig malformedUri = new DataSourceConfig("bad-uri", DataSourceConfig.FeedCategory.LAUNCH, "MalformedURI",
+                    "http://127.0.0.1:" + port + "/bad uri with spaces/", true, 1, AuthMode.NONE, "", "", "", 15, false);
+            DataSourceConfig validBackup = new DataSourceConfig("valid", DataSourceConfig.FeedCategory.LAUNCH, "ValidBackup",
+                    "http://127.0.0.1:" + port + "/valid/", true, 2, AuthMode.NONE, "", "", "", 15, false);
+
+            LaunchApiClient client = new LaunchApiClient();
+            LaunchApiClient.LaunchFetchResult res = client.fetchUpcomingAndRecent(
+                    List.of(malformedUri, validBackup), 1_795_132_800_000L);
+            assertEq("ValidBackup", res.sourceUsed());
+
+            ConnectionTestResult badUriTest = client.testConnection(malformedUri);
+            assertEq(false, badUriTest.success());
+            assertEq(0, badUriTest.httpStatus());
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private static void assertEq(Object expected, Object actual) {
         if (!Objects.equals(expected, actual)) {
             throw new AssertionError("Expected <" + expected + "> but got <" + actual + ">");

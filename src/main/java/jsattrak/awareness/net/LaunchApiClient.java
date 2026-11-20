@@ -62,10 +62,11 @@ public class LaunchApiClient {
                 String recentUrl = buildRecentUrl(source.getEndpointUrl(), realNowMillis);
 
                 String upcomingBody = executeGetWithFailoverCheck(upcomingUrl, source);
-                String recentBody = executeGetWithFailoverCheck(recentUrl, source);
+                List<LaunchRecord> upcoming = parseStrictWithFailover(upcomingBody, source);
 
-                List<LaunchRecord> upcoming = LaunchLibrary2Parser.parseResults(upcomingBody);
-                List<LaunchRecord> recent = LaunchLibrary2Parser.parseResults(recentBody);
+                String recentBody = executeGetWithFailoverCheck(recentUrl, source);
+                List<LaunchRecord> recent = parseStrictWithFailover(recentBody, source);
+
                 String sourceLabel = sourceLabel(source);
                 return new LaunchFetchResult(upcoming, recent, sourceLabel);
             } catch (FailoverException e) {
@@ -89,9 +90,14 @@ public class LaunchApiClient {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             int status = response.statusCode();
             if (status >= 200 && status < 300) {
-                List<LaunchRecord> parsed = LaunchLibrary2Parser.parseResults(response.body());
-                return new ConnectionTestResult(true, status, parsed.size(),
-                        "OK (" + parsed.size() + " launches parsed)");
+                try {
+                    List<LaunchRecord> parsed = LaunchLibrary2Parser.parseResultsStrict(response.body());
+                    return new ConnectionTestResult(true, status, parsed.size(),
+                            "OK (" + parsed.size() + " launches parsed)");
+                } catch (IllegalArgumentException e) {
+                    return new ConnectionTestResult(false, status, 0,
+                            "Invalid Launch Library 2 response: " + e.getMessage());
+                }
             }
             return new ConnectionTestResult(false, status, 0, "HTTP " + status);
         } catch (InterruptedException e) {
@@ -104,9 +110,25 @@ public class LaunchApiClient {
         }
     }
 
+    private List<LaunchRecord> parseStrictWithFailover(String body, DataSourceConfig source)
+            throws FailoverException {
+        try {
+            return LaunchLibrary2Parser.parseResultsStrict(body);
+        } catch (IllegalArgumentException e) {
+            throw new FailoverException(
+                    "Invalid Launch Library 2 response from " + sourceLabel(source) + ": " + e.getMessage(), e);
+        }
+    }
+
     private String executeGetWithFailoverCheck(String url, DataSourceConfig source)
             throws IOException, FailoverException {
-        HttpRequest request = HttpRequestAuthApplier.buildRequest(url, source, requestTimeout);
+        HttpRequest request;
+        try {
+            request = HttpRequestAuthApplier.buildRequest(url, source, requestTimeout);
+        } catch (IllegalArgumentException e) {
+            throw new FailoverException(
+                    "Invalid request URI for " + sourceLabel(source) + ": " + e.getMessage(), e);
+        }
         HttpResponse<String> response;
         try {
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));

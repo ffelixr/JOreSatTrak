@@ -25,24 +25,40 @@ public final class LaunchLibrary2Parser {
 
     /**
      * Parses the {@code results} array of a Launch Library 2 response body into immutable launch records.
+     * Returns an empty list on null, blank, or malformed payloads.
      */
     public static List<LaunchRecord> parseResults(String jsonBody) {
-        if (jsonBody == null || jsonBody.isBlank()) {
+        try {
+            return parseResultsStrict(jsonBody);
+        } catch (IllegalArgumentException e) {
             return List.of();
+        }
+    }
+
+    /**
+     * Parses the {@code results} array of a Launch Library 2 response body, rejecting
+     * non-JSON payloads, non-object roots, or responses missing a {@code results} array.
+     */
+    static List<LaunchRecord> parseResultsStrict(String jsonBody) {
+        if (jsonBody == null || jsonBody.isBlank()) {
+            throw new IllegalArgumentException("Empty Launch Library 2 response body");
         }
         JsonElement rootElement;
         try {
             rootElement = JsonParser.parseString(jsonBody);
         } catch (JsonParseException e) {
-            return List.of();
+            throw new IllegalArgumentException("Malformed Launch Library 2 JSON", e);
         }
         if (!rootElement.isJsonObject()) {
-            return List.of();
+            throw new IllegalArgumentException("Launch Library 2 response root is not a JSON object");
         }
 
         JsonObject root = rootElement.getAsJsonObject();
         JsonArray results = optArray(root, "results");
-        if (results == null || results.isEmpty()) {
+        if (results == null) {
+            throw new IllegalArgumentException("Launch Library 2 response is missing a 'results' array");
+        }
+        if (results.isEmpty()) {
             return List.of();
         }
 
