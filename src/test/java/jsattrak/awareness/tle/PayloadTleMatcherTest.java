@@ -189,6 +189,24 @@ public class PayloadTleMatcherTest {
                 threw = true;
             }
             assertEq(true, threw);
+
+            boolean threwOnHtml = false;
+            try {
+                client.fetchTleCatalog(htmlSrc);
+            } catch (IOException expected) {
+                threwOnHtml = true;
+            }
+            assertEq(true, threwOnHtml);
+
+            DataSourceConfig badUrlSrc = new DataSourceConfig("t5", DataSourceConfig.FeedCategory.TLE, "BadUrl",
+                    "http://[invalid host", true, 5, AuthMode.NONE, "", "", "", 15, false);
+            boolean threwOnBadUrl = false;
+            try {
+                client.fetchTleCatalog(badUrlSrc);
+            } catch (IOException expected) {
+                threwOnBadUrl = true;
+            }
+            assertEq(true, threwOnBadUrl);
         } finally {
             server.stop(0);
         }

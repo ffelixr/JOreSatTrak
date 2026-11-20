@@ -47,8 +47,13 @@ public class TleFeedClient {
         if (source == null || source.getEndpointUrl() == null || source.getEndpointUrl().isBlank()) {
             throw new IOException("TLE source endpoint URL is empty");
         }
-        HttpRequest request = HttpRequestAuthApplier.buildRequest(
-                source.getEndpointUrl(), source, requestTimeout);
+        HttpRequest request;
+        try {
+            request = HttpRequestAuthApplier.buildRequest(
+                    source.getEndpointUrl(), source, requestTimeout);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid TLE source endpoint URL: " + e.getMessage(), e);
+        }
         HttpResponse<String> response;
         try {
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -78,14 +83,13 @@ public class TleFeedClient {
                     request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             int status = response.statusCode();
             if (status >= 200 && status < 300) {
-                String body = response.body();
-                if (looksLikeHtml(body)) {
-                    return new ConnectionTestResult(false, status, 0,
-                            "HTML response received; expected 3LE text or OMM CSV");
+                try {
+                    List<TLE> parsed = parseCatalogResponse(response.body());
+                    return new ConnectionTestResult(true, status, parsed.size(),
+                            "OK (" + parsed.size() + " TLEs parsed)");
+                } catch (IOException e) {
+                    return new ConnectionTestResult(false, status, 0, e.getMessage());
                 }
-                List<TLE> parsed = parseCatalogResponse(body);
-                return new ConnectionTestResult(true, status, parsed.size(),
-                        "OK (" + parsed.size() + " TLEs parsed)");
             }
             return new ConnectionTestResult(false, status, 0, "HTTP " + status);
         } catch (InterruptedException e) {
@@ -103,6 +107,9 @@ public class TleFeedClient {
             return List.of();
         }
         String cleaned = stripUtf8Bom(body);
+        if (looksLikeHtml(cleaned)) {
+            throw new IOException("HTML response received; expected 3LE text or OMM CSV");
+        }
         String firstLine = firstNonEmptyLine(cleaned);
         if (isOmmCsvHeader(firstLine)) {
             try {
