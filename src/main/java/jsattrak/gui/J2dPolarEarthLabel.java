@@ -413,7 +413,7 @@ public class J2dPolarEarthLabel extends JLabel implements Serializable
 
         double maxAng = getMaxAngularRadiusDeg();
         double colat = 90.0 - poleSign * latDeg;
-        if (colat > Math.min(135.0, maxAng * 1.35))
+        if (colat > 135.0)
         {
             return null;
         }

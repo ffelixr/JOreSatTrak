@@ -402,6 +402,84 @@ public class LaunchMapOverlay2DTest {
         }
     }
 
+    @Test
+    public void testZoomedAndPannedPolarViewProjectsMidLatitudeAndSplitsNearbyPads(@TempDir Path tmp) {
+        long now = 1_795_132_800_000L;
+        Time time = new Time();
+        time.setTimeInMillis(now);
+        Sun sun = new Sun(time.getMJD());
+
+        // Cape Canaveral (28.5619N, -80.5774W) has colat=61.44 deg (> 45*1.35=60.75 deg at zoom=2.0)
+        LaunchRecord cape = launch("cape", "Cape Flight", "SLC-40", 28.5619, -80.5774, now + 6L * 3600_000L);
+        LiveAwarenessService capeSvc = LiveAwarenessService.createForTestWithLaunches(tmp.resolve("cape"), List.of(cape));
+        try {
+            J2DPolarEarthPanel polar = new J2DPolarEarthPanel(
+                    new java.util.Hashtable<>(), new java.util.Hashtable<>(),
+                    null, null, null, time, sun, null);
+            polar.setAwarenessService(capeSvc);
+            polar.setSize(600, 400);
+            polar.getPolarLabel().setSize(600, 400);
+            polar.setPolarMode(J2dPolarEarthLabel.MODE_NORTH);
+
+            polar.setZoomFactor(2.0);
+            double maxAng = polar.getPolarLabel().getMaxAngularRadiusDeg();
+            double colat = 90.0 - cape.getLatDeg();
+            double lonRad = Math.toRadians(cape.getLonDeg());
+            polar.setPanXNorm(-(colat / maxAng) * Math.sin(lonRad));
+            polar.setPanYNorm(-(colat / maxAng) * Math.cos(lonRad));
+
+            polar.offScreenRender();
+            int[][] discs = polar.getPolarLabel().computeDiscGeometries(600, 400);
+            int discCx = discs[0][1];
+            int discCy = discs[0][2];
+
+            assertEq(1, polar.getOverlayRenderer().getLastPaintedClusters().size());
+            LaunchMapCluster hit = polar.getOverlayRenderer().findClusterAt(discCx, discCy, 14.0);
+            assertTrue("Zoomed+panned polar view should render and hit mid-latitude pad at disc center",
+                    hit != null && "cape".equals(hit.getSoonest().getId()));
+        } finally {
+            capeSvc.shutdown();
+        }
+
+        // Two mid-latitude pads 8 deg apart (~15.3 px at zoom=1.0 -> clustered; ~30.6 px at zoom=2.0 -> split)
+        LaunchRecord padNorth = launch("p1", "North Pad Flight", "Pad North", 40.0, -80.0, now + 6L * 3600_000L);
+        LaunchRecord padSouth = launch("p2", "South Pad Flight", "Pad South", 32.0, -80.0, now + 18L * 3600_000L);
+        LiveAwarenessService pairSvc = LiveAwarenessService.createForTestWithLaunches(
+                tmp.resolve("pair"), List.of(padNorth, padSouth));
+        try {
+            J2DPolarEarthPanel polar = new J2DPolarEarthPanel(
+                    new java.util.Hashtable<>(), new java.util.Hashtable<>(),
+                    null, null, null, time, sun, null);
+            polar.setAwarenessService(pairSvc);
+            polar.setSize(600, 400);
+            polar.getPolarLabel().setSize(600, 400);
+            polar.setPolarMode(J2dPolarEarthLabel.MODE_NORTH);
+
+            polar.offScreenRender();
+            List<LaunchMapCluster> unzoomed = polar.getOverlayRenderer().getLastPaintedClusters();
+            assertEq(1, unzoomed.size());
+            assertEq(2, unzoomed.get(0).getLaunches().size());
+
+            polar.setZoomFactor(2.0);
+            double maxAng = polar.getPolarLabel().getMaxAngularRadiusDeg();
+            double midColat = 90.0 - 36.0;
+            double lonRad = Math.toRadians(-80.0);
+            polar.setPanXNorm(-(midColat / maxAng) * Math.sin(lonRad));
+            polar.setPanYNorm(-(midColat / maxAng) * Math.cos(lonRad));
+
+            polar.offScreenRender();
+            List<LaunchMapCluster> zoomed = polar.getOverlayRenderer().getLastPaintedClusters();
+            assertEq(2, zoomed.size());
+            for (LaunchMapCluster cluster : zoomed) {
+                LaunchMapCluster hit = polar.getOverlayRenderer().findClusterAt(
+                        cluster.getScreenX(), cluster.getScreenY(), 14.0);
+                assertTrue("Each split zoomed polar marker must be hit-testable", hit != null);
+            }
+        } finally {
+            pairSvc.shutdown();
+        }
+    }
+
     private static JCheckBoxMenuItem findOverlaysMenuItem(javax.swing.JPopupMenu popup) {
         if (popup == null) {
             return null;
