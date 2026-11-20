@@ -76,8 +76,11 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
         
         //set inital settings
         // === Camera Properties =============
-        Angle fov = wwd.getView().getFieldOfView();
-        fovTextField.setText("" + fov.getDegrees() );
+        if (wwd != null && wwd.getView() != null)
+        {
+            Angle fov = wwd.getView().getFieldOfView();
+            fovTextField.setText("" + fov.getDegrees() );
+        }
         
         if(threeDPanel.isViewModeECI())
         {
@@ -126,26 +129,38 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
         ambientSlider.setValue( threeDPanel.getAmbientLightLevel() );
         flareCheckBox.setSelected( threeDPanel.isLensFlareEnabled() );
 
-        if(threeDPanel.getEcefTimeDepRenderableLayer().isShowTerminatorLine())
+        if(threeDPanel.getEcefTimeDepRenderableLayer() != null)
         {
-            terminatorCheckBox.doClick();
-        }
+            if(threeDPanel.getEcefTimeDepRenderableLayer().isShowTerminatorLine())
+            {
+                terminatorCheckBox.doClick();
+            }
 
-        terminatorColorLabel.setBackground(threeDPanel.getEcefTimeDepRenderableLayer().getTerminator().getColor());
+            if(threeDPanel.getEcefTimeDepRenderableLayer().getTerminator() != null)
+            {
+                terminatorColorLabel.setBackground(threeDPanel.getEcefTimeDepRenderableLayer().getTerminator().getColor());
+            }
+        }
 
         // Grid
-        if(threeDPanel.getEciRadialGrid().isShowGrid())
+        if(threeDPanel.getEciRadialGrid() != null)
         {
-            eciGridCheckBox.doClick();
-        }
+            if(threeDPanel.getEciRadialGrid().isShowGrid())
+            {
+                eciGridCheckBox.doClick();
+            }
 
-        gridColorLabel.setBackground( threeDPanel.getEciRadialGrid().getColor() );
+            gridColorLabel.setBackground( threeDPanel.getEciRadialGrid().getColor() );
+        }
 
         // Clipping planes
         orbitNearTextField.setText(threeDPanel.getOrbitNearClipDistance()+"");
         orbitFarTextField.setText(threeDPanel.getOrbitFarClipDistance()+"");
         modelNearTextField.setText(threeDPanel.getModelViewNearClip()+"");
         modelFarTextField.setText(threeDPanel.getModelViewFarClip()+"");
+
+        // Overlays
+        showUpcomingLaunchesCheckBox.setSelected(threeDPanel.isShowUpcomingLaunches());
 
 
     } // JThreeDViewPropPanel
@@ -207,6 +222,8 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
         jLabel11 = new javax.swing.JLabel();
         modelFarTextField = new javax.swing.JTextField();
         modelNearTextField = new javax.swing.JTextField();
+        jPanel6 = new javax.swing.JPanel();
+        showUpcomingLaunchesCheckBox = new javax.swing.JCheckBox();
 
         buttonGroup1.add(earthViewRadioButton);
         buttonGroup1.add(modelViewRadioButton);
@@ -574,6 +591,25 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
                 .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
         );
 
+        jPanel6.setBorder(javax.swing.BorderFactory.createTitledBorder("Overlays"));
+
+        showUpcomingLaunchesCheckBox.setSelected(true);
+        showUpcomingLaunchesCheckBox.setText("Show Upcoming Launches");
+
+        javax.swing.GroupLayout jPanel6Layout = new javax.swing.GroupLayout(jPanel6);
+        jPanel6.setLayout(jPanel6Layout);
+        jPanel6Layout.setHorizontalGroup(
+            jPanel6Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(jPanel6Layout.createSequentialGroup()
+                .addContainerGap()
+                .addComponent(showUpcomingLaunchesCheckBox)
+                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+        );
+        jPanel6Layout.setVerticalGroup(
+            jPanel6Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addComponent(showUpcomingLaunchesCheckBox)
+        );
+
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(this);
         this.setLayout(layout);
         layout.setHorizontalGroup(
@@ -586,7 +622,8 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
                 .addGap(6, 6, 6)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
                     .addComponent(jPanel4, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                    .addComponent(jPanel5, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)))
+                    .addComponent(jPanel5, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addComponent(jPanel6, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)))
             .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
                 .addContainerGap(91, Short.MAX_VALUE)
                 .addComponent(applyButton)
@@ -609,7 +646,9 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
                     .addGroup(layout.createSequentialGroup()
                         .addComponent(jPanel4, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(jPanel5, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)))
+                        .addComponent(jPanel5, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                        .addComponent(jPanel6, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 12, Short.MAX_VALUE)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(applyButton)
@@ -639,7 +678,10 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
         boolean updateMaps = saveSettings();
         
         // force repaint
-        app.forceRepainting(updateMaps);
+        if (app != null)
+        {
+            app.forceRepainting(updateMaps);
+        }
     }//GEN-LAST:event_applyButtonActionPerformed
 
     private void okButtonActionPerformed(java.awt.event.ActionEvent evt)//GEN-FIRST:event_okButtonActionPerformed
@@ -652,7 +694,10 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
           // maybe do this from JSatTrack -- when internal frame is closed of this type and ok was hit?
         okHit = true;
         // force repaint
-        app.forceRepainting(updateMaps);
+        if (app != null)
+        {
+            app.forceRepainting(updateMaps);
+        }
         
         // close internal frame
         try
@@ -799,6 +844,8 @@ private void gridColorLabelMouseClicked(java.awt.event.MouseEvent evt)//GEN-FIRS
     private javax.swing.JPanel jPanel3;
     private javax.swing.JPanel jPanel4;
     private javax.swing.JPanel jPanel5;
+    private javax.swing.JPanel jPanel6;
+    private javax.swing.JCheckBox showUpcomingLaunchesCheckBox;
     private javax.swing.JComboBox modeViewComboBox;
     private javax.swing.JTextField modelFarTextField;
     private javax.swing.JTextField modelNearTextField;
@@ -867,7 +914,10 @@ private void gridColorLabelMouseClicked(java.awt.event.MouseEvent evt)//GEN-FIRS
         try
         {
             double fov = Double.parseDouble(fovTextField.getText());
-            wwd.getView().setFieldOfView(Angle.fromDegrees(fov));
+            if (wwd != null && wwd.getView() != null)
+            {
+                wwd.getView().setFieldOfView(Angle.fromDegrees(fov));
+            }
         }
         catch(Exception e){}
 
@@ -879,13 +929,22 @@ private void gridColorLabelMouseClicked(java.awt.event.MouseEvent evt)//GEN-FIRS
         threeDPanel.setLensFlare(flareCheckBox.isSelected());
         threeDPanel.setAmbientLightLevel( ambientSlider.getValue() ); // causes re-render always
 
-        threeDPanel.getEcefTimeDepRenderableLayer().setShowTerminatorLine(terminatorCheckBox.isSelected());
+        if (threeDPanel.getEcefTimeDepRenderableLayer() != null)
+        {
+            threeDPanel.getEcefTimeDepRenderableLayer().setShowTerminatorLine(terminatorCheckBox.isSelected());
 
-        threeDPanel.getEcefTimeDepRenderableLayer().getTerminator().setColor(terminatorColorLabel.getBackground());
+            if (threeDPanel.getEcefTimeDepRenderableLayer().getTerminator() != null)
+            {
+                threeDPanel.getEcefTimeDepRenderableLayer().getTerminator().setColor(terminatorColorLabel.getBackground());
+            }
+        }
 
         // grid
-        threeDPanel.getEciRadialGrid().setShowGrid(eciGridCheckBox.isSelected());
-        threeDPanel.getEciRadialGrid().setColor( gridColorLabel.getBackground() );
+        if (threeDPanel.getEciRadialGrid() != null)
+        {
+            threeDPanel.getEciRadialGrid().setShowGrid(eciGridCheckBox.isSelected());
+            threeDPanel.getEciRadialGrid().setColor( gridColorLabel.getBackground() );
+        }
 
 
         // Clipping planes
@@ -900,6 +959,9 @@ private void gridColorLabelMouseClicked(java.awt.event.MouseEvent evt)//GEN-FIRS
         {
             System.out.println("Error in reading user input clipping values: " + e.toString());
         }
+
+        // Overlays
+        threeDPanel.setShowUpcomingLaunches(showUpcomingLaunchesCheckBox.isSelected());
 
 
         return updateMapData;
