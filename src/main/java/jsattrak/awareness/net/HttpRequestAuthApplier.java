@@ -36,11 +36,23 @@ public final class HttpRequestAuthApplier {
             finalUrl = appendQueryParam(finalUrl, source.getAuthKeyName(), source.getAuthSecret());
         }
 
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(finalUrl))
-                .timeout(effectiveTimeout)
-                .header("User-Agent", "JOreSatTrak/0.1")
-                .GET();
+        URI uri;
+        try {
+            uri = URI.create(finalUrl);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(redactSecretFromError(e.getMessage(), mode, source));
+        }
+
+        HttpRequest.Builder builder;
+        try {
+            builder = HttpRequest.newBuilder()
+                    .uri(uri)
+                    .timeout(effectiveTimeout)
+                    .header("User-Agent", "JOreSatTrak/0.1")
+                    .GET();
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(redactSecretFromError(e.getMessage(), mode, source));
+        }
 
         if (source != null) {
             applyHeaderAuth(builder, mode, source);
@@ -83,13 +95,37 @@ public final class HttpRequestAuthApplier {
         }
         String encodedKey = URLEncoder.encode(trimmedKey, StandardCharsets.UTF_8);
         String encodedVal = URLEncoder.encode(nullToEmpty(secret), StandardCharsets.UTF_8);
+        int hashIdx = url.indexOf('#');
+        String base = hashIdx >= 0 ? url.substring(0, hashIdx) : url;
+        String fragment = hashIdx >= 0 ? url.substring(hashIdx) : "";
         String separator;
-        if (url.endsWith("?") || url.endsWith("&")) {
+        if (base.endsWith("?") || base.endsWith("&")) {
             separator = "";
         } else {
-            separator = url.contains("?") ? "&" : "?";
+            separator = base.contains("?") ? "&" : "?";
         }
-        return url + separator + encodedKey + "=" + encodedVal;
+        return base + separator + encodedKey + "=" + encodedVal + fragment;
+    }
+
+    private static String redactSecretFromError(String message, AuthMode mode, DataSourceConfig source) {
+        if (message == null || message.isBlank()) {
+            return "Invalid request URI";
+        }
+        if (mode != AuthMode.QUERY_PARAM || source == null) {
+            return message;
+        }
+        String secret = nullToEmpty(source.getAuthSecret());
+        String keyName = nullToEmpty(source.getAuthKeyName()).trim();
+        String encodedVal = URLEncoder.encode(secret, StandardCharsets.UTF_8);
+        String sanitized = message;
+        if (!keyName.isEmpty()) {
+            String encodedKey = URLEncoder.encode(keyName, StandardCharsets.UTF_8);
+            sanitized = sanitized.replace(encodedKey + "=" + encodedVal, encodedKey + "=[REDACTED]");
+        }
+        if (!secret.isEmpty() && (sanitized.contains(secret) || (!encodedVal.isEmpty() && sanitized.contains(encodedVal)))) {
+            return "Invalid request URI (details redacted)";
+        }
+        return sanitized;
     }
 
     private static String nullToEmpty(String s) {

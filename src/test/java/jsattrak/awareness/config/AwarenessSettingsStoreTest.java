@@ -19,8 +19,18 @@ public class AwarenessSettingsStoreTest {
         AwarenessSettings defaults = store.load();
         assertEq(false, defaults.isAutoFetchOnStartup());
         assertEq(7, defaults.getDefaultHorizonDays());
-        assertEq(1, defaults.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.LAUNCH).size());
-        assertEq(2, defaults.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.TLE).size());
+        List<DataSourceConfig> defaultLaunchSources = defaults.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.LAUNCH);
+        assertEq(1, defaultLaunchSources.size());
+        assertEq("ll2-public", defaultLaunchSources.get(0).getId());
+        assertEq(true, defaultLaunchSources.get(0).isSyncFixedPadsToGroundStations());
+
+        List<DataSourceConfig> defaultTleSources = defaults.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.TLE);
+        assertEq(2, defaultTleSources.size());
+        assertEq("celestrak-supgp", defaultTleSources.get(1).getId());
+        assertEq("CelesTrak SupGP (SpaceX-E)", defaultTleSources.get(1).getDisplayName());
+        assertEq("https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?SOURCE=SpaceX-E&FORMAT=tle",
+                defaultTleSources.get(1).getEndpointUrl());
+        assertEq(true, defaultTleSources.get(1).isEnabled());
         assertEq(15, new DataSourceConfig().getRefreshIntervalMinutes());
         for (DataSourceConfig defaultSource : defaults.getSources()) {
             assertEq(15, defaultSource.getRefreshIntervalMinutes());
@@ -59,6 +69,7 @@ public class AwarenessSettingsStoreTest {
         assertEq("qsecret", launchSources.get(0).getAuthSecret());
         assertEq("ll2-public", launchSources.get(1).getId());
         assertEq(AuthMode.NONE, launchSources.get(1).getAuthMode());
+        assertEq(true, launchSources.get(1).isSyncFixedPadsToGroundStations());
         assertEq("ll2-mirror", launchSources.get(2).getId());
         assertEq("Token secret123", launchSources.get(2).getAuthSecret());
         assertEq(true, launchSources.get(2).isSyncFixedPadsToGroundStations());

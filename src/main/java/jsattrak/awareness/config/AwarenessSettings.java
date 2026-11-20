@@ -38,7 +38,7 @@ public class AwarenessSettings {
                 "",
                 "",
                 15,
-                false
+                true
         ));
         defaults.add(new DataSourceConfig(
                 "celestrak-tle-new",
@@ -57,8 +57,8 @@ public class AwarenessSettings {
         defaults.add(new DataSourceConfig(
                 "celestrak-supgp",
                 DataSourceConfig.FeedCategory.TLE,
-                "CelesTrak SupGP Index",
-                "https://celestrak.org/NORAD/elements/supplemental/",
+                "CelesTrak SupGP (SpaceX-E)",
+                "https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?SOURCE=SpaceX-E&FORMAT=tle",
                 true,
                 2,
                 AuthMode.NONE,

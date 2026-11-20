@@ -584,7 +584,9 @@ public class LiveDataSourcesDialog extends JDialog {
                     refreshIntervalCombo.setSelectedIndex(1);
                     companionGsSyncCheckBox.setSelected(false);
                     companionGsSyncCheckBox.setVisible(isLaunchCategoryActive());
+                    showSecretCheckBox.setSelected(false);
                     updateAuthFieldStates();
+                    updateSecretMasking();
                     return;
                 }
 
@@ -600,6 +602,7 @@ public class LiveDataSourcesDialog extends JDialog {
                 boolean isLaunch = src.getFeedCategory() == DataSourceConfig.FeedCategory.LAUNCH;
                 companionGsSyncCheckBox.setVisible(isLaunch);
                 companionGsSyncCheckBox.setSelected(isLaunch && src.isSyncFixedPadsToGroundStations());
+                showSecretCheckBox.setSelected(false);
                 updateAuthFieldStates();
                 updateSecretMasking();
             } finally {

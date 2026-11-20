@@ -11,6 +11,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 import jsattrak.awareness.LaunchRecord;
 
 /**
@@ -19,6 +20,9 @@ import jsattrak.awareness.LaunchRecord;
 public final class LaunchLibrary2Parser {
 
     private static final double ZERO_COORD_EPSILON = 1e-6;
+    private static final Pattern MOBILE_KEYWORD_PATTERN = Pattern.compile(
+            "\\b(sea|ocean|barge|air\\s+launch|mobile|ship)\\b",
+            Pattern.CASE_INSENSITIVE);
 
     private LaunchLibrary2Parser() {
     }
@@ -252,13 +256,7 @@ public final class LaunchLibrary2Parser {
         if (text == null || text.isBlank()) {
             return false;
         }
-        String lower = text.toLowerCase(Locale.ROOT);
-        return lower.contains("sea")
-                || lower.contains("ocean")
-                || lower.contains("barge")
-                || lower.contains("air launch")
-                || lower.contains("mobile")
-                || lower.contains("ship");
+        return MOBILE_KEYWORD_PATTERN.matcher(text).find();
     }
 
     private static Long parseIsoEpochMillis(String iso) {

@@ -35,6 +35,7 @@ import jsattrak.awareness.tle.PayloadTleMatcher;
 import jsattrak.awareness.tle.TleFeedClient;
 import jsattrak.gui.J2DEarthPanel;
 import jsattrak.gui.J2DPolarEarthPanel;
+import jsattrak.gui.J2dPolarEarthLabel;
 import jsattrak.gui.J3DEarthInternalPanel;
 import jsattrak.gui.J3DEarthPanel;
 import jsattrak.gui.JSatTrak;
@@ -349,7 +350,7 @@ public class LiveAwarenessIntegrationTest {
             waitForEdt();
             assertEq(true, openUiCalled.get());
 
-            // Center all maps helper
+            // Center all maps helper (Northern Hemisphere -> North pole mode + pan coordinates)
             runOnEdt(() -> JSatTrak.centerMapsOn(
                     List.of(twoDRef.get()),
                     List.of(polarRef.get()),
@@ -359,6 +360,27 @@ public class LiveAwarenessIntegrationTest {
                     -80.6043));
             assertNear(28.6084, twoDRef.get().getCenterLat(), 1e-3);
             assertNear(-80.6043, twoDRef.get().getCenterLong(), 1e-3);
+            assertEq(J2dPolarEarthLabel.MODE_NORTH, polarRef.get().getPolarMode());
+            assertNear(1.0, polarRef.get().getZoomFactor(), 1e-6);
+            double maxAng = polarRef.get().getPolarLabel().getMaxAngularRadiusDeg();
+            double normDistNorth = Math.min(1.0, Math.max(0.0, (90.0 - 28.6084) / maxAng));
+            assertNear(-normDistNorth * Math.sin(Math.toRadians(-80.6043)), polarRef.get().getPanXNorm(), 1e-4);
+            assertNear(-normDistNorth * Math.cos(Math.toRadians(-80.6043)), polarRef.get().getPanYNorm(), 1e-4);
+
+            // Centering on Southern Hemisphere switches polar panel to South pole mode
+            runOnEdt(() -> JSatTrak.centerMapsOn(
+                    List.of(twoDRef.get()),
+                    List.of(polarRef.get()),
+                    List.<J3DEarthPanel>of(),
+                    List.<J3DEarthInternalPanel>of(),
+                    -39.2615,
+                    177.8648));
+            assertNear(-39.2615, twoDRef.get().getCenterLat(), 1e-3);
+            assertNear(177.8648, twoDRef.get().getCenterLong(), 1e-3);
+            assertEq(J2dPolarEarthLabel.MODE_SOUTH, polarRef.get().getPolarMode());
+            double normDistSouth = Math.min(1.0, Math.max(0.0, (90.0 - 39.2615) / maxAng));
+            assertNear(-normDistSouth * Math.sin(Math.toRadians(177.8648)), polarRef.get().getPanXNorm(), 1e-4);
+            assertNear(normDistSouth * Math.cos(Math.toRadians(177.8648)), polarRef.get().getPanYNorm(), 1e-4);
 
             // Jump to T-0 helper exits real-time mode, updates Time, resets ground tracks, refreshes hub
             AtomicBoolean realTimeDisabled = new AtomicBoolean(false);

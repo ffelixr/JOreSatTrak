@@ -38,6 +38,48 @@ public class LaunchApiClientTest {
         if (!cleanUri.endsWith("/upcoming/?token=x+y")) {
             throw new AssertionError("Expected ? separator for URL without existing query, got: " + cleanUri);
         }
+
+        DataSourceConfig fragNoQueryCfg = new DataSourceConfig("s3", DataSourceConfig.FeedCategory.LAUNCH, "FragNoQuery",
+                "https://example.org/launch/upcoming/#top", true, 1,
+                AuthMode.QUERY_PARAM, "token", "abc", "", 15, true);
+        String fragNoQueryUri = HttpRequestAuthApplier.buildRequest(
+                fragNoQueryCfg.getEndpointUrl(), fragNoQueryCfg, Duration.ofSeconds(5)).uri().toString();
+        assertEq("https://example.org/launch/upcoming/?token=abc#top", fragNoQueryUri);
+
+        DataSourceConfig fragWithQueryCfg = new DataSourceConfig("s4", DataSourceConfig.FeedCategory.LAUNCH, "FragQuery",
+                "https://example.org/launch/upcoming/?mode=detailed#section-2", true, 1,
+                AuthMode.QUERY_PARAM, "api_key", "a+b", "", 15, true);
+        String fragWithQueryUri = HttpRequestAuthApplier.buildRequest(
+                fragWithQueryCfg.getEndpointUrl(), fragWithQueryCfg, Duration.ofSeconds(5)).uri().toString();
+        assertEq("https://example.org/launch/upcoming/?mode=detailed&api_key=a%2Bb#section-2", fragWithQueryUri);
+    }
+
+    @Test
+    public void testMalformedQueryParamUriRedactsSecretFromErrorMessage() {
+        String rawSecret = "super-secret value/99";
+        DataSourceConfig malformed = new DataSourceConfig("bad-qp", DataSourceConfig.FeedCategory.LAUNCH, "BadQP",
+                "https://example.org/bad path/?mode=detailed", true, 1,
+                AuthMode.QUERY_PARAM, "api_key", rawSecret, "", 15, false);
+
+        IllegalArgumentException thrown = null;
+        try {
+            HttpRequestAuthApplier.buildRequest(malformed.getEndpointUrl(), malformed, Duration.ofSeconds(5));
+        } catch (IllegalArgumentException ex) {
+            thrown = ex;
+        }
+        if (thrown == null) {
+            throw new AssertionError("Expected IllegalArgumentException for malformed URI");
+        }
+        String msg = thrown.getMessage() != null ? thrown.getMessage() : "";
+        assertEq(false, msg.contains(rawSecret));
+        assertEq(false, msg.contains("super-secret+value%2F99"));
+        assertEq(true, thrown.getCause() == null);
+
+        LaunchApiClient client = new LaunchApiClient();
+        ConnectionTestResult result = client.testConnection(malformed);
+        assertEq(false, result.success());
+        assertEq(false, result.message().contains(rawSecret));
+        assertEq(false, result.message().contains("super-secret+value%2F99"));
     }
 
     @Test
@@ -121,6 +163,30 @@ public class LaunchApiClientTest {
         assertEq(false, sub1.isOrbital());
         assertEq("Success", sub1.getOutcome());
         assertEq(false, sub1.isFixedLandPad()); // (0.0, 0.0) coordinates
+    }
+
+    @Test
+    public void testWordBoundaryMobilePadClassification() {
+        String json = "{\"results\":["
+                + "{\"id\":\"seattle\",\"name\":\"Mission A\",\"net\":\"2026-11-21T10:00:00Z\","
+                + "\"pad\":{\"name\":\"Pad 1\",\"latitude\":\"47.6062\",\"longitude\":\"-122.3321\","
+                + "\"location\":{\"name\":\"Seattle Spaceport\",\"country_code\":\"USA\"}}},"
+                + "{\"id\":\"township\",\"name\":\"Mission B\",\"net\":\"2026-11-21T11:00:00Z\","
+                + "\"pad\":{\"name\":\"Township Launch Complex\",\"latitude\":\"34.0\",\"longitude\":\"-118.0\","
+                + "\"location\":{\"name\":\"Kern County\",\"country_code\":\"USA\"}}},"
+                + "{\"id\":\"sea-pad\",\"name\":\"Mission C\",\"net\":\"2026-11-21T12:00:00Z\","
+                + "\"pad\":{\"name\":\"Sea Launch Platform\",\"latitude\":\"35.1\",\"longitude\":\"121.2\","
+                + "\"location\":{\"name\":\"Pacific\",\"country_code\":\"USA\"}}},"
+                + "{\"id\":\"ship-pad\",\"name\":\"Mission D\",\"net\":\"2026-11-21T13:00:00Z\","
+                + "\"pad\":{\"name\":\"ASDS Ship\",\"latitude\":\"28.5\",\"longitude\":\"-79.5\","
+                + "\"location\":{\"name\":\"Atlantic\",\"country_code\":\"USA\"}}}"
+                + "]}";
+        List<LaunchRecord> parsed = LaunchLibrary2Parser.parseResults(json);
+        assertEq(4, parsed.size());
+        assertEq(true, parsed.get(0).isFixedLandPad());  // "Seattle" must not match "sea"
+        assertEq(true, parsed.get(1).isFixedLandPad());  // "Township" must not match "ship"
+        assertEq(false, parsed.get(2).isFixedLandPad()); // "Sea Launch Platform" is mobile
+        assertEq(false, parsed.get(3).isFixedLandPad()); // "ASDS Ship" is mobile
     }
 
     @Test

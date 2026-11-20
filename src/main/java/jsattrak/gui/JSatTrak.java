@@ -4139,7 +4139,6 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         }
         if (changedCount > 0) {
             updateTime();
-            refreshLiveAwarenessFrameDisplay();
             setStatusMessage("Imported/updated " + changedCount + " payload TLE(s) from " + launch.getMissionName());
         }
     }
@@ -4251,7 +4250,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
             if (!updateIfPresent || !(existing instanceof SatelliteTleSGP4)) {
                 return false;
             }
-            TLE effectiveTle = existing.getName().equals(tle.getSatName())
+            TLE effectiveTle = Objects.equals(existing.getName(), tle.getSatName())
                     ? tle
                     : new TLE(existing.getName(), tle.getLine1(), tle.getLine2());
             existing.updateTleData(effectiveTle);

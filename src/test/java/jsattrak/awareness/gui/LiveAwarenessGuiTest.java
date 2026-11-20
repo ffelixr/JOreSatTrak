@@ -369,11 +369,15 @@ public class LiveAwarenessGuiTest {
                 panel.getCompanionGsSyncCheckBox().setSelected(true);
                 panel.selectRefreshIntervalMinutes(30);
 
-                // Show/hide toggle reveals/masks password field
+                // Show/hide toggle reveals/masks password field and resets when switching sources
                 assertEq(false, panel.getAuthSecretField().getEchoChar() == (char) 0);
                 panel.getShowSecretCheckBox().doClick();
                 assertEq(true, panel.getAuthSecretField().getEchoChar() == (char) 0);
-                panel.getShowSecretCheckBox().doClick();
+                panel.getLaunchSourcesList().setSelectedIndex(0);
+                assertEq(false, panel.getShowSecretCheckBox().isSelected());
+                assertEq(false, panel.getAuthSecretField().getEchoChar() == (char) 0);
+                panel.getLaunchSourcesList().setSelectedIndex(1);
+                assertEq(false, panel.getShowSecretCheckBox().isSelected());
                 assertEq(false, panel.getAuthSecretField().getEchoChar() == (char) 0);
 
                 // Move second source up to priority 1
