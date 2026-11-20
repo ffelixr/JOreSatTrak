@@ -28,7 +28,9 @@ import java.awt.event.ActionEvent;
 import java.text.DecimalFormat;
 import java.util.Hashtable;
 import java.util.Vector;
+import java.util.function.Function;
 import javax.swing.*;
+import jsattrak.awareness.LaunchRecord;
 import jsattrak.coverage.JSatTrakRenderable;
 import jsattrak.objects.AbstractSatellite;
 import name.gano.astro.AstroConst;
@@ -609,8 +611,11 @@ public class J2dEarthLabel2 extends JLabel  implements java.io.Serializable
         } // zoom factor>1
         
         
+        // draw upcoming / selected recent launch markers
+        paintLaunchOverlay(g2, w, h);
+
         // show time and date
-        if(showDateTime)
+        if(showDateTime && currentTime != null)
         {
             //xDateTimeOffset;
             g2.setPaint( dateTimeColor );
@@ -619,12 +624,78 @@ public class J2dEarthLabel2 extends JLabel  implements java.io.Serializable
         } // show time and date
         
         //
-        if(showFPS)
+        if(showFPS && earthPanel != null && earthPanel.getApp() != null)
         {
             g2.setPaint( dateTimeColor );
             g2.drawString( "FPS: " +  df.format(earthPanel.getApp().getFpsAnimation()),(int)(getWidth()-75),(int)((getHeight()-imageHeight)/2.0+imageHeight-yDateTimeOffset));
         }
     } // finish painting
+
+    private void paintLaunchOverlay(Graphics2D g2, int w, int h)
+    {
+        if (earthPanel == null)
+        {
+            return;
+        }
+        int effImgW = imageWidth;
+        int effImgH = imageHeight;
+        if ((effImgW <= 0 || effImgH <= 0) && w > 0 && h > 0)
+        {
+            if ((double) w / h > aspectRatio)
+            {
+                effImgH = h;
+                effImgW = (int) (h * aspectRatio);
+            }
+            else
+            {
+                effImgW = w;
+                effImgH = (int) (w / aspectRatio);
+            }
+        }
+        if (effImgW <= 0 || effImgH <= 0)
+        {
+            earthPanel.getOverlayRenderer().clear();
+            return;
+        }
+
+        final int mapW = effImgW;
+        final int mapH = effImgH;
+        final int leftX = (w - mapW) / 2;
+        final int rightX = leftX + mapW;
+        final int topY = (h - mapH) / 2;
+        final int botY = topY + mapH;
+
+        Function<LaunchRecord, int[]> projector = record ->
+        {
+            if (record == null)
+            {
+                return null;
+            }
+            int[] pt = findXYfromLL(record.getLatDeg(), record.getLonDeg(), w, h, mapW, mapH);
+            if (pt[0] < leftX || pt[0] > rightX || pt[1] < topY || pt[1] > botY)
+            {
+                return null;
+            }
+            return pt;
+        };
+
+        long simEpochMillis = currentTime != null ? currentTime.getTimeInMillis() : System.currentTimeMillis();
+        Shape oldClip = g2.getClip();
+        g2.clip(new Rectangle(leftX, topY, mapW, mapH));
+        try
+        {
+            earthPanel.getOverlayRenderer().paintServiceOverlay(
+                    g2,
+                    earthPanel.getAwarenessService(),
+                    earthPanel.isShowUpcomingLaunches(),
+                    simEpochMillis,
+                    projector);
+        }
+        finally
+        {
+            g2.setClip(oldClip);
+        }
+    }
     
     // function to find the Linearly interpolated latitude at long = +/- 180
     // this is used to correct discontinutities in the plots

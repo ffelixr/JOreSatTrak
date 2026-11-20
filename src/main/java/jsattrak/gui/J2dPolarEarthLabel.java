@@ -37,10 +37,12 @@ import java.io.Serializable;
 import java.text.DecimalFormat;
 import java.util.Hashtable;
 import java.util.Vector;
+import java.util.function.Function;
 import javax.swing.AbstractAction;
 import javax.swing.Action;
 import javax.swing.JLabel;
 import javax.swing.KeyStroke;
+import jsattrak.awareness.LaunchRecord;
 import jsattrak.objects.AbstractSatellite;
 import jsattrak.objects.GroundStation;
 import jsattrak.utilities.LandMassRegions;
@@ -341,6 +343,8 @@ public class J2dPolarEarthLabel extends JLabel implements Serializable
             drawPolarDisc(g2, d[0], d[1], d[2], d[3]);
         }
 
+        paintLaunchOverlay(g2, discs);
+
         // Draw Date/Time and hover coordinates
         if (showDateTime && currentTime != null)
         {
@@ -362,6 +366,83 @@ public class J2dPolarEarthLabel extends JLabel implements Serializable
             g2.setPaint(dateTimeColor);
             g2.drawString("FPS: " + df.format(polarPanel.getApp().getFpsAnimation()), w - 95, 18);
         }
+    }
+
+    private void paintLaunchOverlay(Graphics2D g2, int[][] discs)
+    {
+        if (polarPanel == null)
+        {
+            return;
+        }
+        long simEpochMillis = currentTime != null ? currentTime.getTimeInMillis() : System.currentTimeMillis();
+        Function<LaunchRecord, int[]> projector = record -> projectLaunchToDiscs(record, discs);
+        polarPanel.getOverlayRenderer().paintServiceOverlay(
+                g2,
+                polarPanel.getAwarenessService(),
+                polarPanel.isShowUpcomingLaunches(),
+                simEpochMillis,
+                projector);
+    }
+
+    private int[] projectLaunchToDiscs(LaunchRecord record, int[][] discs)
+    {
+        if (record == null || discs == null || discs.length == 0)
+        {
+            return null;
+        }
+        double latDeg = record.getLatDeg();
+        double lonDeg = record.getLonDeg();
+        if (!Double.isFinite(latDeg) || !Double.isFinite(lonDeg))
+        {
+            return null;
+        }
+
+        int[] disc = selectDiscForLat(latDeg, discs);
+        if (disc == null)
+        {
+            return null;
+        }
+        int poleSign = disc[0];
+        int discCx = disc[1];
+        int discCy = disc[2];
+        int radius = disc[3];
+        if (radius <= 0)
+        {
+            return null;
+        }
+
+        double maxAng = getMaxAngularRadiusDeg();
+        double colat = 90.0 - poleSign * latDeg;
+        if (colat > Math.min(135.0, maxAng * 1.35))
+        {
+            return null;
+        }
+
+        int projCx = discCx + (int) Math.round(panXNorm * radius);
+        int projCy = discCy + (int) Math.round(panYNorm * radius);
+        int[] xy = latLonToPolarXY(latDeg, lonDeg, poleSign, projCx, projCy, radius, maxAng);
+        if (Math.hypot(xy[0] - discCx, xy[1] - discCy) > radius + 1.0)
+        {
+            return null;
+        }
+        return xy;
+    }
+
+    private static int[] selectDiscForLat(double latDeg, int[][] discs)
+    {
+        if (discs.length == 1)
+        {
+            return discs[0];
+        }
+        int targetPole = (latDeg >= 0.0) ? +1 : -1;
+        for (int[] d : discs)
+        {
+            if (d[0] == targetPole)
+            {
+                return d;
+            }
+        }
+        return discs[0];
     }
 
     private void drawPolarDisc(Graphics2D g2, int poleSign, int discCx, int discCy, int radius)

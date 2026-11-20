@@ -57,6 +57,7 @@ public class TwoDPolarViewPropertiesPanel extends JPanel implements Serializable
     private JTextField minLatTextField;
     private JTextField zoomIncrementTextField;
     private JCheckBox latLongLinesCheckBox;
+    private JCheckBox showUpcomingLaunchesCheckBox;
 
     private JPanel bgColorPanel;
     private JPanel discColorPanel;
@@ -150,6 +151,15 @@ public class TwoDPolarViewPropertiesPanel extends JPanel implements Serializable
         gbc.gridy = row;
         gbc.gridwidth = 2;
         leftCol.add(latLongLinesCheckBox, gbc);
+        gbc.gridwidth = 1;
+        row++;
+
+        // Upcoming Launches Overlay
+        showUpcomingLaunchesCheckBox = new JCheckBox("Show Upcoming Launches", true);
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.gridwidth = 2;
+        leftCol.add(showUpcomingLaunchesCheckBox, gbc);
         gbc.gridwidth = 1;
         row++;
 
@@ -455,6 +465,7 @@ public class TwoDPolarViewPropertiesPanel extends JPanel implements Serializable
         minLatTextField.setText("" + polarPanel.getMinAbsLatitudeDeg());
         zoomIncrementTextField.setText("" + polarPanel.getZoomIncrementMultiplier());
         latLongLinesCheckBox.setSelected(polarPanel.getShowLatLonLines());
+        showUpcomingLaunchesCheckBox.setSelected(polarPanel.isShowUpcomingLaunches());
 
         bgColorPanel.setBackground(polarPanel.getBackgroundColor());
         discColorPanel.setBackground(polarPanel.getDiscBackgroundColor());
@@ -523,6 +534,7 @@ public class TwoDPolarViewPropertiesPanel extends JPanel implements Serializable
         }
 
         polarPanel.setShowLatLonLines(latLongLinesCheckBox.isSelected());
+        polarPanel.setShowUpcomingLaunches(showUpcomingLaunchesCheckBox.isSelected());
         polarPanel.setBackgroundColor(bgColorPanel.getBackground());
         polarPanel.setDiscBackgroundColor(discColorPanel.getBackground());
         polarPanel.setGridColor(gridColorPanel.getBackground());

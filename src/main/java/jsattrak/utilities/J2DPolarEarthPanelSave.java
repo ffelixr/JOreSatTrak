@@ -62,6 +62,7 @@ public class J2DPolarEarthPanelSave implements Serializable
 
     private float drawingLineWidth = 2.0f;
     private float textLabelFontSize = 12.0f;
+    private Boolean showUpcomingLaunches = Boolean.TRUE;
 
     public J2DPolarEarthPanelSave(J2DPolarEarthPanel panel, int x, int y, Dimension d)
     {
@@ -98,6 +99,17 @@ public class J2DPolarEarthPanelSave implements Serializable
 
         this.drawingLineWidth = panel.getDrawingLineWidth();
         this.textLabelFontSize = panel.getTextLabelFontSize();
+        this.showUpcomingLaunches = Boolean.valueOf(panel.isShowUpcomingLaunches());
+    }
+
+    public Boolean getShowUpcomingLaunches()
+    {
+        return showUpcomingLaunches;
+    }
+
+    public void setShowUpcomingLaunches(Boolean showUpcomingLaunches)
+    {
+        this.showUpcomingLaunches = showUpcomingLaunches;
     }
 
     public void copySettings2PanelAndFrame(J2DPolarEarthPanel newPanel, JInternalFrame iframe)
@@ -149,6 +161,8 @@ public class J2DPolarEarthPanelSave implements Serializable
 
         newPanel.setDrawingLineWidth(drawingLineWidth);
         newPanel.setTextLabelFontSize(textLabelFontSize);
+        // Legacy .jst files omit showUpcomingLaunches (XStream deserializes null); default to true
+        newPanel.setShowUpcomingLaunches(showUpcomingLaunches == null || showUpcomingLaunches.booleanValue());
         newPanel.repaint();
     }
 }

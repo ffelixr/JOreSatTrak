@@ -78,6 +78,7 @@ public class J2DEarthPanelSave implements Serializable
     // SEG v4.2 add lineWdith and Font Size
     private float drawingLineWidth = 2.0f; // default value
     private float textLabelFontSize = 12.0f; // default value in case it is missing
+    private Boolean showUpcomingLaunches = Boolean.TRUE;
 
     // renderable objects
     Vector<JSatTrakRenderable> renderableObjects; //added 21 March 2009 -- bug to save coverage anaylsis and other renderables
@@ -127,8 +128,19 @@ public class J2DEarthPanelSave implements Serializable
         // SEG v4.2 add line width and font size
         drawingLineWidth = panel.getDrawingLineWidth();
         textLabelFontSize = panel.getTextLabelFontSize();
+        showUpcomingLaunches = Boolean.valueOf(panel.isShowUpcomingLaunches());
          
     } // J2DEarthPanelSave constructor
+
+    public Boolean getShowUpcomingLaunches()
+    {
+        return showUpcomingLaunches;
+    }
+
+    public void setShowUpcomingLaunches(Boolean showUpcomingLaunches)
+    {
+        this.showUpcomingLaunches = showUpcomingLaunches;
+    }
     
     // OUTPUT function, save data from this object back to a new j2dearthpanel and internal frame
     public void copySettings2PanelAndFrame(J2DEarthPanel newPanel, JInternalFrame iframe)
@@ -184,7 +196,10 @@ public class J2DEarthPanelSave implements Serializable
         } catch (Exception e)
         {
             System.out.println("Saved File didn't contain 2D panel font size or line width");
-        }        
+        }
+
+        // Legacy .jst files omit showUpcomingLaunches (XStream deserializes null); default to true
+        newPanel.setShowUpcomingLaunches(showUpcomingLaunches == null || showUpcomingLaunches.booleanValue());
 
     }  
 } //J2DEarthPanelSave class

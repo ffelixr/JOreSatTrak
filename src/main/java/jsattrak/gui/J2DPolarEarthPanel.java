@@ -34,13 +34,19 @@ import java.awt.image.BufferedImage;
 import java.io.Serializable;
 import java.util.Hashtable;
 import javax.swing.ButtonGroup;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JLabel;
+import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JToggleButton;
+import javax.swing.SwingUtilities;
 import javax.swing.border.BevelBorder;
+import jsattrak.awareness.AwarenessStateListener;
+import jsattrak.awareness.LiveAwarenessService;
+import jsattrak.awareness.map.LaunchOverlay2DRenderer;
 import jsattrak.objects.AbstractSatellite;
 import jsattrak.objects.GroundStation;
 import jsattrak.utilities.LandMassRegions;
@@ -58,6 +64,8 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
     public transient JPopupMenu popup;
     private transient JRadioButtonMenuItem northPoleMenu, southPoleMenu, dualPoleMenu;
     private transient JMenuItem latlonLinesMenu, toggleCoastlinesMenu, resetViewMenu, moreOptionsMenu;
+    private transient JMenu overlaysMenu;
+    private transient JCheckBoxMenuItem upcomingLaunchesMenuItem;
 
     private transient JToggleButton zoomInToggleButton;
     private transient JToggleButton zoomOutToggleButton;
@@ -68,6 +76,11 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
     private Sun sun;
 
     private LandMassRegions landMass = new LandMassRegions();
+
+    private boolean showUpcomingLaunches = true;
+    private transient LiveAwarenessService awarenessService;
+    private transient AwarenessStateListener awarenessListener;
+    private transient LaunchOverlay2DRenderer overlayRenderer = new LaunchOverlay2DRenderer();
 
     public J2DPolarEarthPanel()
     {
@@ -155,6 +168,10 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
                     polarLabel.resetZoomAndPan();
                     polarLabel.repaint();
                 }
+                else if (src == upcomingLaunchesMenuItem)
+                {
+                    setShowUpcomingLaunches(upcomingLaunchesMenuItem.isSelected());
+                }
                 else if (src == moreOptionsMenu)
                 {
                     if (getApp() != null)
@@ -193,6 +210,13 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
         resetViewMenu = new JMenuItem("Reset Zoom / View");
         resetViewMenu.addActionListener(menuListener);
         popup.add(resetViewMenu);
+
+        overlaysMenu = new JMenu("Overlays");
+        upcomingLaunchesMenuItem = new JCheckBoxMenuItem("Upcoming Launches", showUpcomingLaunches);
+        upcomingLaunchesMenuItem.addActionListener(menuListener);
+        overlaysMenu.add(upcomingLaunchesMenuItem);
+        popup.add(overlaysMenu);
+
         popup.addSeparator();
 
         moreOptionsMenu = new JMenuItem("More Options...");
@@ -264,6 +288,17 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
         public void mouseClicked(MouseEvent e)
         {
             checkPopup(e);
+            if (!e.isPopupTrigger()
+                    && e.getButton() == MouseEvent.BUTTON1
+                    && e.getClickCount() == 1
+                    && !isZoomOrRecenterModeActive())
+            {
+                Point pt = SwingUtilities.convertPoint(J2DPolarEarthPanel.this, e.getPoint(), polarLabel);
+                if (getOverlayRenderer().handleLeftClick(pt.x, pt.y, 14.0, awarenessService, showUpcomingLaunches))
+                {
+                    polarLabel.repaint();
+                }
+            }
         }
 
         @Override
@@ -296,7 +331,18 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
         @Override
         public void mouseMoved(MouseEvent e)
         {
-            double[] ll = polarLabel.findLLFromScreenXY(e.getX(), e.getY());
+            Point pt = SwingUtilities.convertPoint(J2DPolarEarthPanel.this, e.getPoint(), polarLabel);
+            long simEpoch = currentTime != null ? currentTime.getTimeInMillis() : System.currentTimeMillis();
+            getOverlayRenderer().updateHoverTooltip(
+                    J2DPolarEarthPanel.this,
+                    pt.x,
+                    pt.y,
+                    14.0,
+                    awarenessService,
+                    showUpcomingLaunches,
+                    simEpoch);
+
+            double[] ll = polarLabel.findLLFromScreenXY(pt.x, pt.y);
             if (ll != null)
             {
                 String ns = ll[0] >= 0 ? "N" : "S";
@@ -314,6 +360,7 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
         @Override
         public void mouseExited(MouseEvent e)
         {
+            setToolTipText(null);
             polarLabel.setHoverCoordString("");
             polarLabel.repaint();
         }
@@ -371,8 +418,19 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
         }
     }
 
+    private boolean isZoomOrRecenterModeActive()
+    {
+        return (zoomInToggleButton != null && zoomInToggleButton.isSelected())
+                || (zoomOutToggleButton != null && zoomOutToggleButton.isSelected())
+                || (recenterToggleButton != null && recenterToggleButton.isSelected());
+    }
+
     private void syncPopupRadioButtons()
     {
+        if (upcomingLaunchesMenuItem != null)
+        {
+            upcomingLaunchesMenuItem.setSelected(showUpcomingLaunches);
+        }
         if (northPoleMenu == null)
         {
             return;
@@ -673,5 +731,101 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
     public void setTextLabelFontSize(float fontSize)
     {
         polarLabel.setTextLabelFontSize(fontSize);
+    }
+
+    public boolean isShowUpcomingLaunches()
+    {
+        return showUpcomingLaunches;
+    }
+
+    public void setShowUpcomingLaunches(boolean show)
+    {
+        this.showUpcomingLaunches = show;
+        if (upcomingLaunchesMenuItem != null)
+        {
+            upcomingLaunchesMenuItem.setSelected(show);
+        }
+        if (polarLabel != null)
+        {
+            polarLabel.repaint();
+        }
+    }
+
+    public void centerOnLatLon(double latDeg, double lonDeg)
+    {
+        if (!Double.isFinite(latDeg) || !Double.isFinite(lonDeg) || polarLabel == null)
+        {
+            return;
+        }
+        double clampedLat = Math.max(-90.0, Math.min(90.0, latDeg));
+        int mode = polarLabel.getPolarMode();
+        int targetPoleSign;
+        if (mode == J2dPolarEarthLabel.MODE_DUAL)
+        {
+            targetPoleSign = (clampedLat >= 0.0) ? +1 : -1;
+        }
+        else if (clampedLat < 0.0 && mode == J2dPolarEarthLabel.MODE_NORTH)
+        {
+            setPolarMode(J2dPolarEarthLabel.MODE_SOUTH);
+            targetPoleSign = -1;
+        }
+        else if (clampedLat > 0.0 && mode == J2dPolarEarthLabel.MODE_SOUTH)
+        {
+            setPolarMode(J2dPolarEarthLabel.MODE_NORTH);
+            targetPoleSign = +1;
+        }
+        else
+        {
+            targetPoleSign = (polarLabel.getPolarMode() == J2dPolarEarthLabel.MODE_SOUTH) ? -1 : +1;
+        }
+
+        polarLabel.resetZoomAndPan();
+        double maxAng = polarLabel.getMaxAngularRadiusDeg();
+        double colatDeg = 90.0 - targetPoleSign * clampedLat;
+        double normDist = Math.min(1.0, Math.max(0.0, colatDeg / maxAng));
+        double lonRad = Math.toRadians(lonDeg);
+        polarLabel.setPanXNorm(-normDist * Math.sin(lonRad));
+        polarLabel.setPanYNorm(-targetPoleSign * normDist * Math.cos(lonRad));
+        polarLabel.repaint();
+    }
+
+    public void setAwarenessService(LiveAwarenessService service)
+    {
+        if (this.awarenessService == service)
+        {
+            return;
+        }
+        if (this.awarenessService != null && this.awarenessListener != null)
+        {
+            this.awarenessService.removeListener(this.awarenessListener);
+        }
+        this.awarenessService = service;
+        if (service != null)
+        {
+            this.awarenessListener = LaunchOverlay2DRenderer.createRepaintListener(polarLabel);
+            service.addListener(this.awarenessListener);
+        }
+        else
+        {
+            this.awarenessListener = null;
+        }
+        if (polarLabel != null)
+        {
+            polarLabel.repaint();
+        }
+    }
+
+    public LiveAwarenessService getAwarenessService()
+    {
+        return awarenessService;
+    }
+
+    public LaunchOverlay2DRenderer getOverlayRenderer()
+    {
+        if (overlayRenderer == null)
+        {
+            overlayRenderer = new LaunchOverlay2DRenderer();
+        }
+        return overlayRenderer;
     }
 }
