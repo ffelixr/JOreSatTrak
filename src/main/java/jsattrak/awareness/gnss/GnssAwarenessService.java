@@ -2,6 +2,7 @@ package jsattrak.awareness.gnss;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -9,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Clock;
+import java.util.zip.GZIPOutputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -53,6 +55,7 @@ public class GnssAwarenessService implements AwarenessFeed {
     private static final long DEFAULT_DAILY_INTERVAL_MILLIS = 24L * 3600L * 1000L;
     private static final String DEFAULT_CACHE_DIR = ".joresattrak";
     private static final String DEFAULT_CACHE_FILE = "gnss-cache.json";
+    private static final String DEFAULT_BRDC_CACHE_FILE = "gnss-brdc-latest.rnx.gz";
     private static final Pattern PRN_HINT_PATTERN = Pattern.compile("\\((?:PRN\\s*|)?([GERC]\\d{2}|PRN\\s*\\d{1,2})\\)", Pattern.CASE_INSENSITIVE);
 
     private final AwarenessSettingsStore settingsStore;
@@ -77,6 +80,8 @@ public class GnssAwarenessService implements AwarenessFeed {
     private volatile Map<String, BroadcastHealthRecord> broadcastByPrn = Map.of();
     private volatile long broadcastLatestEpochMillis;
     private volatile long broadcastSyncedMillis;
+    private volatile byte[] latestBrdcRawBytes;
+    private volatile String latestBrdcSourceName = "";
     private volatile Map<String, OperatorStatusRecord> operatorByPrn = Map.of();
     private volatile List<GnssOutageNotice> outageNotices = List.of();
     private volatile boolean gpsNoticesAvailable = true;
@@ -126,6 +131,7 @@ public class GnssAwarenessService implements AwarenessFeed {
         this.manualStatusList = manualStatusStore.load();
         initDefaultHealthSummary();
         loadCacheQuietly();
+        loadBrdcCacheQuietly();
         applyBundledFallbackIfEmpty();
         rebuildTleMatches();
     }
@@ -476,6 +482,53 @@ public class GnssAwarenessService implements AwarenessFeed {
     }
 
     /**
+     * Layer-2 entry point: returns lightweight satellite status + matched TLE metadata at {@code simEpochMillis}
+     * without running SGP4 propagation on every entry.
+     */
+    public GnssStatusResult evaluateStatusForEntry(GnssCatalogEntry entry, long simEpochMillis) {
+        if (entry == null) {
+            return null;
+        }
+        String prn = entry.prnId();
+        BroadcastHealthRecord broadcast = this.broadcastByPrn.get(prn);
+        OperatorStatusRecord opStatus = this.operatorByPrn.get(prn);
+        List<GnssOutageNotice> satNotices = indexNoticesByPrn(this.outageNotices).getOrDefault(prn, List.of());
+        GnssManualStatusList manual = this.manualStatusList;
+        GnssManualOverride manualOverride = manual != null ? manual.findByPrn(prn).orElse(null) : null;
+        boolean noticesAvail = switch (entry.constellation()) {
+            case GPS -> this.gpsNoticesAvailable;
+            case GALILEO -> this.galileoNoticesAvailable;
+            default -> true;
+        };
+        return GnssStatusEvaluator.evaluate(
+                entry,
+                simEpochMillis,
+                broadcast,
+                this.broadcastLatestEpochMillis,
+                this.broadcastSyncedMillis,
+                opStatus,
+                satNotices,
+                manualOverride,
+                noticesAvail);
+    }
+
+    public List<GnssCatalogEntry> getCatalogEntries() {
+        return catalogEntries;
+    }
+
+    public Map<String, TLE> getMatchedTlesByPrn() {
+        return matchedTlesByPrn;
+    }
+
+    public byte[] getLatestBrdcRawBytes() {
+        return latestBrdcRawBytes;
+    }
+
+    public String getLatestBrdcSourceName() {
+        return latestBrdcSourceName;
+    }
+
+    /**
      * Returns {@code true} if any active/planned outage notice starts or expires between
      * {@code prevEpochMillis} and {@code newEpochMillis}.
      */
@@ -727,6 +780,11 @@ public class GnssAwarenessService implements AwarenessFeed {
                         this.broadcastByPrn = navRes.parsed().latestByPrn();
                         this.broadcastLatestEpochMillis = navRes.parsed().latestEpochMillis();
                         this.broadcastSyncedMillis = nowMillis;
+                        if (navRes.rawBytes() != null && navRes.rawBytes().length > 0) {
+                            this.latestBrdcRawBytes = navRes.rawBytes();
+                            this.latestBrdcSourceName = nonNull(navRes.sourceName());
+                            saveBrdcCacheQuietly(navRes.rawBytes());
+                        }
                         anySucceeded = true;
                         updatedHealth.put("BROADCAST_NAV", new GnssSourceHealth(
                                 "BROADCAST_NAV", "BKG BRDC", true, false, nowMillis,
@@ -1176,6 +1234,67 @@ public class GnssAwarenessService implements AwarenessFeed {
             }
         } catch (IOException ignored) {
         }
+    }
+
+    private Path resolveBrdcCachePath() {
+        if (cachePath == null) {
+            return null;
+        }
+        Path parent = cachePath.toAbsolutePath().getParent();
+        return parent != null ? parent.resolve(DEFAULT_BRDC_CACHE_FILE) : null;
+    }
+
+    private void loadBrdcCacheQuietly() {
+        Path brdcPath = resolveBrdcCachePath();
+        if (brdcPath == null || !Files.isRegularFile(brdcPath)) {
+            return;
+        }
+        try {
+            byte[] raw = Files.readAllBytes(brdcPath);
+            if (raw.length > 0) {
+                this.latestBrdcRawBytes = raw;
+                this.latestBrdcSourceName = "Cached BKG BRDC";
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    private void saveBrdcCacheQuietly(byte[] rawBytes) {
+        Path brdcPath = resolveBrdcCachePath();
+        if (brdcPath == null || rawBytes == null || rawBytes.length == 0) {
+            return;
+        }
+        try {
+            Path parent = brdcPath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            byte[] gzipped = isGzip(rawBytes) ? rawBytes : compressGzip(rawBytes);
+            Path temp = Files.createTempFile(parent, "gnss-brdc-", ".tmp");
+            try {
+                Files.write(temp, gzipped);
+                try {
+                    Files.move(temp, brdcPath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } catch (AtomicMoveNotSupportedException e) {
+                    Files.move(temp, brdcPath, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally {
+                Files.deleteIfExists(temp);
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    private static boolean isGzip(byte[] bytes) {
+        return bytes != null && bytes.length >= 2 && (bytes[0] & 0xFF) == 0x1F && (bytes[1] & 0xFF) == 0x8B;
+    }
+
+    private static byte[] compressGzip(byte[] raw) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (GZIPOutputStream gz = new GZIPOutputStream(baos)) {
+            gz.write(raw);
+        }
+        return baos.toByteArray();
     }
 
     private static String nonBlankOr(String s, String fallback) {

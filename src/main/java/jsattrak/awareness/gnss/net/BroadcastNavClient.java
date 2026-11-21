@@ -52,7 +52,14 @@ public class BroadcastNavClient {
     public record BroadcastFetchResult(
             RinexNavHealthParser.ParseResult parsed,
             String sourceName,
-            String resolvedFileUrl) {
+            String resolvedFileUrl,
+            byte[] rawBytes) {
+        public BroadcastFetchResult(
+                RinexNavHealthParser.ParseResult parsed,
+                String sourceName,
+                String resolvedFileUrl) {
+            this(parsed, sourceName, resolvedFileUrl, null);
+        }
     }
 
     public BroadcastFetchResult fetchLatest(List<DataSourceConfig> sources) throws IOException {
@@ -118,7 +125,7 @@ public class BroadcastNavClient {
         if (parsed.latestByPrn().isEmpty()) {
             throw new IOException("No valid GNSS navigation health records parsed from " + sourceLabel(source));
         }
-        return new BroadcastFetchResult(parsed, sourceLabel(source), resolvedUrl);
+        return new BroadcastFetchResult(parsed, sourceLabel(source), resolvedUrl, firstBytes);
     }
 
     private byte[] sendGetBytes(String url, DataSourceConfig source) throws IOException {
