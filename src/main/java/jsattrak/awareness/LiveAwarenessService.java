@@ -113,14 +113,25 @@ public class LiveAwarenessService implements AwarenessFeed {
      * {@code ~/.joresattrak/}.
      */
     public static LiveAwarenessService createDefault(GroundStationCatalogRepository gsRepo) {
+        return createDefault(AwarenessSettingsStore.createDefault(), gsRepo);
+    }
+
+    /**
+     * Creates a default production {@link LiveAwarenessService} sharing the supplied settings store.
+     */
+    public static LiveAwarenessService createDefault(
+            AwarenessSettingsStore settingsStore,
+            GroundStationCatalogRepository gsRepo) {
         Path defaultCachePath = Path.of(
                 System.getProperty("user.home"),
                 DEFAULT_CACHE_DIR,
                 DEFAULT_CACHE_FILE);
+        AwarenessSettingsStore effectiveStore =
+                settingsStore != null ? settingsStore : AwarenessSettingsStore.createDefault();
         GroundStationCatalogRepository effectiveRepo =
                 gsRepo != null ? gsRepo : GroundStationCatalogRepository.createDefault();
         return new LiveAwarenessService(
-                AwarenessSettingsStore.createDefault(),
+                effectiveStore,
                 defaultCachePath,
                 new LaunchApiClient(),
                 new TleFeedClient(),
