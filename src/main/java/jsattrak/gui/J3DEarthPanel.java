@@ -97,6 +97,7 @@ import jsattrak.awareness.gnss.GnssAwarenessService;
 import jsattrak.coverage.CoverageAnalyzer;
 import jsattrak.objects.AbstractSatellite;
 import jsattrak.utilities.ECEFModelRenderable;
+import jsattrak.awareness.gnss.geometry.GnssGeometryService;
 import jsattrak.utilities.J3DEarthComponent;
 import jsattrak.utilities.OrbitModelRenderable;
 import name.gano.file.SaveImageFile;
@@ -108,6 +109,7 @@ import name.gano.worldwind.layers.Earth.ECEFRenderableLayer;
 import name.gano.worldwind.layers.Earth.ECIRenderableLayer;
 import name.gano.worldwind.layers.Earth.EcefTimeDepRenderableLayer;
 import name.gano.worldwind.layers.Earth.GnssConstellationLayer;
+import name.gano.worldwind.layers.Earth.GnssDopHeatmapLayer;
 import name.gano.worldwind.layers.Earth.GroundStationHudLayer;
 import name.gano.worldwind.layers.Earth.LaunchSitesLayer;
 import name.gano.worldwind.sunshader.CustomSunPositionProvider;
@@ -182,6 +184,8 @@ public class J3DEarthPanel extends javax.swing.JPanel implements J3DEarthCompone
     private LaunchSitesLayer.ViewCoordinator launchCoordinator;
     private GnssConstellationLayer gnssConstellationLayer;
     private GnssConstellationLayer.ViewCoordinator gnssCoordinator;
+    private GnssDopHeatmapLayer gnssDopHeatmapLayer;
+    private GnssDopHeatmapLayer.ViewCoordinator gnssDopCoordinator;
     private boolean smoothViewChanges = true; // for 3D view smoothing (only is set after model/earth view has been changed -needs to be fixed)
     // near/far clipping plane distances for 3d windows (can effect render speed and if full orbit is shown)
      private double farClippingPlaneDistOrbit = -1;//200000000d; // good out to geo, but slow for LEO, using AutoClipping plane view I made works better
@@ -349,6 +353,14 @@ public class J3DEarthPanel extends javax.swing.JPanel implements J3DEarthCompone
         latLongLinesLayer.setEnabled(false);
         //insertBeforeCompass(this.getWwd(), latLongLinesLayer);
         m.getLayers().add(latLongLinesLayer); // add ECI Layer
+
+        // Add DOP heatmap beneath ground sites & GNSS satellites so markers stay sharp
+        gnssDopHeatmapLayer = new GnssDopHeatmapLayer(null);
+        m.getLayers().add(gnssDopHeatmapLayer);
+        gnssDopCoordinator = new GnssDopHeatmapLayer.ViewCoordinator(
+                wwd,
+                gnssDopHeatmapLayer,
+                LaunchSitesLayer.mjdToEpochMillis(currentMJD));
 
         launchSitesLayer = new LaunchSitesLayer(null);
         m.getLayers().add(launchSitesLayer);
@@ -1293,6 +1305,10 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
         {
             gnssCoordinator.reattachSelectListener();
         }
+        if (gnssDopCoordinator != null)
+        {
+            gnssDopCoordinator.reattachPickListener();
+        }
         
     } // setupView
 
@@ -1459,6 +1475,10 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
         if (gnssCoordinator != null)
         {
             gnssCoordinator.refreshForMjd(mjd);
+        }
+        if (gnssDopCoordinator != null)
+        {
+            gnssDopCoordinator.refreshForMjd(mjd);
         }
         
     } // set MJD
@@ -1786,6 +1806,39 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     }
 
     @Override
+    public void setGnssGeometryService(GnssGeometryService service)
+    {
+        if (gnssDopCoordinator != null)
+        {
+            gnssDopCoordinator.setGnssGeometryService(service);
+        }
+    }
+
+    @Override
+    public boolean isShowGnssDopHeatmap()
+    {
+        return gnssDopCoordinator != null && gnssDopCoordinator.isShowGnssDopHeatmap();
+    }
+
+    @Override
+    public void setShowGnssDopHeatmap(boolean enabled)
+    {
+        if (gnssDopCoordinator != null)
+        {
+            gnssDopCoordinator.setShowGnssDopHeatmap(enabled);
+        }
+    }
+
+    @Override
+    public void refreshGnssDopHeatmap(long simEpochMillis)
+    {
+        if (gnssDopCoordinator != null)
+        {
+            gnssDopCoordinator.refreshGnssDopHeatmap(simEpochMillis);
+        }
+    }
+
+    @Override
     public void dispose()
     {
         if (launchCoordinator != null)
@@ -1795,6 +1848,10 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
         if (gnssCoordinator != null)
         {
             gnssCoordinator.dispose();
+        }
+        if (gnssDopCoordinator != null)
+        {
+            gnssDopCoordinator.dispose();
         }
     }
 
