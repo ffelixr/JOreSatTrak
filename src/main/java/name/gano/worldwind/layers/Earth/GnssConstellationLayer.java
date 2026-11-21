@@ -208,7 +208,7 @@ public class GnssConstellationLayer extends RenderableLayer {
                 return;
             }
             if (legendAnnotation != null && dc != null && dc.getDrawableHeight() > 80) {
-                legendAnnotation.setScreenPoint(new Point(12, 34));
+                positionLegendBottomLeft(legendAnnotation, dc);
                 legendAnnotation.render(dc);
             }
             if (hoverTooltip != null) {
@@ -418,6 +418,58 @@ public class GnssConstellationLayer extends RenderableLayer {
         return attr;
     }
 
+    private static final int LEGEND_MARGIN_X = 12;
+    private static final int LEGEND_MARGIN_Y = 12;
+
+    ScreenAnnotation getLegendAnnotation() {
+        synchronized (renderLock) {
+            return legendAnnotation;
+        }
+    }
+
+    static void positionLegendBottomLeft(ScreenAnnotation legend, DrawContext dc) {
+        if (legend == null || dc == null) {
+            return;
+        }
+        int width = 0;
+        try {
+            Dimension pref = legend.getPreferredSize(dc);
+            if (pref != null && pref.width > 0) {
+                width = pref.width;
+            }
+        } catch (RuntimeException ignored) {
+            // Fall back to Java2D font measurement if called outside a GL text-renderer context
+        }
+        if (width <= 0) {
+            AnnotationAttributes attrs = legend.getAttributes();
+            width = estimateLegendBoxWidth(
+                    attrs != null ? attrs.getFont() : null,
+                    legend.getText(),
+                    attrs != null ? attrs.getInsets() : null);
+        }
+        legend.setScreenPoint(new Point(LEGEND_MARGIN_X + (width + 1) / 2, LEGEND_MARGIN_Y));
+    }
+
+    static int estimateLegendBoxWidth(Font font, String text, Insets insets) {
+        Font effectiveFont = font != null ? font : new Font("SansSerif", Font.PLAIN, 10);
+        int horizInsets = insets != null ? (insets.left + insets.right) : 16;
+        BufferedImage probe = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = probe.createGraphics();
+        try {
+            g.setFont(effectiveFont);
+            var fm = g.getFontMetrics();
+            int maxLine = 0;
+            if (text != null) {
+                for (String line : text.split("\\R")) {
+                    maxLine = Math.max(maxLine, fm.stringWidth(line));
+                }
+            }
+            return Math.max(120, maxLine + horizInsets + 6);
+        } finally {
+            g.dispose();
+        }
+    }
+
     private static ScreenAnnotation createLegendAnnotation() {
         String legendText = "GNSS: ● GPS  ◆ GAL  ▲ GLO  ■ BDS\n"
                 + "Status: Green=Op  Amber=Test  Red=Unav  Grey=No data";
@@ -433,7 +485,11 @@ public class GnssConstellationLayer extends RenderableLayer {
         attr.setBackgroundColor(new Color(18, 22, 28, 195));
         attr.setBorderColor(new Color(255, 255, 255, 70));
         attr.setBorderWidth(1.0);
-        ScreenAnnotation ann = new ScreenAnnotation(legendText, new Point(12, 34), attr);
+        int estimatedWidth = estimateLegendBoxWidth(attr.getFont(), legendText, attr.getInsets());
+        ScreenAnnotation ann = new ScreenAnnotation(
+                legendText,
+                new Point(LEGEND_MARGIN_X + (estimatedWidth + 1) / 2, LEGEND_MARGIN_Y),
+                attr);
         ann.setAlwaysOnTop(true);
         ann.setPickEnabled(false);
         return ann;

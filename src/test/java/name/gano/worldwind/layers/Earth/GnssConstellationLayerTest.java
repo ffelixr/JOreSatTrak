@@ -53,6 +53,45 @@ public class GnssConstellationLayerTest {
         assertEquals(0, collectRenderables(layer, PointPlacemark.class).size());
     }
 
+    @Test
+    void bottomLeftLegendScreenPointStaysInsideLeftEdgeForRenderedWidth(@TempDir java.nio.file.Path tmpDir) {
+        JSatTrak.initOrekitData();
+        GnssAwarenessService svc = buildTestServiceWith4Constellations(tmpDir);
+        GnssConstellationLayer layer = new GnssConstellationLayer(svc);
+        layer.rebuildRenderables(T0);
+
+        gov.nasa.worldwind.render.ScreenAnnotation legend = layer.getLegendAnnotation();
+        assertNotNull(legend);
+        int estimatedWidth = GnssConstellationLayer.estimateLegendBoxWidth(
+                legend.getAttributes().getFont(),
+                legend.getText(),
+                legend.getAttributes().getInsets());
+        assertTrue(estimatedWidth > 100);
+
+        // WorldWind ScreenAnnotation centers the annotation box horizontally over screenPoint.x
+        // (leftEdge = screenPoint.x - width / 2). Left edge must stay strictly >= 8 px inside viewport.
+        int initialLeftEdge = legend.getScreenPoint().x - estimatedWidth / 2;
+        assertTrue(initialLeftEdge >= 8,
+                "Expected legend left edge >= 8px inside viewport, was " + initialLeftEdge);
+
+        int[] widths = {240, 320, 410};
+        for (int renderedWidth : widths) {
+            gov.nasa.worldwind.render.ScreenAnnotation probe = new gov.nasa.worldwind.render.ScreenAnnotation(
+                    legend.getText(), new java.awt.Point(0, 0), legend.getAttributes()) {
+                @Override
+                public java.awt.Dimension getPreferredSize(gov.nasa.worldwind.render.DrawContext dc) {
+                    return new java.awt.Dimension(renderedWidth, 40);
+                }
+            };
+            GnssConstellationLayer.positionLegendBottomLeft(probe, new gov.nasa.worldwind.render.DrawContextImpl());
+            int computedLeftEdge = probe.getScreenPoint().x - renderedWidth / 2;
+            assertTrue(computedLeftEdge >= 8 && computedLeftEdge <= 24,
+                    "Expected bottom-left margin in [8..24] for width=" + renderedWidth + ", got " + computedLeftEdge);
+            assertTrue(probe.getScreenPoint().y >= 8,
+                    "Expected bottom margin >= 8px, got " + probe.getScreenPoint().y);
+        }
+    }
+
     private static <T extends Renderable> List<T> collectRenderables(GnssConstellationLayer layer, Class<T> type) {
         List<T> out = new ArrayList<>();
         for (Renderable r : layer.getRenderables()) {
