@@ -149,7 +149,7 @@ public final class RinexNavHealthParser {
                                         ? pendingMsgType
                                         : defaultMsgType(constellation);
                             }
-                        } catch (NumberFormatException ignored) {
+                        } catch (java.time.DateTimeException | IllegalArgumentException ignored) {
                         }
                     }
                 }
@@ -306,7 +306,15 @@ public final class RinexNavHealthParser {
         int hour = Integer.parseInt(parts[3]);
         int min = Integer.parseInt(parts[4]);
         int sec = (int) Math.floor(Double.parseDouble(parts[5].replace('D', 'E')));
+        int extraSec = 0;
+        if (sec >= 60) {
+            extraSec = sec - 59;
+            sec = 59;
+        } else if (sec < 0) {
+            sec = 0;
+        }
         long rawMillis = LocalDateTime.of(year, month, day, hour, min, sec)
+                .plusSeconds(extraSec)
                 .toInstant(ZoneOffset.UTC)
                 .toEpochMilli();
         return switch (constellation) {

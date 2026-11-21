@@ -140,6 +140,68 @@ public class OperatorStatusClientTest {
         }
     }
 
+    @Test
+    void parsesMultilineHtmlTablesBarePrnsSvn3DigitsAndRejectsUnrecognizedNaguXml() throws Exception {
+        String navcenHtml = """
+                <html><body>
+                <p>Note: G12 is mentioned in operational overview prose without table context.</p>
+                <table>
+                  <tr><th>PRN</th><th>SVN</th><th>Remarks</th></tr>
+                  <tr>
+                    <td>05</td>
+                    <td>SVN76</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td>18</td>
+                    <td>SVN75</td>
+                    <td>UNUSABLE until further notice</td>
+                  </tr>
+                </table>
+                </body></html>
+                """;
+        List<OperatorStatusRecord> gps = NavcenParser.parseConstellationStatus(navcenHtml, 1_000L);
+        assertEquals(2, gps.size());
+        assertEquals(OperatorStatusRecord.OperatorHealth.USABLE,
+                gps.stream().filter(r -> "G05".equals(r.prnId())).findFirst().orElseThrow().status());
+        assertEquals(OperatorStatusRecord.OperatorHealth.NOT_AVAILABLE,
+                gps.stream().filter(r -> "G18".equals(r.prnId())).findFirst().orElseThrow().status());
+
+        String nanu3DigitSvn = """
+                NOTICE ADVISORY TO NAVSTAR USERS (NANU) 2025099
+                SUBJ: SVN101 (PRN09) FORECAST OUTAGE DV
+                1. NANU TYPE: FCSTDV
+                   NANU NUMBER: 2025099
+                   START TIME: 2025 366 0800
+                   STOP TIME:  2025 366 1400
+                """;
+        GnssOutageNotice parsedNanu = NavcenParser.parseSingleNanu(nanu3DigitSvn).orElseThrow();
+        assertEquals("G101", parsedNanu.svn());
+        assertTrue(parsedNanu.startEpochMillis() > 0L);
+
+        String gscHtml = """
+                <table>
+                  <tr><th>PRN</th><th>Status</th></tr>
+                  <tr>
+                    <td>E11</td>
+                    <td>USABLE</td>
+                  </tr>
+                  <tr>
+                    <td>E26</td>
+                    <td>UNDER COMMISSIONING</td>
+                  </tr>
+                </table>
+                """;
+        List<OperatorStatusRecord> gal = GscGalileoParser.parseConstellationStatus(gscHtml, 1_000L);
+        assertEquals(2, gal.size());
+        assertEquals(OperatorStatusRecord.OperatorHealth.TESTING,
+                gal.stream().filter(r -> "E26".equals(r.prnId())).findFirst().orElseThrow().status());
+
+        // Unrecognized XML error payload must fail rather than falsely reporting galileoNoticesAvailable=true
+        assertThrows(IOException.class, () -> GscGalileoParser.parseNagus("<error><code>403</code></error>"));
+        assertThrows(IOException.class, () -> GscGalileoParser.parseNagus("<div><a href=\"/login\">Login</a></div>"));
+    }
+
     private static DataSourceConfig src(String id, String scope, String url) {
         return new DataSourceConfig(
                 id, DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS, scope,

@@ -89,6 +89,8 @@ public class GnssAwarenessTab extends JPanel implements GnssStateListener {
     private long lastSimEpochMillis = System.currentTimeMillis();
     private boolean lastRealTimeMode = true;
     private TimeZone lastDisplayTz = TimeZone.getTimeZone("UTC");
+    private List<GnssSourceHealth> lastRenderedHealth = List.of();
+    private int lastVisibleCount;
 
     public GnssAwarenessTab(
             GnssAwarenessService service,
@@ -372,6 +374,10 @@ public class GnssAwarenessTab extends JPanel implements GnssStateListener {
         return manualWarningLabel;
     }
 
+    public int getVisibleSatelliteCount() {
+        return lastVisibleCount;
+    }
+
     private void rebuildAll() {
         updatingControlsFromService = true;
         try {
@@ -393,13 +399,13 @@ public class GnssAwarenessTab extends JPanel implements GnssStateListener {
             updatingControlsFromService = false;
         }
 
-        updateConstellationBars();
+        List<GnssSatelliteState> all = service.getAllSatelliteStates(lastSimEpochMillis);
+        updateConstellationBars(all);
         updateHealthAndClockIndicators();
-        rebuildTable();
+        rebuildTable(all);
     }
 
-    private void updateConstellationBars() {
-        List<GnssSatelliteState> all = service.getAllSatelliteStates(lastSimEpochMillis);
+    private void updateConstellationBars(List<GnssSatelliteState> all) {
         Map<GnssConstellation, int[]> counts = new EnumMap<>(GnssConstellation.class);
         for (GnssConstellation c : GnssConstellation.layer1ActiveValues()) {
             counts.put(c, new int[4]); // 0=OP, 1=TEST, 2=UN, 3=NO
@@ -442,27 +448,31 @@ public class GnssAwarenessTab extends JPanel implements GnssStateListener {
     }
 
     private void updateHealthAndClockIndicators() {
-        sourceHealthPanel.removeAll();
-        for (GnssSourceHealth h : service.getSourceHealthSummary()) {
-            JLabel chip = new JLabel(h.displayName());
-            chip.setOpaque(true);
-            chip.setBorder(new EmptyBorder(2, 6, 2, 6));
-            chip.setFont(chip.getFont().deriveFont(Math.max(10f, chip.getFont().getSize2D() - 1f)));
-            if (!h.ok()) {
-                chip.setBackground(new Color(0x5B, 0x20, 0x24));
-                chip.setForeground(new Color(0xFF, 0xB4, 0xB4));
-            } else if (h.stale()) {
-                chip.setBackground(new Color(0x4F, 0x39, 0x10));
-                chip.setForeground(new Color(0xFF, 0xDE, 0x9E));
-            } else {
-                chip.setBackground(new Color(0x1E, 0x45, 0x2A));
-                chip.setForeground(new Color(0xB9, 0xF0, 0xC8));
+        List<GnssSourceHealth> currentHealth = service.getSourceHealthSummary();
+        if (!Objects.equals(lastRenderedHealth, currentHealth)) {
+            lastRenderedHealth = List.copyOf(currentHealth);
+            sourceHealthPanel.removeAll();
+            for (GnssSourceHealth h : currentHealth) {
+                JLabel chip = new JLabel(h.displayName());
+                chip.setOpaque(true);
+                chip.setBorder(new EmptyBorder(2, 6, 2, 6));
+                chip.setFont(chip.getFont().deriveFont(Math.max(10f, chip.getFont().getSize2D() - 1f)));
+                if (!h.ok()) {
+                    chip.setBackground(new Color(0x5B, 0x20, 0x24));
+                    chip.setForeground(new Color(0xFF, 0xB4, 0xB4));
+                } else if (h.stale()) {
+                    chip.setBackground(new Color(0x4F, 0x39, 0x10));
+                    chip.setForeground(new Color(0xFF, 0xDE, 0x9E));
+                } else {
+                    chip.setBackground(new Color(0x1E, 0x45, 0x2A));
+                    chip.setForeground(new Color(0xB9, 0xF0, 0xC8));
+                }
+                chip.setToolTipText(h.message());
+                sourceHealthPanel.add(chip);
             }
-            chip.setToolTipText(h.message());
-            sourceHealthPanel.add(chip);
+            sourceHealthPanel.revalidate();
+            sourceHealthPanel.repaint();
         }
-        sourceHealthPanel.revalidate();
-        sourceHealthPanel.repaint();
 
         manualWarningLabel.setVisible(service.isManualListStale());
         simClockPill.setVisible(!lastRealTimeMode);
@@ -470,7 +480,24 @@ public class GnssAwarenessTab extends JPanel implements GnssStateListener {
     }
 
     private void rebuildTable() {
-        List<GnssSatelliteState> visible = service.getVisibleSatelliteStates(lastSimEpochMillis);
+        rebuildTable(service.getAllSatelliteStates(lastSimEpochMillis));
+    }
+
+    private void rebuildTable(List<GnssSatelliteState> allStates) {
+        List<GnssSatelliteState> visible = new ArrayList<>();
+        for (GnssSatelliteState s : allStates) {
+            if (s.catalog() != null
+                    && service.isConstellationEnabled(s.catalog().constellation())
+                    && s.statusResult() != null
+                    && service.isStatusFilterEnabled(s.statusResult().status())) {
+                visible.add(s);
+            }
+        }
+        visible.sort(java.util.Comparator
+                .comparingInt((GnssSatelliteState s) -> s.statusResult().status().getSortRank())
+                .thenComparing(s -> s.catalog().prnId()));
+        this.lastVisibleCount = visible.size();
+
         String query = searchField.getText() != null
                 ? searchField.getText().trim().toLowerCase(Locale.ROOT)
                 : "";

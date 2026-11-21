@@ -82,6 +82,8 @@ public class GnssDetailsInspectorPanel extends JPanel {
     private GnssConstellation currentShapeConstellation = GnssConstellation.GPS;
     private Color currentStatusColor = GnssOverlay2DRenderer.colorForStatus(GnssDisplayStatus.NO_STATUS_DATA);
     private long jumpTargetEpochMillis;
+    private List<GnssEvidenceItem> lastRenderedEvidence;
+    private TimeZone lastEvidenceTz;
 
     public GnssDetailsInspectorPanel(
             Consumer<Long> onJumpToEpoch,
@@ -314,13 +316,24 @@ public class GnssDetailsInspectorPanel extends JPanel {
     }
 
     private void rebuildEvidenceList(List<GnssEvidenceItem> evidence, TimeZone tz) {
+        List<GnssEvidenceItem> safeEvidence = evidence != null ? evidence : List.of();
+        String tzId = tz != null ? tz.getID() : "UTC";
+        String prevTzId = this.lastEvidenceTz != null ? this.lastEvidenceTz.getID() : null;
+        if (this.lastRenderedEvidence != null
+                && this.lastRenderedEvidence.equals(safeEvidence)
+                && java.util.Objects.equals(prevTzId, tzId)) {
+            return;
+        }
+        this.lastRenderedEvidence = List.copyOf(safeEvidence);
+        this.lastEvidenceTz = tz;
+
         evidencePanel.removeAll();
-        if (evidence.isEmpty()) {
+        if (safeEvidence.isEmpty()) {
             JLabel empty = new JLabel("No evidence items recorded.");
             empty.setForeground(mutedForeground());
             evidencePanel.add(empty);
         } else {
-            for (GnssEvidenceItem item : evidence) {
+            for (GnssEvidenceItem item : safeEvidence) {
                 JPanel row = new JPanel(new BorderLayout(6, 1));
                 row.setOpaque(false);
                 row.setBorder(new EmptyBorder(2, 2, 4, 2));

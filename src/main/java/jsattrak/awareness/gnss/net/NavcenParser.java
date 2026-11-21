@@ -20,6 +20,8 @@ import jsattrak.awareness.gnss.OperatorStatusRecord;
 public final class NavcenParser {
 
     private static final Pattern PRN_PATTERN = Pattern.compile("\\b(?:PRN\\s*-?\\s*|G)(\\d{1,2})\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern TR_BLOCK_PATTERN = Pattern.compile("<tr\\b[^>]*>(.*?)</tr>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern BARE_FIRST_INT_PATTERN = Pattern.compile("^(\\d{1,2})\\b");
     private static final Pattern NANU_NUM_PATTERN = Pattern.compile("(?:NANU\\s+NUMBER:|NANU\\)\\s*)(\\d{6,8})", Pattern.CASE_INSENSITIVE);
     private static final Pattern NANU_TYPE_PATTERN = Pattern.compile("NANU\\s+TYPE:\\s*([A-Z0-9_-]+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern REF_NANU_PATTERN = Pattern.compile("REFERENCE\\s+NANU:\\s*(\\d{6,8})", Pattern.CASE_INSENSITIVE);
@@ -32,28 +34,43 @@ public final class NavcenParser {
     }
 
     /**
-     * Parses GPS constellation status rows from CSV, plain text, or stripped HTML table rows.
+     * Parses GPS constellation status rows from CSV, plain text, or HTML table rows.
      */
     public static List<OperatorStatusRecord> parseConstellationStatus(String content, long fetchedAtMillis) {
         if (content == null || content.isBlank()) {
             return List.of();
         }
-        String normalized = content.replaceAll("(?i)</tr>", "\n").replaceAll("<[^>]+>", " ");
+        List<String> candidateLines = extractStatusRows(content);
         List<OperatorStatusRecord> results = new ArrayList<>();
         Set<String> seenPrns = new HashSet<>();
+        boolean tableHasPrnColumn = false;
 
-        for (String rawLine : normalized.split("\\R")) {
+        for (String rawLine : candidateLines) {
             String line = rawLine.trim();
-            if (line.isEmpty() || line.toUpperCase(Locale.ROOT).startsWith("PRN,")) {
+            if (line.isEmpty()) {
+                continue;
+            }
+            String upperLine = line.toUpperCase(Locale.ROOT);
+            if (upperLine.startsWith("PRN,") || (upperLine.contains("PRN") && (upperLine.contains("SVN") || upperLine.contains("STATUS")))) {
+                tableHasPrnColumn = true;
                 continue;
             }
             Matcher prnMatcher = PRN_PATTERN.matcher(line);
-            if (!prnMatcher.find()) {
+            String prnDigits = null;
+            if (prnMatcher.find()) {
+                prnDigits = prnMatcher.group(1);
+            } else if (tableHasPrnColumn) {
+                Matcher bare = BARE_FIRST_INT_PATTERN.matcher(line);
+                if (bare.find()) {
+                    prnDigits = bare.group(1);
+                }
+            }
+            if (prnDigits == null) {
                 continue;
             }
             int prnNum;
             try {
-                prnNum = Integer.parseInt(prnMatcher.group(1));
+                prnNum = Integer.parseInt(prnDigits);
             } catch (NumberFormatException e) {
                 continue;
             }
@@ -62,6 +79,10 @@ public final class NavcenParser {
             }
             String prnId = String.format("G%02d", prnNum);
             OperatorStatusRecord.OperatorHealth health = classifyStatusText(line);
+            if (health == null && tableHasPrnColumn && SVN_PATTERN.matcher(line).find()) {
+                // Active NAVCEN constellation rows often leave Remarks blank when nominal
+                health = OperatorStatusRecord.OperatorHealth.USABLE;
+            }
             if (health == null) {
                 continue;
             }
@@ -79,6 +100,30 @@ public final class NavcenParser {
                     "NAVCEN GPS status: " + rawLabel));
         }
         return List.copyOf(results);
+    }
+
+    private static List<String> extractStatusRows(String content) {
+        Matcher trMatcher = TR_BLOCK_PATTERN.matcher(content);
+        List<String> trRows = new ArrayList<>();
+        while (trMatcher.find()) {
+            String inner = trMatcher.group(1)
+                    .replaceAll("(?i)<t[dh][^>]*>", " ")
+                    .replaceAll("<[^>]+>", " ")
+                    .replaceAll("\\s+", " ")
+                    .trim();
+            if (!inner.isEmpty()) {
+                trRows.add(inner);
+            }
+        }
+        if (!trRows.isEmpty()) {
+            return trRows;
+        }
+        String stripped = content.replaceAll("(?i)</tr>", "\n").replaceAll("<[^>]+>", " ");
+        List<String> lines = new ArrayList<>();
+        for (String line : stripped.split("\\R")) {
+            lines.add(line);
+        }
+        return lines;
     }
 
     /**
@@ -111,7 +156,11 @@ public final class NavcenParser {
         }
 
         Matcher svnMatcher = SVN_PATTERN.matcher(nanuText);
-        String svn = svnMatcher.find() ? "G0" + svnMatcher.group(1) : "";
+        String svn = "";
+        if (svnMatcher.find()) {
+            String digits = svnMatcher.group(1);
+            svn = "G" + (digits.length() == 2 ? "0" + digits : digits);
+        }
 
         Matcher startMatcher = START_TIME_PATTERN.matcher(nanuText);
         long startMillis = startMatcher.find() ? parseNanuTimestamp(startMatcher) : 0L;
@@ -181,15 +230,20 @@ public final class NavcenParser {
     }
 
     private static long parseNanuTimestamp(Matcher m) {
-        int year = Integer.parseInt(m.group(1));
-        int doy = Math.max(1, Math.min(366, Integer.parseInt(m.group(2))));
-        String hhmm = m.group(3);
-        int hour = Integer.parseInt(hhmm.substring(0, 2));
-        int minute = Integer.parseInt(hhmm.substring(2, 4));
-        return LocalDate.ofYearDay(year, doy)
-                .atTime(hour % 24, minute % 60)
-                .toInstant(ZoneOffset.UTC)
-                .toEpochMilli() + (hour >= 24 ? 86_400_000L : 0L);
+        try {
+            int year = Integer.parseInt(m.group(1));
+            int maxDoy = java.time.Year.isLeap(year) ? 366 : 365;
+            int doy = Math.max(1, Math.min(maxDoy, Integer.parseInt(m.group(2))));
+            String hhmm = m.group(3);
+            int hour = Integer.parseInt(hhmm.substring(0, 2));
+            int minute = Integer.parseInt(hhmm.substring(2, 4));
+            return LocalDate.ofYearDay(year, doy)
+                    .atTime(hour % 24, minute % 60)
+                    .toInstant(ZoneOffset.UTC)
+                    .toEpochMilli() + (hour >= 24 ? 86_400_000L : 0L);
+        } catch (RuntimeException e) {
+            return 0L;
+        }
     }
 
     private static OperatorStatusRecord.OperatorHealth classifyStatusText(String line) {

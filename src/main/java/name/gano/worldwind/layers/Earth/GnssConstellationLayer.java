@@ -612,6 +612,7 @@ public class GnssConstellationLayer extends RenderableLayer {
         private GnssStateListener listener;
         private SelectListener selectListener;
         private long lastSimEpochMillis;
+        private long lastRebuiltEpochMillis = Long.MIN_VALUE;
 
         public ViewCoordinator(WorldWindow wwd, GnssConstellationLayer layer, long initialSimEpochMillis) {
             this.wwd = Objects.requireNonNull(wwd, "wwd");
@@ -680,6 +681,7 @@ public class GnssConstellationLayer extends RenderableLayer {
         public void refreshGnssOverlay(long simEpochMillis) {
             synchronized (stateLock) {
                 this.lastSimEpochMillis = simEpochMillis;
+                this.lastRebuiltEpochMillis = simEpochMillis;
                 layer.rebuildRenderables(simEpochMillis);
             }
             wwd.redraw();
@@ -692,6 +694,13 @@ public class GnssConstellationLayer extends RenderableLayer {
                 if (this.service == null || !layer.isEnabled()) {
                     return;
                 }
+                boolean due = this.lastRebuiltEpochMillis == Long.MIN_VALUE
+                        || Math.abs(simEpochMillis - this.lastRebuiltEpochMillis) >= 30_000L
+                        || this.service.hasCrossedNoticeBoundary(this.lastRebuiltEpochMillis, simEpochMillis);
+                if (!due) {
+                    return;
+                }
+                this.lastRebuiltEpochMillis = simEpochMillis;
                 layer.rebuildRenderables(simEpochMillis);
             }
         }
@@ -701,6 +710,7 @@ public class GnssConstellationLayer extends RenderableLayer {
                 if (this.service == null) {
                     return;
                 }
+                this.lastRebuiltEpochMillis = this.lastSimEpochMillis;
                 layer.rebuildRenderables(this.lastSimEpochMillis);
             }
             wwd.redraw();

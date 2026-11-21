@@ -213,6 +213,8 @@ public class LiveDataSourcesDialog extends JDialog {
         private final char defaultEchoChar;
         private final JComboBox<RefreshIntervalOption> refreshIntervalCombo;
         private final JCheckBox companionGsSyncCheckBox;
+        private final JLabel providerScopeLabel;
+        private final JComboBox<String> providerScopeCombo;
 
         private final JButton testConnectionButton;
         private final JLabel testStatusLabel;
@@ -260,10 +262,13 @@ public class LiveDataSourcesDialog extends JDialog {
             if (initial == null) {
                 initial = AwarenessSettings.createDefaults();
             }
+            AwarenessSettings gnssInitial = (gnssService != null && gnssService.getSettings() != null)
+                    ? gnssService.getSettings()
+                    : initial;
             this.preservedDefaultHorizonDays = initial.getDefaultHorizonDays();
-            this.preservedGnssShowOrbitRings3d = initial.isGnssShowOrbitRings3d();
-            this.preservedGnssConstellationEnabled = new java.util.LinkedHashMap<>(initial.getGnssConstellationEnabled());
-            this.preservedGnssStatusFilter = new java.util.LinkedHashMap<>(initial.getGnssStatusFilter());
+            this.preservedGnssShowOrbitRings3d = gnssInitial.isGnssShowOrbitRings3d();
+            this.preservedGnssConstellationEnabled = new java.util.LinkedHashMap<>(gnssInitial.getGnssConstellationEnabled());
+            this.preservedGnssStatusFilter = new java.util.LinkedHashMap<>(gnssInitial.getGnssStatusFilter());
 
             // Top: global startup + GNSS feed preferences
             JPanel topPanel = new JPanel(new BorderLayout(12, 4));
@@ -275,7 +280,7 @@ public class LiveDataSourcesDialog extends JDialog {
                     "When disabled, JOreSatTrak makes no outbound API calls until Live Awareness is opened or Refresh is clicked");
             gnssFeedEnabledCheckBox = new JCheckBox(
                     "Enable GNSS Awareness feed",
-                    initial.isGnssFeedEnabled());
+                    gnssInitial.isGnssFeedEnabled());
             gnssFeedEnabledCheckBox.setToolTipText(
                     "When disabled, the GNSS background feed will not fetch external GNSS catalogs, orbits, or status");
             topPanel.add(autoFetchCheckBox, BorderLayout.WEST);
@@ -346,11 +351,17 @@ public class LiveDataSourcesDialog extends JDialog {
             showSecretCheckBox = new JCheckBox("Show");
             refreshIntervalCombo = new JComboBox<>(STANDARD_INTERVALS);
             companionGsSyncCheckBox = new JCheckBox("Sync fixed launch pads to Ground Station catalog");
+            providerScopeLabel = new JLabel("Operator Scope:");
+            providerScopeCombo = new JComboBox<>(new String[] {
+                    "", "GPS_STATUS", "GPS_NANU", "GALILEO_STATUS", "GALILEO_NAGU"
+            });
+            providerScopeCombo.setEditable(true);
 
             int row = 0;
             addFormRow(form, row++, new JLabel("Status:"), enabledCheckBox);
             addFormRow(form, row++, new JLabel("Display Name:"), displayNameField);
             addFormRow(form, row++, new JLabel("Endpoint URL:"), endpointUrlField);
+            addFormRow(form, row++, providerScopeLabel, providerScopeCombo);
             addFormRow(form, row++, new JLabel("Authentication:"), authModeCombo);
             addFormRow(form, row++, authKeyNameLabel, authKeyNameField);
             addFormRow(form, row++, authUsernameLabel, authUsernameField);
@@ -451,9 +462,18 @@ public class LiveDataSourcesDialog extends JDialog {
             settings.setAutoFetchOnStartup(autoFetchCheckBox.isSelected());
             settings.setGnssFeedEnabled(gnssFeedEnabledCheckBox.isSelected());
             settings.setDefaultHorizonDays(preservedDefaultHorizonDays);
-            settings.setGnssShowOrbitRings3d(preservedGnssShowOrbitRings3d);
-            settings.setGnssConstellationEnabled(preservedGnssConstellationEnabled);
-            settings.setGnssStatusFilter(preservedGnssStatusFilter);
+            AwarenessSettings liveGnss = (gnssService != null && gnssService.getSettings() != null)
+                    ? gnssService.getSettings()
+                    : null;
+            settings.setGnssShowOrbitRings3d(liveGnss != null
+                    ? liveGnss.isGnssShowOrbitRings3d()
+                    : preservedGnssShowOrbitRings3d);
+            settings.setGnssConstellationEnabled(liveGnss != null
+                    ? liveGnss.getGnssConstellationEnabled()
+                    : preservedGnssConstellationEnabled);
+            settings.setGnssStatusFilter(liveGnss != null
+                    ? liveGnss.getGnssStatusFilter()
+                    : preservedGnssStatusFilter);
 
             List<DataSourceConfig> combined = new ArrayList<>();
             for (DataSourceConfig.FeedCategory cat : TAB_CATEGORIES) {
@@ -472,6 +492,10 @@ public class LiveDataSourcesDialog extends JDialog {
 
         public JCheckBox getGnssFeedEnabledCheckBox() {
             return gnssFeedEnabledCheckBox;
+        }
+
+        public JComboBox<String> getProviderScopeCombo() {
+            return providerScopeCombo;
         }
 
         public void setGnssFeedEnabledForTest(boolean enabled) {
@@ -699,10 +723,14 @@ public class LiveDataSourcesDialog extends JDialog {
             try {
                 boolean hasSelection = src != null;
                 setEditorEnabled(hasSelection);
+                boolean isOpCategory = activeCategory() == DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS;
+                providerScopeLabel.setVisible(isOpCategory);
+                providerScopeCombo.setVisible(isOpCategory);
                 if (!hasSelection) {
                     enabledCheckBox.setSelected(false);
                     displayNameField.setText("");
                     endpointUrlField.setText("");
+                    providerScopeCombo.setSelectedItem("");
                     authModeCombo.setSelectedItem(AuthMode.NONE);
                     authKeyNameField.setText("");
                     authUsernameField.setText("");
@@ -719,6 +747,10 @@ public class LiveDataSourcesDialog extends JDialog {
                 enabledCheckBox.setSelected(src.isEnabled());
                 displayNameField.setText(nonNull(src.getDisplayName()));
                 endpointUrlField.setText(nonNull(src.getEndpointUrl()));
+                boolean isOperator = src.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS;
+                providerScopeLabel.setVisible(isOperator);
+                providerScopeCombo.setVisible(isOperator);
+                providerScopeCombo.setSelectedItem(nonNull(src.getProviderScope()));
                 AuthMode mode = src.getAuthMode() != null ? src.getAuthMode() : AuthMode.NONE;
                 authModeCombo.setSelectedItem(mode);
                 authKeyNameField.setText(nonNull(src.getAuthKeyName()));
@@ -747,6 +779,10 @@ public class LiveDataSourcesDialog extends JDialog {
             src.setEnabled(enabledCheckBox.isSelected());
             src.setDisplayName(displayNameField.getText().trim());
             src.setEndpointUrl(endpointUrlField.getText().trim());
+            if (src.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS) {
+                Object scopeVal = providerScopeCombo.getSelectedItem();
+                src.setProviderScope(scopeVal != null ? scopeVal.toString().trim() : "");
+            }
             AuthMode mode = (AuthMode) authModeCombo.getSelectedItem();
             src.setAuthMode(mode != null ? mode : AuthMode.NONE);
             src.setAuthKeyName(authKeyNameField.getText().trim());
@@ -784,6 +820,7 @@ public class LiveDataSourcesDialog extends JDialog {
             authSecretField.getDocument().addDocumentListener(docSync);
 
             enabledCheckBox.addActionListener(e -> saveEditorToSelectedSource());
+            providerScopeCombo.addActionListener(e -> saveEditorToSelectedSource());
             refreshIntervalCombo.addActionListener(e -> saveEditorToSelectedSource());
             companionGsSyncCheckBox.addActionListener(e -> saveEditorToSelectedSource());
             authModeCombo.addActionListener(e -> {
@@ -796,6 +833,7 @@ public class LiveDataSourcesDialog extends JDialog {
             enabledCheckBox.setEnabled(enabled);
             displayNameField.setEnabled(enabled);
             endpointUrlField.setEnabled(enabled);
+            providerScopeCombo.setEnabled(enabled);
             authModeCombo.setEnabled(enabled);
             refreshIntervalCombo.setEnabled(enabled);
             companionGsSyncCheckBox.setEnabled(enabled);

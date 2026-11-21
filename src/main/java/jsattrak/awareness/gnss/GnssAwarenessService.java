@@ -93,6 +93,7 @@ public class GnssAwarenessService implements AwarenessFeed {
     private volatile Map<String, GnssSourceHealth> sourceHealthByKey = new LinkedHashMap<>();
 
     private boolean activated;
+    private boolean activationRequested;
     private boolean hasSyncedInSession;
     private volatile boolean refreshInFlight;
     private volatile boolean shutdown;
@@ -260,6 +261,12 @@ public class GnssAwarenessService implements AwarenessFeed {
     }
 
     public void ensureActivated() {
+        synchronized (lifecycleLock) {
+            if (shutdown) {
+                return;
+            }
+            activationRequested = true;
+        }
         AwarenessSettings current = this.settings;
         if (current == null || !current.isGnssFeedEnabled()) {
             return;
@@ -349,14 +356,22 @@ public class GnssAwarenessService implements AwarenessFeed {
     public void applySettingsSnapshotWithoutSaving(AwarenessSettings updated) {
         Objects.requireNonNull(updated, "updated");
         this.settings = updated;
+        boolean triggerImmediateFetch = false;
         synchronized (lifecycleLock) {
             if (periodicFuture != null) {
                 periodicFuture.cancel(false);
                 periodicFuture = null;
             }
-            if (activated && !shutdown && updated.isGnssFeedEnabled()) {
+            if ((activated || activationRequested) && !shutdown && updated.isGnssFeedEnabled()) {
+                activated = true;
                 schedulePeriodicRefreshLocked();
+                if (!hasSyncedInSession && !refreshInFlight) {
+                    triggerImmediateFetch = true;
+                }
             }
+        }
+        if (triggerImmediateFetch) {
+            refreshNowAsync();
         }
         dispatchCallbacks(false, this::notifyDataChanged);
     }
@@ -736,8 +751,16 @@ public class GnssAwarenessService implements AwarenessFeed {
                     this.operatorByPrn = Map.copyOf(merged);
                     anySucceeded = true;
                 }
-                if (!opRes.notices().isEmpty() || opRes.gpsNoticesAvailable() || opRes.galileoNoticesAvailable()) {
-                    this.outageNotices = opRes.notices();
+                boolean gpsNoticeScopeSucceeded = scopedOp.containsKey(OperatorStatusClient.SCOPE_GPS_NANU)
+                        && opRes.gpsNoticesAvailable();
+                boolean galNoticeScopeSucceeded = scopedOp.containsKey(OperatorStatusClient.SCOPE_GALILEO_NAGU)
+                        && opRes.galileoNoticesAvailable();
+                if (gpsNoticeScopeSucceeded || galNoticeScopeSucceeded) {
+                    this.outageNotices = mergeOutageNoticesByConstellation(
+                            this.outageNotices,
+                            opRes.notices(),
+                            gpsNoticeScopeSucceeded,
+                            galNoticeScopeSucceeded);
                     anySucceeded = true;
                 }
                 if (scopedOp.containsKey(OperatorStatusClient.SCOPE_GPS_NANU)) {
@@ -839,8 +862,51 @@ public class GnssAwarenessService implements AwarenessFeed {
         }
     }
 
+    private static List<GnssOutageNotice> mergeOutageNoticesByConstellation(
+            List<GnssOutageNotice> existing,
+            List<GnssOutageNotice> fetched,
+            boolean replaceGps,
+            boolean replaceGalileo) {
+        List<GnssOutageNotice> merged = new ArrayList<>();
+        if (existing != null) {
+            for (GnssOutageNotice n : existing) {
+                if (n == null || n.constellation() == null) {
+                    continue;
+                }
+                if (n.constellation() == GnssConstellation.GPS && replaceGps) {
+                    continue;
+                }
+                if (n.constellation() == GnssConstellation.GALILEO && replaceGalileo) {
+                    continue;
+                }
+                merged.add(n);
+            }
+        }
+        if (fetched != null) {
+            for (GnssOutageNotice n : fetched) {
+                if (n == null || n.constellation() == null) {
+                    continue;
+                }
+                if (n.constellation() == GnssConstellation.GPS && replaceGps) {
+                    merged.add(n);
+                } else if (n.constellation() == GnssConstellation.GALILEO && replaceGalileo) {
+                    merged.add(n);
+                } else if (n.constellation() != GnssConstellation.GPS
+                        && n.constellation() != GnssConstellation.GALILEO) {
+                    merged.add(n);
+                }
+            }
+        }
+        return List.copyOf(merged);
+    }
+
     private static List<GnssCatalogEntry> synthesizeFallbackCatalog(List<TLE> tles) {
         Map<String, GnssCatalogEntry> byPrn = new LinkedHashMap<>();
+        int nextGalileoFallback = 1;
+        int nextGlonassFallback = 1;
+        Pattern galileoNumPattern = Pattern.compile("\\bGALILEO[-\\s]+(\\d{1,2})\\b");
+        Pattern cosmosNumPattern = Pattern.compile("\\((\\d{3}[A-Z]?)\\)");
+
         for (TLE tle : tles) {
             if (tle == null || tle.getSatName() == null) {
                 continue;
@@ -848,6 +914,7 @@ public class GnssAwarenessService implements AwarenessFeed {
             String name = tle.getSatName().trim().toUpperCase(Locale.ROOT);
             Matcher m = PRN_HINT_PATTERN.matcher(name);
             String prnId = null;
+            String svn = "";
             if (m.find()) {
                 String tok = m.group(1).replaceAll("\\s+", "");
                 if (tok.startsWith("PRN")) {
@@ -858,6 +925,35 @@ public class GnssAwarenessService implements AwarenessFeed {
                 } else {
                     prnId = tok;
                 }
+            } else if (name.contains("GALILEO") || name.contains("GSAT")) {
+                Matcher gm = galileoNumPattern.matcher(name);
+                if (gm.find()) {
+                    int n = Integer.parseInt(gm.group(1));
+                    if (n >= 1 && n <= 36 && !byPrn.containsKey("E" + String.format("%02d", n))) {
+                        prnId = "E" + String.format("%02d", n);
+                    }
+                }
+                while (prnId == null && nextGalileoFallback <= 36) {
+                    String candidate = "E" + String.format("%02d", nextGalileoFallback++);
+                    if (!byPrn.containsKey(candidate)) {
+                        prnId = candidate;
+                    }
+                }
+                if (name.startsWith("GSAT")) {
+                    svn = name.split("\\s+")[0];
+                }
+            } else if (name.contains("COSMOS") || name.contains("GLONASS")) {
+                Matcher cm = cosmosNumPattern.matcher(name);
+                if (cm.find()) {
+                    svn = "R" + cm.group(1);
+                }
+                while (nextGlonassFallback <= 26) {
+                    String candidate = "R" + String.format("%02d", nextGlonassFallback++);
+                    if (!byPrn.containsKey(candidate)) {
+                        prnId = candidate;
+                        break;
+                    }
+                }
             }
             if (prnId != null && prnId.length() >= 2) {
                 GnssConstellation c = GnssConstellation.fromPrefix(prnId.charAt(0));
@@ -865,7 +961,7 @@ public class GnssAwarenessService implements AwarenessFeed {
                     int num = Integer.parseInt(prnId.substring(1));
                     int norad = jsattrak.awareness.tle.PayloadTleMatcher.extractNoradId(tle);
                     byPrn.putIfAbsent(prnId, new GnssCatalogEntry(
-                            prnId, c, num, "", norad, "", name,
+                            prnId, c, num, svn, norad, "", name,
                             GnssOrbitClass.MEO, "", "", ""));
                 }
             }

@@ -61,4 +61,27 @@ public class IgsMetadataParserTest {
         assertTrue(matched.containsKey("C19"));
         assertTrue(matched.containsKey("E18"));
     }
+
+    @Test
+    void doesNotMisparseYearTokenAsNoradIdWhenNoradBlankAndHandlesInvalidSinexDates() {
+        String sinex = """
+                %=SNX 2.02 IGS
+                +SATELLITE/IDENTIFIER
+                 C201 2018-003A BEIDOU 2018-BLOCK       2018:011:00000
+                 G078 2023-009A GPS-III          55268 2023:366:00000
+                -SATELLITE/IDENTIFIER
+                +SATELLITE/PRN
+                 C201 2018:011:00000 9999:999:99999 C19
+                 G078 2023:366:00000 0000:000:00000 G18
+                -SATELLITE/PRN
+                %ENDSNX
+                """;
+        long epoch2026 = 1_795_132_800_000L;
+        List<GnssCatalogEntry> entries = assertDoesNotThrow(() -> IgsMetadataParser.parseSinex(sinex, epoch2026));
+        assertEquals(2, entries.size());
+        GnssCatalogEntry c19 = entries.stream().filter(e -> "C19".equals(e.prnId())).findFirst().orElseThrow();
+        assertTrue(c19.noradId() <= 0, "Expected missing NORAD to remain <= 0, was " + c19.noradId());
+        GnssCatalogEntry g18 = entries.stream().filter(e -> "G18".equals(e.prnId())).findFirst().orElseThrow();
+        assertEquals(55268, g18.noradId());
+    }
 }

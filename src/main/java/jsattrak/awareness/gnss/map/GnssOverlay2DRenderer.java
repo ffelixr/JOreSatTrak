@@ -300,19 +300,27 @@ public class GnssOverlay2DRenderer {
             Path2D.Double path = new Path2D.Double();
             boolean penDown = false;
             int prevX = 0;
+            int prevY = 0;
+            int prevDisc = Integer.MIN_VALUE;
             for (double[] ll : seg) {
                 int[] xy = projector.apply(ll[0], ll[1]);
                 if (xy == null) {
                     penDown = false;
                     continue;
                 }
-                if (!penDown || Math.abs(xy[0] - prevX) > 220) {
+                int disc = xy.length >= 3 ? xy[2] : 0;
+                if (!penDown
+                        || (prevDisc != Integer.MIN_VALUE && disc != prevDisc)
+                        || Math.abs(xy[0] - prevX) > 220
+                        || Math.abs(xy[1] - prevY) > 220) {
                     path.moveTo(xy[0], xy[1]);
                     penDown = true;
                 } else {
                     path.lineTo(xy[0], xy[1]);
                 }
                 prevX = xy[0];
+                prevY = xy[1];
+                prevDisc = disc;
             }
             g2.draw(path);
         }

@@ -244,6 +244,163 @@ public class GnssAwarenessServiceTest {
                 clock);
     }
 
+    @Test
+    void partialOperatorNoticeFailurePreservesCachedNoticesForFailedConstellation(@TempDir Path tmpDir)
+            throws Exception {
+        AwarenessSettingsStore store = new AwarenessSettingsStore(tmpDir.resolve("awareness-settings.json"));
+        AwarenessSettings settings = AwarenessSettings.createDefaults();
+        settings.setAutoFetchOnStartup(false);
+        store.save(settings);
+
+        GnssCatalogEntry e11 = new GnssCatalogEntry(
+                "E11", GnssConstellation.GALILEO, 11, "E101", 37846, "2011-060A",
+                "GAL-1", GnssOrbitClass.MEO, "B", "5", "2011-10-21");
+        GnssCatalogEntry g18 = new GnssCatalogEntry(
+                "G18", GnssConstellation.GPS, 18, "G075", 48859, "2021-054A",
+                "GPS-III", GnssOrbitClass.MEO, "A", "2", "2021-06-17");
+
+        AtomicInteger opCallCount = new AtomicInteger();
+        OperatorStatusClient opClient = new OperatorStatusClient() {
+            @Override
+            public OperatorFetchResult fetchAll(Map<String, List<DataSourceConfig>> scopedSources, long nowMillis) {
+                int c = opCallCount.incrementAndGet();
+                if (c == 1) {
+                    return new OperatorFetchResult(
+                            Map.of("E11", new OperatorStatusRecord("E11", GnssConstellation.GALILEO, "GSC",
+                                    OperatorStatusRecord.OperatorHealth.USABLE, "USABLE", nowMillis, "Nominal")),
+                            List.of(
+                                    new GnssOutageNotice("NAGU-1", GnssConstellation.GALILEO, "E11", "E101",
+                                            "UNUSABLE", false, false, T0 - 3600_000L, T0 + 7200_000L, "Outage", "GSC"),
+                                    new GnssOutageNotice("NANU-1", GnssConstellation.GPS, "G18", "G075",
+                                            "UNUSABLE", false, false, T0 - 3600_000L, T0 + 7200_000L, "GPS outage", "NAVCEN")),
+                            true, true, Map.of(), Map.of());
+                }
+                // Second sync: GPS_NANU succeeds with updated empty list, GALILEO_NAGU fails!
+                return new OperatorFetchResult(
+                        Map.of(),
+                        List.of(),
+                        true,
+                        false,
+                        Map.of("GALILEO_NAGU", "HTML portal error"),
+                        Map.of());
+            }
+        };
+
+        GnssAwarenessService svc = new GnssAwarenessService(
+                store,
+                tmpDir.resolve("gnss-cache.json"),
+                new GnssManualStatusStore(tmpDir.resolve("gnss-manual.json")),
+                null,
+                new GnssCatalogClient() {
+                    @Override
+                    public CatalogFetchResult fetchCatalog(List<DataSourceConfig> sources, long refEpoch) {
+                        return new CatalogFetchResult(List.of(e11, g18), "MockIGS");
+                    }
+                },
+                new TleFeedClient() {
+                    @Override
+                    public List<TLE> fetchTleCatalog(DataSourceConfig source) {
+                        return List.of();
+                    }
+                },
+                new BroadcastNavClient() {
+                    @Override
+                    public BroadcastFetchResult fetchLatest(List<DataSourceConfig> sources) {
+                        return new BroadcastFetchResult(
+                                new RinexNavHealthParser.ParseResult(Map.of(
+                                        "E11", new BroadcastHealthRecord("E11", GnssConstellation.GALILEO, "INAV", T0, 0, true, "OK"),
+                                        "G18", new BroadcastHealthRecord("G18", GnssConstellation.GPS, "LNAV", T0, 0, true, "OK")),
+                                        T0, 2, "3.04"),
+                                "MockBKG", "mock://brdc");
+                    }
+                },
+                opClient,
+                new MutableClock(T0));
+        try {
+            svc.refreshBlockingForTest();
+            assertEquals(GnssDisplayStatus.UNAVAILABLE,
+                    svc.getSatelliteState("E11", T0).orElseThrow().statusResult().status());
+            assertEquals(GnssDisplayStatus.UNAVAILABLE,
+                    svc.getSatelliteState("G18", T0).orElseThrow().statusResult().status());
+
+            // Second refresh: GPS_NANU clears G18 outage cleanly, while failed GALILEO_NAGU MUST retain NAGU-1 for E11!
+            svc.refreshBlockingForTest();
+            assertEquals(GnssDisplayStatus.OPERATIONAL,
+                    svc.getSatelliteState("G18", T0).orElseThrow().statusResult().status());
+            assertEquals(GnssDisplayStatus.UNAVAILABLE,
+                    svc.getSatelliteState("E11", T0).orElseThrow().statusResult().status());
+        } finally {
+            svc.shutdown();
+        }
+    }
+
+    @Test
+    void bundledFallbackCatalogIncludesAllFourConstellationsAndReenablingFeedActivates(@TempDir Path tmpDir)
+            throws Exception {
+        AwarenessSettingsStore store = new AwarenessSettingsStore(tmpDir.resolve("awareness-settings.json"));
+        AwarenessSettings disabled = AwarenessSettings.createDefaults();
+        disabled.setGnssFeedEnabled(false);
+        store.save(disabled);
+
+        AtomicInteger navCalls = new AtomicInteger();
+        GnssAwarenessService svc = new GnssAwarenessService(
+                store,
+                tmpDir.resolve("gnss-cache.json"),
+                new GnssManualStatusStore(tmpDir.resolve("gnss-manual.json")),
+                Path.of("data", "tle"),
+                new GnssCatalogClient() {
+                    @Override
+                    public CatalogFetchResult fetchCatalog(List<DataSourceConfig> sources, long refEpoch) {
+                        return new CatalogFetchResult(List.of(), "Empty");
+                    }
+                },
+                new TleFeedClient() {
+                    @Override
+                    public List<TLE> fetchTleCatalog(DataSourceConfig source) {
+                        return List.of();
+                    }
+                },
+                new BroadcastNavClient() {
+                    @Override
+                    public BroadcastFetchResult fetchLatest(List<DataSourceConfig> sources) {
+                        navCalls.incrementAndGet();
+                        return new BroadcastFetchResult(
+                                new RinexNavHealthParser.ParseResult(Map.of(), T0, 0, "3.04"),
+                                "MockBKG", "mock://brdc");
+                    }
+                },
+                new OperatorStatusClient() {
+                    @Override
+                    public OperatorFetchResult fetchAll(Map<String, List<DataSourceConfig>> scoped, long now) {
+                        return new OperatorFetchResult(Map.of(), List.of(), true, true, Map.of(), Map.of());
+                    }
+                },
+                new MutableClock(T0));
+        try {
+            List<GnssSatelliteState> all = svc.getAllSatelliteStates(T0);
+            assertTrue(all.stream().anyMatch(s -> s.catalog().constellation() == GnssConstellation.GPS));
+            assertTrue(all.stream().anyMatch(s -> s.catalog().constellation() == GnssConstellation.GALILEO));
+            assertTrue(all.stream().anyMatch(s -> s.catalog().constellation() == GnssConstellation.GLONASS));
+            assertTrue(all.stream().anyMatch(s -> s.catalog().constellation() == GnssConstellation.BEIDOU));
+
+            // User opens Live Awareness while GNSS feed is disabled, then enables it in Sources dialog
+            svc.ensureActivated();
+            assertEquals(0, navCalls.get());
+
+            AwarenessSettings enabled = AwarenessSettings.createDefaults();
+            enabled.setGnssFeedEnabled(true);
+            svc.applySettingsSnapshotWithoutSaving(enabled);
+
+            long deadline = System.currentTimeMillis() + 3000L;
+            while (navCalls.get() == 0 && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20);
+            }
+            assertTrue(navCalls.get() >= 1);
+        } finally {
+            svc.shutdown();
+        }
+    }
+
     private static final class MutableClock extends Clock {
         private final AtomicLong millis;
 

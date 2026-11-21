@@ -1321,6 +1321,10 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         });
         helpMenu.add(lookFeelMenuItem);
 
+        JMenuItem gnssHelpMenuItem = new JMenuItem("GNSS Constellation Status Help...");
+        gnssHelpMenuItem.addActionListener(evt -> showGnssHelpDialog());
+        helpMenu.add(gnssHelpMenuItem);
+
         aboutMenuItem.setText("About..."); // NOI18N
         aboutMenuItem.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
@@ -4171,6 +4175,44 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         LiveDataSourcesDialog dialog = new LiveDataSourcesDialog(this, liveAwarenessService, gnssAwarenessService);
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
+    }
+
+    public void showGnssHelpDialog() {
+        javax.swing.JEditorPane htmlPane = new javax.swing.JEditorPane("text/html", buildGnssHelpHtml());
+        htmlPane.setEditable(false);
+        htmlPane.setCaretPosition(0);
+        javax.swing.JScrollPane scroll = new javax.swing.JScrollPane(htmlPane);
+        scroll.setPreferredSize(new Dimension(620, 440));
+        JOptionPane.showMessageDialog(this, scroll, "GNSS Constellation Status Help", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    public static String buildGnssHelpHtml() {
+        return """
+                <html><body style='font-family:sans-serif;padding:8px;'>
+                <h2>GNSS Constellation Status &amp; Satellite Availability</h2>
+                <p>Displays live constellation health for <b>GPS</b> (\u25CF), <b>Galileo</b> (\u25C6),
+                <b>GLONASS</b> (\u25B2), and <b>BeiDou</b> (\u25A0) on 2D Equirectangular, 2D Polar, and 3D globes.</p>
+                <h3>Public Data Sources</h3>
+                <ul>
+                  <li><b>IGS SINEX</b>: Satellite catalogue identity (PRN, SVN, NORAD, COSPAR, plane/slot, epoch history).</li>
+                  <li><b>GNSS TLEs</b> (CelesTrak / Space-Track / bundled fallback): Mean orbital elements propagated via Orekit SGP4.</li>
+                  <li><b>BKG BRDC RINEX</b>: Mixed RINEX 3/4 navigation broadcast health bits (15-min refresh).</li>
+                  <li><b>USCG NAVCEN</b>: GPS operational status table &amp; NANU outage notices.</li>
+                  <li><b>EU GSC</b>: Galileo constellation status &amp; NAGU notices (with automatic notice-unavailable notice when portal XML/JSON cannot be read).</li>
+                  <li><b>Manual Overrides</b>: Local user-editable list (<code>~/.joresattrak/gnss-manual-status.json</code>) for GLONASS/BeiDou testing overrides.</li>
+                </ul>
+                <h3>Status Colours</h3>
+                <ul>
+                  <li><b>Operational</b> (Green): Satellite is broadcasting healthy signals with no blocking outage or testing status.</li>
+                  <li><b>Testing</b> (Amber): Commissioning, flight test, or manual override testing.</li>
+                  <li><b>Unavailable</b> (Red): Active outage notice (NANU/NAGU), operator unusable, unhealthy broadcast flag, or &gt;4h absent from BRDC.</li>
+                  <li><b>No status data</b> (Grey): Insufficient status evidence loaded.</li>
+                </ul>
+                <h3>Scenario Integration</h3>
+                <p>Select any satellite in the GNSS table or on a map and click <b>Add to Object List</b> to promote its matched TLE
+                as an ordinary tracked <code>SatelliteTleSGP4</code> object for ground tracks, access, and coverage analysis.</p>
+                </body></html>
+                """;
     }
 
     public boolean promoteGnssSatelliteToObjectList(GnssSatelliteState state) {

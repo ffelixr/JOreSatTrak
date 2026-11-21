@@ -151,10 +151,28 @@ public final class GscGalileoParser {
     }
 
     private static List<OperatorStatusRecord> parseStatusLines(String content, long fetchedAtMillis) {
-        String stripped = content.replaceAll("(?i)</tr>", "\n").replaceAll("<[^>]+>", " ");
+        Pattern trPattern = Pattern.compile("<tr\\b[^>]*>(.*?)</tr>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher trMatcher = trPattern.matcher(content);
+        List<String> lines = new ArrayList<>();
+        while (trMatcher.find()) {
+            String row = trMatcher.group(1)
+                    .replaceAll("(?i)<t[dh][^>]*>", " ")
+                    .replaceAll("<[^>]+>", " ")
+                    .replaceAll("\\s+", " ")
+                    .trim();
+            if (!row.isEmpty()) {
+                lines.add(row);
+            }
+        }
+        if (lines.isEmpty()) {
+            String stripped = content.replaceAll("(?i)</tr>", "\n").replaceAll("<[^>]+>", " ");
+            for (String s : stripped.split("\\R")) {
+                lines.add(s);
+            }
+        }
         List<OperatorStatusRecord> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
-        for (String rawLine : stripped.split("\\R")) {
+        for (String rawLine : lines) {
             String line = rawLine.trim();
             if (line.isEmpty()) {
                 continue;
@@ -177,8 +195,17 @@ public final class GscGalileoParser {
     private static List<GnssOutageNotice> parseNaguXml(String xml) throws IOException {
         try {
             Document doc = parseSecureXml(xml);
+            Element root = doc.getDocumentElement();
+            String rootTag = root != null && root.getTagName() != null
+                    ? root.getTagName().toLowerCase(Locale.ROOT)
+                    : "";
+            if (rootTag.equals("html") || rootTag.contains("error")) {
+                throw new IOException("GSC NAGU returned error/HTML XML root <" + rootTag + ">");
+            }
             NodeList nodes = doc.getElementsByTagName("*");
             List<GnssOutageNotice> out = new ArrayList<>();
+            boolean sawNoticeContainer = rootTag.contains("nagu") || rootTag.contains("notice")
+                    || rootTag.contains("constellation");
             for (int i = 0; i < nodes.getLength(); i++) {
                 if (!(nodes.item(i) instanceof Element el)) {
                     continue;
@@ -187,6 +214,7 @@ public final class GscGalileoParser {
                 if (!tag.contains("nagu") && !tag.contains("notice") && !tag.contains("item")) {
                     continue;
                 }
+                sawNoticeContainer = true;
                 String prn = normalizeGalileoPrn(firstNonEmpty(el.getAttribute("prn"), childText(el, "prn"), childText(el, "satellite")));
                 String id = firstNonEmpty(el.getAttribute("id"), childText(el, "id"), childText(el, "number"), "");
                 if (prn.isEmpty() || id.isEmpty()) {
@@ -202,7 +230,12 @@ public final class GscGalileoParser {
                         id, GnssConstellation.GALILEO, prn, "", type, planned, cancelled,
                         start, end, summary, "GSC"));
             }
+            if (out.isEmpty() && !sawNoticeContainer) {
+                throw new IOException("Unrecognized GSC NAGU XML document <" + rootTag + ">");
+            }
             return List.copyOf(out);
+        } catch (IOException e) {
+            throw e;
         } catch (Exception e) {
             throw new IOException("Failed to parse GSC NAGU XML: " + e.getMessage(), e);
         }
@@ -291,7 +324,13 @@ public final class GscGalileoParser {
 
     private static boolean looksLikeHtml(String text) {
         String lower = text.stripLeading().toLowerCase(Locale.ROOT);
-        return lower.startsWith("<!doctype html") || lower.startsWith("<html");
+        return lower.startsWith("<!doctype html")
+                || lower.startsWith("<html")
+                || lower.startsWith("<head")
+                || lower.startsWith("<body")
+                || lower.startsWith("<div")
+                || (lower.contains("<html") && lower.contains("</html>"))
+                || lower.contains("<a href");
     }
 
     private static long parseIsoMillis(String text) {

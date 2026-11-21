@@ -65,6 +65,43 @@ public class GnssMapOverlay2DTest {
         assertTrue(J2DPolarEarthPanelSave.resolveShowGnssDefault(savePolar.getShowGnssConstellations()));
     }
 
+    @Test
+    void dualPolePolarGroundTrackDoesNotDrawStreakAcrossInterDiscGap(@TempDir Path tmpDir) {
+        JSatTrak.initOrekitData();
+        GnssAwarenessService svc = buildTestServiceWith4Constellations(tmpDir);
+        svc.selectSatellite("G01");
+
+        name.gano.astro.time.Time t = new name.gano.astro.time.Time();
+        t.setTimeInMillis(T0);
+        jsattrak.gui.J2DPolarEarthPanel polarPanel = new jsattrak.gui.J2DPolarEarthPanel(
+                new java.util.Hashtable<>(), new java.util.Hashtable<>(), null, null, null, t, null, null);
+        polarPanel.setGnssAwarenessService(svc);
+        polarPanel.setShowGnssConstellations(true);
+        polarPanel.getPolarLabel().setPolarMode(jsattrak.gui.J2dPolarEarthLabel.MODE_DUAL);
+        polarPanel.getPolarLabel().setSize(450, 470);
+
+        polarPanel.setShowGnssConstellations(false);
+        BufferedImage baseline = new BufferedImage(450, 470, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D gBase = baseline.createGraphics();
+        polarPanel.getPolarLabel().paint(gBase);
+        gBase.dispose();
+
+        polarPanel.setShowGnssConstellations(true);
+        BufferedImage img = new BufferedImage(450, 470, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = img.createGraphics();
+        polarPanel.getPolarLabel().paint(g2);
+        g2.dispose();
+
+        // Inter-disc gap rows (north bottom=206, south top=263): GNSS ground track must add ZERO pixels there
+        for (int y = 212; y <= 258; y++) {
+            for (int x = 40; x < 410; x++) {
+                if (img.getRGB(x, y) != baseline.getRGB(x, y)) {
+                    fail("Unexpected streak pixel painted in dual-pole inter-disc gap at (" + x + "," + y + ")");
+                }
+            }
+        }
+    }
+
     private static GnssAwarenessService buildTestServiceWith4Constellations(Path tmpDir) {
         List<GnssCatalogEntry> cat = List.of(
                 new GnssCatalogEntry("G01", GnssConstellation.GPS, 1, "G063", 37753, "2011-036A", "GPS-IIF", GnssOrbitClass.MEO, "D", "2", "2011-07-16"),

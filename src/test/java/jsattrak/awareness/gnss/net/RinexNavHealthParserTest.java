@@ -128,6 +128,33 @@ public class RinexNavHealthParserTest {
         assertTrue(res.rinexVersion().startsWith("4"));
     }
 
+    @Test
+    void handlesLeapSecond60AndInvalidCalendarEpochWithoutAbortingStream() throws Exception {
+        String mixed = ""
+                + "     3.04           N: GNSS NAV DATA    M: Mixed            RINEX VERSION / TYPE\n"
+                + "                                                            END OF HEADER\n"
+                + "G01 2026 11 21 00 00 60 1.000000000000D-04 0.000000000000D+00 0.000000000000D+00\n"
+                + "     1.000000000000D+01 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                + "     0.000000000000D+00 0.000000000000D+00 5.153650000000D+03 0.000000000000D+00\n"
+                + "     0.000000000000D+00 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                + "     0.000000000000D+00 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                + "     0.000000000000D+00 0.000000000000D+00 2.445000000000D+03 0.000000000000D+00\n"
+                + "     2.000000000000D+00 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                + "     0.000000000000D+00 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                + "G07 2025 02 30 00 00 00 1.000000000000D-04 0.000000000000D+00 0.000000000000D+00\n"
+                + "     1.000000000000D+01 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                + "     0.000000000000D+00 0.000000000000D+00 5.153650000000D+03 0.000000000000D+00\n"
+                + "     0.000000000000D+00 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                + "     0.000000000000D+00 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                + "     0.000000000000D+00 0.000000000000D+00 2.445000000000D+03 0.000000000000D+00\n"
+                + "     2.000000000000D+00 6.300000000000D+01 0.000000000000D+00 0.000000000000D+00\n"
+                + "     0.000000000000D+00 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n";
+        RinexNavHealthParser.ParseResult res = assertDoesNotThrow(() ->
+                RinexNavHealthParser.parse(new ByteArrayInputStream(mixed.getBytes(StandardCharsets.UTF_8))));
+        assertNotNull(res.latestByPrn().get("G01"));
+        assertTrue(res.latestByPrn().get("G01").healthy());
+    }
+
     static byte[] gzip(String text) throws Exception {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (GZIPOutputStream gz = new GZIPOutputStream(baos)) {

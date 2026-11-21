@@ -404,7 +404,9 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
             return service.getVisibleUpcomingLaunches(lastSimEpochMillis).size();
         }
         if (feed == gnssService && gnssService != null) {
-            return gnssService.getVisibleSatelliteStates(lastSimEpochMillis).size();
+            return gnssTab != null
+                    ? gnssTab.getVisibleSatelliteCount()
+                    : gnssService.getVisibleSatelliteStates(lastSimEpochMillis).size();
         }
         return feed.getActiveItemCount();
     }

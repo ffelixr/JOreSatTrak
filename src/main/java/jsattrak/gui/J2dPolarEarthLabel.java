@@ -455,7 +455,7 @@ public class J2dPolarEarthLabel extends JLabel implements Serializable
         {
             return null;
         }
-        return xy;
+        return new int[] { xy[0], xy[1], poleSign };
     }
 
     private static int[] selectDiscForLat(double latDeg, int[][] discs)

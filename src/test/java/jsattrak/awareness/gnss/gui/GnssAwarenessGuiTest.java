@@ -250,6 +250,68 @@ public class GnssAwarenessGuiTest {
                 .getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.LAUNCH).get(0).getEndpointUrl());
     }
 
+    @Test
+    void sourcesDialogPreservesRuntimeGnssPrefsSupportsProviderScopeTabClockReuseAndHelpContent(@TempDir Path tmpDir)
+            throws Exception {
+        AwarenessSettingsStore store = new AwarenessSettingsStore(tmpDir.resolve("awareness-settings.json"));
+        store.save(AwarenessSettings.createDefaults());
+
+        LiveAwarenessService launchService = new LiveAwarenessService(
+                store, tmpDir.resolve("launch-cache.json"), new LaunchApiClient(), new TleFeedClient(),
+                new GroundStationCatalogRepository(
+                        tmpDir.resolve("base.csv").toFile(),
+                        tmpDir.resolve("custom.csv").toFile(),
+                        tmpDir.resolve("launches.csv").toFile()));
+        GnssAwarenessService gnssService = GnssAwarenessService.createForTest(
+                tmpDir, List.of(
+                        new GnssCatalogEntry("G01", GnssConstellation.GPS, 1, "G063", 37753, "2011-036A", "GPS-IIF", GnssOrbitClass.MEO, "D", "2", "2011-07-16"),
+                        new GnssCatalogEntry("E11", GnssConstellation.GALILEO, 11, "E101", 37846, "2011-060A", "GAL-FOC", GnssOrbitClass.MEO, "B", "1", "2011-10-21")),
+                List.of(),
+                Map.of(),
+                Map.of("E11", new OperatorStatusRecord("E11", GnssConstellation.GALILEO, "GSC", OperatorStatusRecord.OperatorHealth.USABLE, "USABLE", 1_795_132_800_000L, "Nominal")),
+                List.of());
+
+        // Toggle GNSS UI preferences during session without writing via LiveAwarenessService
+        gnssService.setConstellationEnabled(GnssConstellation.GPS, false);
+        gnssService.setShowOrbitRings3d(false);
+
+        runOnEdt(() -> {
+            LiveDataSourcesDialog.DataSourcesEditorPanel editor = new LiveDataSourcesDialog.DataSourcesEditorPanel(
+                    launchService, gnssService, new LaunchApiClient(), new TleFeedClient(),
+                    new GnssCatalogClient(), new BroadcastNavClient(), new OperatorStatusClient(), null);
+            assertNotNull(editor.getProviderScopeCombo());
+            editor.getCategoryTabs().setSelectedIndex(DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS.ordinal());
+            assertTrue(editor.getProviderScopeCombo().isVisible());
+            editor.save();
+            assertTrue(editor.isSaved());
+
+            assertFalse(gnssService.isConstellationEnabled(GnssConstellation.GPS));
+            assertFalse(gnssService.isShowOrbitRings3d());
+
+            // Clock-tick refresh must preserve inspector evidence components rather than tearing down panel
+            GnssAwarenessTab tab = new GnssAwarenessTab(gnssService, t -> {}, (la, lo) -> {}, s -> {}, s -> false);
+            try {
+                tab.refreshDisplay(1_795_132_800_000L, false, TimeZone.getTimeZone("UTC"));
+                tab.getSatelliteTable().setRowSelectionInterval(0, 0);
+                var firstEvidenceBefore = tab.getInspectorPanel().getEvidencePanel().getComponent(0);
+                tab.refreshDisplay(1_795_132_805_000L, false, TimeZone.getTimeZone("UTC"));
+                assertSame(firstEvidenceBefore, tab.getInspectorPanel().getEvidencePanel().getComponent(0));
+            } finally {
+                tab.dispose();
+            }
+        });
+
+        String helpHtml = JSatTrak.buildGnssHelpHtml();
+        assertTrue(helpHtml.contains("IGS"));
+        assertTrue(helpHtml.contains("BKG"));
+        assertTrue(helpHtml.contains("NAVCEN"));
+        assertTrue(helpHtml.contains("GSC"));
+        assertTrue(helpHtml.contains("Operational"));
+        assertTrue(helpHtml.contains("Unavailable"));
+        assertTrue(helpHtml.contains("Testing"));
+        assertTrue(helpHtml.contains("Add to Object List"));
+    }
+
     private static void runOnEdt(ThrowingRunnable action) throws Exception {
         AtomicReference<Throwable> err = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {

@@ -167,7 +167,7 @@ public final class IgsMetadataParser {
             String tok = tokens[i];
             if (cospar.isEmpty() && FULL_COSPAR_PATTERN.matcher(tok.toUpperCase(Locale.ROOT)).matches()) {
                 cospar = tok.toUpperCase(Locale.ROOT);
-            } else if (noradId == 0 && INTEGER_PATTERN.matcher(tok).matches()) {
+            } else if (noradId == 0 && tok.matches("\\d{5,6}")) {
                 try {
                     noradId = Integer.parseInt(tok);
                 } catch (NumberFormatException ignored) {
@@ -237,19 +237,29 @@ public final class IgsMetadataParser {
     }
 
     static long parseSinexEpochMillis(String token, boolean isStartBound) {
-        if (token == null || token.isBlank() || "0000:000:00000".equals(token.trim())) {
+        if (token == null || token.isBlank()
+                || "0000:000:00000".equals(token.trim())
+                || "9999:999:99999".equals(token.trim())) {
             return isStartBound ? Long.MIN_VALUE : Long.MAX_VALUE;
         }
         Matcher m = SINEX_EPOCH_PATTERN.matcher(token.trim());
         if (!m.matches()) {
             return isStartBound ? Long.MIN_VALUE : Long.MAX_VALUE;
         }
-        int year = Integer.parseInt(m.group(1));
-        int doy = Math.max(1, Math.min(366, Integer.parseInt(m.group(2))));
-        int secOfDay = Integer.parseInt(m.group(3));
-        Instant inst = LocalDate.ofYearDay(year, doy).atStartOfDay(ZoneOffset.UTC).toInstant()
-                .plusSeconds(secOfDay);
-        return inst.toEpochMilli();
+        try {
+            int year = Integer.parseInt(m.group(1));
+            if (year <= 0 || year >= 9999) {
+                return isStartBound ? Long.MIN_VALUE : Long.MAX_VALUE;
+            }
+            int maxDoy = java.time.Year.isLeap(year) ? 366 : 365;
+            int doy = Math.max(1, Math.min(maxDoy, Integer.parseInt(m.group(2))));
+            int secOfDay = Math.max(0, Integer.parseInt(m.group(3)));
+            Instant inst = LocalDate.ofYearDay(year, doy).atStartOfDay(ZoneOffset.UTC).toInstant()
+                    .plusSeconds(secOfDay);
+            return inst.toEpochMilli();
+        } catch (RuntimeException e) {
+            return isStartBound ? Long.MIN_VALUE : Long.MAX_VALUE;
+        }
     }
 
     private static String sinexEpochToIsoDate(String token) {
@@ -257,12 +267,17 @@ public final class IgsMetadataParser {
         if (!m.matches()) {
             return "";
         }
-        int year = Integer.parseInt(m.group(1));
-        int doy = Integer.parseInt(m.group(2));
-        if (year <= 0 || doy <= 0) {
+        try {
+            int year = Integer.parseInt(m.group(1));
+            int rawDoy = Integer.parseInt(m.group(2));
+            if (year <= 0 || year >= 9999 || rawDoy <= 0) {
+                return "";
+            }
+            int maxDoy = java.time.Year.isLeap(year) ? 366 : 365;
+            return LocalDate.ofYearDay(year, Math.min(maxDoy, rawDoy)).toString();
+        } catch (RuntimeException e) {
             return "";
         }
-        return LocalDate.ofYearDay(year, Math.min(366, doy)).toString();
     }
 
     static GnssOrbitClass inferOrbitClass(GnssConstellation constellation, String blockType, int prnNumber) {
