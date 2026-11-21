@@ -79,9 +79,14 @@ public class J2DEarthPanelSave implements Serializable
     private float drawingLineWidth = 2.0f; // default value
     private float textLabelFontSize = 12.0f; // default value in case it is missing
     private Boolean showUpcomingLaunches = Boolean.TRUE;
+    private Boolean showGnssConstellations = Boolean.TRUE;
 
     // renderable objects
     Vector<JSatTrakRenderable> renderableObjects; //added 21 March 2009 -- bug to save coverage anaylsis and other renderables
+
+    public J2DEarthPanelSave()
+    {
+    }
 
     
     /** Creates a new instance of J2DEarthPanelSave */
@@ -129,6 +134,7 @@ public class J2DEarthPanelSave implements Serializable
         drawingLineWidth = panel.getDrawingLineWidth();
         textLabelFontSize = panel.getTextLabelFontSize();
         showUpcomingLaunches = Boolean.valueOf(panel.isShowUpcomingLaunches());
+        showGnssConstellations = Boolean.valueOf(panel.isShowGnssConstellations());
          
     } // J2DEarthPanelSave constructor
 
@@ -140,6 +146,21 @@ public class J2DEarthPanelSave implements Serializable
     public void setShowUpcomingLaunches(Boolean showUpcomingLaunches)
     {
         this.showUpcomingLaunches = showUpcomingLaunches;
+    }
+
+    public Boolean getShowGnssConstellations()
+    {
+        return showGnssConstellations;
+    }
+
+    public void setShowGnssConstellations(Boolean showGnssConstellations)
+    {
+        this.showGnssConstellations = showGnssConstellations;
+    }
+
+    public static boolean resolveShowGnssDefault(Boolean saved)
+    {
+        return saved == null || saved.booleanValue();
     }
     
     // OUTPUT function, save data from this object back to a new j2dearthpanel and internal frame
@@ -198,8 +219,9 @@ public class J2DEarthPanelSave implements Serializable
             System.out.println("Saved File didn't contain 2D panel font size or line width");
         }
 
-        // Legacy .jst files omit showUpcomingLaunches (XStream deserializes null); default to true
+        // Legacy .jst files omit showUpcomingLaunches / showGnssConstellations (XStream deserializes null); default to true
         newPanel.setShowUpcomingLaunches(showUpcomingLaunches == null || showUpcomingLaunches.booleanValue());
+        newPanel.setShowGnssConstellations(resolveShowGnssDefault(showGnssConstellations));
 
     }  
 } //J2DEarthPanelSave class

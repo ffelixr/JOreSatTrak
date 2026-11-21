@@ -36,6 +36,9 @@ import java.util.Hashtable;
 import java.util.Vector;
 import jsattrak.awareness.AwarenessStateListener;
 import jsattrak.awareness.LiveAwarenessService;
+import jsattrak.awareness.gnss.GnssAwarenessService;
+import jsattrak.awareness.gnss.GnssStateListener;
+import jsattrak.awareness.gnss.map.GnssOverlay2DRenderer;
 import jsattrak.awareness.map.LaunchOverlay2DRenderer;
 import jsattrak.coverage.JSatTrakRenderable;
 import jsattrak.objects.AbstractSatellite;
@@ -56,6 +59,7 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
     private transient JMenuItem latlonLinesMenu, moreOptionsMenu; // , earthPeMenu, earthNoaaMenu
     private transient JMenu overlaysMenu;
     private transient JCheckBoxMenuItem upcomingLaunchesMenuItem;
+    private transient JCheckBoxMenuItem gnssConstellationsMenuItem;
     //private transient ImageIcon checkMark;
     
     //private int imageMapNum = 0; //0=blue marble, 1=NOAA
@@ -87,11 +91,15 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
      // sun
      private Sun sun;
 
-    // Live Awareness launch overlay state
+    // Live Awareness launch & GNSS overlay state
     private boolean showUpcomingLaunches = true;
+    private boolean showGnssConstellations = true;
     private transient LiveAwarenessService awarenessService;
     private transient AwarenessStateListener awarenessListener;
     private transient LaunchOverlay2DRenderer overlayRenderer = new LaunchOverlay2DRenderer();
+    private transient GnssAwarenessService gnssAwarenessService;
+    private transient GnssStateListener gnssAwarenessListener;
+    private transient GnssOverlay2DRenderer gnssOverlayRenderer = new GnssOverlay2DRenderer();
      
      
      // land mass  --  only hard coded for now
@@ -222,6 +230,10 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
                 {
                     setShowUpcomingLaunches(upcomingLaunchesMenuItem.isSelected());
                 }
+                else if( event.getSource() == gnssConstellationsMenuItem)
+                {
+                    setShowGnssConstellations(gnssConstellationsMenuItem.isSelected());
+                }
                 else if( event.getSource() == moreOptionsMenu)
                 {
                     // open more options
@@ -248,6 +260,9 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
         upcomingLaunchesMenuItem = new JCheckBoxMenuItem("Upcoming Launches", showUpcomingLaunches);
         upcomingLaunchesMenuItem.addActionListener(menuListener);
         overlaysMenu.add(upcomingLaunchesMenuItem);
+        gnssConstellationsMenuItem = new JCheckBoxMenuItem("GNSS Constellations", showGnssConstellations);
+        gnssConstellationsMenuItem.addActionListener(menuListener);
+        overlaysMenu.add(gnssConstellationsMenuItem);
         popup.add(overlaysMenu);
         
         popup.addSeparator();
@@ -895,7 +910,11 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
                     && !isZoomOrRecenterModeActive())
             {
                 Point pt = SwingUtilities.convertPoint(J2DEarthPanel.this, e.getPoint(), imageMap);
-                if (getOverlayRenderer().handleLeftClick(pt.x, pt.y, 14.0, awarenessService, showUpcomingLaunches))
+                boolean handled = getOverlayRenderer().handleLeftClick(
+                                pt.x, pt.y, 14.0, awarenessService, showUpcomingLaunches)
+                        || getGnssOverlayRenderer().handleLeftClick(
+                                pt.x, pt.y, 12.0, gnssAwarenessService, showGnssConstellations);
+                if (handled)
                 {
                     imageMap.repaint();
                 }
@@ -922,6 +941,16 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
                     awarenessService,
                     showUpcomingLaunches,
                     simEpoch);
+            if (J2DEarthPanel.this.getToolTipText() == null)
+            {
+                getGnssOverlayRenderer().updateHoverTooltip(
+                        J2DEarthPanel.this,
+                        pt.x,
+                        pt.y,
+                        12.0,
+                        gnssAwarenessService,
+                        showGnssConstellations);
+            }
         }
 
         public void mouseExited(MouseEvent e)
@@ -996,6 +1025,10 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
                 {
                     upcomingLaunchesMenuItem.setSelected(showUpcomingLaunches);
                 }
+                if (gnssConstellationsMenuItem != null)
+                {
+                    gnssConstellationsMenuItem.setSelected(showGnssConstellations);
+                }
                 popup.show(J2DEarthPanel.this, e.getX(), e.getY());
             }
         }
@@ -1016,6 +1049,10 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
             if (upcomingLaunchesMenuItem != null)
             {
                 upcomingLaunchesMenuItem.setSelected(showUpcomingLaunches);
+            }
+            if (gnssConstellationsMenuItem != null)
+            {
+                gnssConstellationsMenuItem.setSelected(showGnssConstellations);
             }
         }
         
@@ -1592,6 +1629,64 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
             overlayRenderer = new LaunchOverlay2DRenderer();
         }
         return overlayRenderer;
+    }
+
+    public boolean isShowGnssConstellations()
+    {
+        return showGnssConstellations;
+    }
+
+    public void setShowGnssConstellations(boolean show)
+    {
+        this.showGnssConstellations = show;
+        if (gnssConstellationsMenuItem != null)
+        {
+            gnssConstellationsMenuItem.setSelected(show);
+        }
+        if (imageMap != null)
+        {
+            imageMap.repaint();
+        }
+    }
+
+    public void setGnssAwarenessService(GnssAwarenessService service)
+    {
+        if (this.gnssAwarenessService == service)
+        {
+            return;
+        }
+        if (this.gnssAwarenessService != null && this.gnssAwarenessListener != null)
+        {
+            this.gnssAwarenessService.removeListener(this.gnssAwarenessListener);
+        }
+        this.gnssAwarenessService = service;
+        if (service != null)
+        {
+            this.gnssAwarenessListener = GnssOverlay2DRenderer.createRepaintListener(imageMap);
+            service.addListener(this.gnssAwarenessListener);
+        }
+        else
+        {
+            this.gnssAwarenessListener = null;
+        }
+        if (imageMap != null)
+        {
+            imageMap.repaint();
+        }
+    }
+
+    public GnssAwarenessService getGnssAwarenessService()
+    {
+        return gnssAwarenessService;
+    }
+
+    public GnssOverlay2DRenderer getGnssOverlayRenderer()
+    {
+        if (gnssOverlayRenderer == null)
+        {
+            gnssOverlayRenderer = new GnssOverlay2DRenderer();
+        }
+        return gnssOverlayRenderer;
     }
  
     // SEG v4.2 -- new settings

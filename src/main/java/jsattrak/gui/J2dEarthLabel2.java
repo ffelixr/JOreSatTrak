@@ -28,6 +28,7 @@ import java.awt.event.ActionEvent;
 import java.text.DecimalFormat;
 import java.util.Hashtable;
 import java.util.Vector;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import javax.swing.*;
 import jsattrak.awareness.LaunchRecord;
@@ -613,6 +614,7 @@ public class J2dEarthLabel2 extends JLabel  implements java.io.Serializable
         
         // draw upcoming / selected recent launch markers
         paintLaunchOverlay(g2, w, h);
+        paintGnssOverlay(g2, w, h);
 
         // show time and date
         if(showDateTime && currentTime != null)
@@ -689,6 +691,74 @@ public class J2dEarthLabel2 extends JLabel  implements java.io.Serializable
                     earthPanel.getAwarenessService(),
                     earthPanel.isShowUpcomingLaunches(),
                     simEpochMillis,
+                    projector);
+        }
+        finally
+        {
+            g2.setClip(oldClip);
+        }
+    }
+
+    private void paintGnssOverlay(Graphics2D g2, int w, int h)
+    {
+        if (earthPanel == null)
+        {
+            return;
+        }
+        int effImgW = imageWidth;
+        int effImgH = imageHeight;
+        if ((effImgW <= 0 || effImgH <= 0) && w > 0 && h > 0)
+        {
+            if ((double) w / h > aspectRatio)
+            {
+                effImgH = h;
+                effImgW = (int) (h * aspectRatio);
+            }
+            else
+            {
+                effImgW = w;
+                effImgH = (int) (w / aspectRatio);
+            }
+        }
+        if (effImgW <= 0 || effImgH <= 0)
+        {
+            earthPanel.getGnssOverlayRenderer().clear();
+            return;
+        }
+
+        final int mapW = effImgW;
+        final int mapH = effImgH;
+        final int leftX = (w - mapW) / 2;
+        final int rightX = leftX + mapW;
+        final int topY = (h - mapH) / 2;
+        final int botY = topY + mapH;
+
+        BiFunction<Double, Double, int[]> projector = (latDeg, lonDeg) ->
+        {
+            if (latDeg == null || lonDeg == null || !Double.isFinite(latDeg) || !Double.isFinite(lonDeg))
+            {
+                return null;
+            }
+            int[] pt = findXYfromLL(latDeg, lonDeg, w, h, mapW, mapH);
+            if (pt[0] < leftX || pt[0] > rightX || pt[1] < topY || pt[1] > botY)
+            {
+                return null;
+            }
+            return pt;
+        };
+
+        long simEpochMillis = currentTime != null ? currentTime.getTimeInMillis() : System.currentTimeMillis();
+        Rectangle clipRect = new Rectangle(leftX, topY, mapW, mapH);
+        Shape oldClip = g2.getClip();
+        g2.clip(clipRect);
+        try
+        {
+            earthPanel.getGnssOverlayRenderer().paintServiceOverlay(
+                    g2,
+                    earthPanel.getGnssAwarenessService(),
+                    earthPanel.isShowGnssConstellations(),
+                    simEpochMillis,
+                    clipRect,
                     projector);
         }
         finally

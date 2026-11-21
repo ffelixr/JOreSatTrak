@@ -27,6 +27,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Shape;
 import java.awt.event.ActionEvent;
@@ -37,6 +38,7 @@ import java.io.Serializable;
 import java.text.DecimalFormat;
 import java.util.Hashtable;
 import java.util.Vector;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import javax.swing.AbstractAction;
 import javax.swing.Action;
@@ -344,6 +346,7 @@ public class J2dPolarEarthLabel extends JLabel implements Serializable
         }
 
         paintLaunchOverlay(g2, discs);
+        paintGnssOverlay(g2, discs, w, h);
 
         // Draw Date/Time and hover coordinates
         if (showDateTime && currentTime != null)
@@ -384,15 +387,42 @@ public class J2dPolarEarthLabel extends JLabel implements Serializable
                 projector);
     }
 
+    private void paintGnssOverlay(Graphics2D g2, int[][] discs, int w, int h)
+    {
+        if (polarPanel == null)
+        {
+            return;
+        }
+        long simEpochMillis = currentTime != null ? currentTime.getTimeInMillis() : System.currentTimeMillis();
+        BiFunction<Double, Double, int[]> projector = (latDeg, lonDeg) ->
+        {
+            if (latDeg == null || lonDeg == null)
+            {
+                return null;
+            }
+            return projectLatLonToDiscs(latDeg, lonDeg, discs);
+        };
+        polarPanel.getGnssOverlayRenderer().paintServiceOverlay(
+                g2,
+                polarPanel.getGnssAwarenessService(),
+                polarPanel.isShowGnssConstellations(),
+                simEpochMillis,
+                new Rectangle(0, 0, w, h),
+                projector);
+    }
+
     private int[] projectLaunchToDiscs(LaunchRecord record, int[][] discs)
     {
-        if (record == null || discs == null || discs.length == 0)
+        if (record == null)
         {
             return null;
         }
-        double latDeg = record.getLatDeg();
-        double lonDeg = record.getLonDeg();
-        if (!Double.isFinite(latDeg) || !Double.isFinite(lonDeg))
+        return projectLatLonToDiscs(record.getLatDeg(), record.getLonDeg(), discs);
+    }
+
+    private int[] projectLatLonToDiscs(double latDeg, double lonDeg, int[][] discs)
+    {
+        if (discs == null || discs.length == 0 || !Double.isFinite(latDeg) || !Double.isFinite(lonDeg))
         {
             return null;
         }
