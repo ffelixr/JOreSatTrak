@@ -25,6 +25,7 @@ import gov.nasa.worldwind.WorldWindow;
 import gov.nasa.worldwind.layers.LayerList;
 import java.awt.Point;
 import jsattrak.awareness.LiveAwarenessService;
+import jsattrak.awareness.gnss.GnssAwarenessService;
 import jsattrak.gui.JSatTrak;
 import name.gano.worldwind.geom.ECIRadialGrid;
 import name.gano.worldwind.layers.Earth.EcefTimeDepRenderableLayer;
@@ -92,6 +93,11 @@ public interface  J3DEarthComponent
     public boolean isShowUpcomingLaunches();
     public void setShowUpcomingLaunches(boolean enabled);
     public void refreshLaunchOverlay(long simEpochMillis);
+    // Live Awareness GNSS constellation overlay
+    public default void setGnssAwarenessService(GnssAwarenessService service) {}
+    public default boolean isShowGnssConstellations() { return false; }
+    public default void setShowGnssConstellations(boolean enabled) {}
+    public default void refreshGnssOverlay(long simEpochMillis) {}
     public void dispose();
 
 }
