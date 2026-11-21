@@ -278,7 +278,16 @@ public class LiveAwarenessService implements AwarenessFeed {
         Objects.requireNonNull(updated, "updated");
         AwarenessSettings snapshot = copySettings(updated);
         settingsStore.save(snapshot);
-        this.settings = snapshot;
+        applySettingsSnapshotWithoutSaving(snapshot);
+    }
+
+    /**
+     * Applies an already-persisted {@link AwarenessSettings} snapshot in memory and reschedules
+     * background refresh without overwriting the settings file.
+     */
+    public void applySettingsSnapshotWithoutSaving(AwarenessSettings updated) {
+        Objects.requireNonNull(updated, "updated");
+        this.settings = copySettings(updated);
         synchronized (lifecycleLock) {
             if (activated && !shutdown) {
                 if (periodicFuture != null) {
@@ -779,8 +788,13 @@ public class LiveAwarenessService implements AwarenessFeed {
             return AwarenessSettings.createDefaults();
         }
         AwarenessSettings copy = new AwarenessSettings();
+        copy.setSchemaVersion(source.getSchemaVersion());
         copy.setAutoFetchOnStartup(source.isAutoFetchOnStartup());
         copy.setDefaultHorizonDays(source.getDefaultHorizonDays());
+        copy.setGnssFeedEnabled(source.isGnssFeedEnabled());
+        copy.setGnssShowOrbitRings3d(source.isGnssShowOrbitRings3d());
+        copy.setGnssConstellationEnabled(source.getGnssConstellationEnabled());
+        copy.setGnssStatusFilter(source.getGnssStatusFilter());
         List<DataSourceConfig> copiedSources = new ArrayList<>();
         if (source.getSources() != null) {
             for (DataSourceConfig item : source.getSources()) {
@@ -797,6 +811,7 @@ public class LiveAwarenessService implements AwarenessFeed {
         return new DataSourceConfig(
                 source.getId(),
                 source.getFeedCategory(),
+                source.getProviderScope(),
                 source.getDisplayName(),
                 source.getEndpointUrl(),
                 source.isEnabled(),

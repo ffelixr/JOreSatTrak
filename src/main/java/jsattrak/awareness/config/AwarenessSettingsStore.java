@@ -11,8 +11,14 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import jsattrak.awareness.gnss.GnssConstellation;
+import jsattrak.awareness.gnss.GnssDisplayStatus;
 
 /**
  * Persists {@link AwarenessSettings} as pretty-printed JSON with owner-only POSIX permissions.
@@ -56,10 +62,42 @@ public class AwarenessSettingsStore {
             if (!isValid(parsed)) {
                 return AwarenessSettings.createDefaults();
             }
-            return parsed;
+            return migrateAndNormalize(parsed);
         } catch (IOException | JsonParseException ex) {
             return AwarenessSettings.createDefaults();
         }
+    }
+
+    private static AwarenessSettings migrateAndNormalize(AwarenessSettings settings) {
+        List<DataSourceConfig> sources = new ArrayList<>(settings.getSources());
+        boolean isPreGnssSchema = settings.getSchemaVersion() < AwarenessSettings.CURRENT_SCHEMA_VERSION;
+        boolean hasAnyGnssSource = sources.stream().anyMatch(s -> s.getFeedCategory() != null
+                && s.getFeedCategory().name().startsWith("GNSS_"));
+        if (isPreGnssSchema && !hasAnyGnssSource) {
+            sources.addAll(AwarenessSettings.createDefaultGnssSources());
+        }
+        settings.setSchemaVersion(AwarenessSettings.CURRENT_SCHEMA_VERSION);
+        for (DataSourceConfig source : sources) {
+            if (source.getProviderScope() == null) {
+                source.setProviderScope("");
+            }
+        }
+        settings.setSources(sources);
+
+        Map<String, Boolean> constellations = new LinkedHashMap<>(AwarenessSettings.defaultConstellationMap());
+        constellations.putAll(settings.getGnssConstellationEnabled());
+        for (GnssConstellation c : GnssConstellation.layer1ActiveValues()) {
+            constellations.putIfAbsent(c.name(), Boolean.TRUE);
+        }
+        settings.setGnssConstellationEnabled(constellations);
+
+        Map<String, Boolean> statuses = new LinkedHashMap<>(AwarenessSettings.defaultStatusFilterMap());
+        statuses.putAll(settings.getGnssStatusFilter());
+        for (GnssDisplayStatus s : GnssDisplayStatus.values()) {
+            statuses.putIfAbsent(s.name(), Boolean.TRUE);
+        }
+        settings.setGnssStatusFilter(statuses);
+        return settings;
     }
 
     /**
@@ -73,6 +111,9 @@ public class AwarenessSettingsStore {
             Files.createDirectories(parent);
         }
 
+        if (settings.getSchemaVersion() < AwarenessSettings.CURRENT_SCHEMA_VERSION) {
+            settings.setSchemaVersion(AwarenessSettings.CURRENT_SCHEMA_VERSION);
+        }
         String json = gson.toJson(settings);
         Path tempFile = createSecureTempFile(parent);
         try {
