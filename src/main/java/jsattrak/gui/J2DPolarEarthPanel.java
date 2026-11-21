@@ -48,6 +48,9 @@ import jsattrak.awareness.AwarenessStateListener;
 import jsattrak.awareness.LiveAwarenessService;
 import jsattrak.awareness.gnss.GnssAwarenessService;
 import jsattrak.awareness.gnss.GnssStateListener;
+import jsattrak.awareness.gnss.geometry.GnssGeometryListener;
+import jsattrak.awareness.gnss.geometry.GnssGeometryService;
+import jsattrak.awareness.gnss.map.GnssDopHeatmap2DRenderer;
 import jsattrak.awareness.gnss.map.GnssOverlay2DRenderer;
 import jsattrak.awareness.map.LaunchOverlay2DRenderer;
 import jsattrak.objects.AbstractSatellite;
@@ -70,6 +73,7 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
     private transient JMenu overlaysMenu;
     private transient JCheckBoxMenuItem upcomingLaunchesMenuItem;
     private transient JCheckBoxMenuItem gnssConstellationsMenuItem;
+    private transient JCheckBoxMenuItem gnssDopHeatmapMenuItem;
 
     private transient JToggleButton zoomInToggleButton;
     private transient JToggleButton zoomOutToggleButton;
@@ -83,12 +87,16 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
 
     private boolean showUpcomingLaunches = true;
     private boolean showGnssConstellations = true;
+    private boolean showGnssDopHeatmap = true;
     private transient LiveAwarenessService awarenessService;
     private transient AwarenessStateListener awarenessListener;
     private transient LaunchOverlay2DRenderer overlayRenderer = new LaunchOverlay2DRenderer();
     private transient GnssAwarenessService gnssAwarenessService;
     private transient GnssStateListener gnssAwarenessListener;
     private transient GnssOverlay2DRenderer gnssOverlayRenderer = new GnssOverlay2DRenderer();
+    private transient GnssGeometryService gnssGeometryService;
+    private transient GnssGeometryListener gnssGeometryListener;
+    private transient GnssDopHeatmap2DRenderer gnssDopHeatmapRenderer = new GnssDopHeatmap2DRenderer();
 
     public J2DPolarEarthPanel()
     {
@@ -184,6 +192,10 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
                 {
                     setShowGnssConstellations(gnssConstellationsMenuItem.isSelected());
                 }
+                else if (src == gnssDopHeatmapMenuItem)
+                {
+                    setShowGnssDopHeatmap(gnssDopHeatmapMenuItem.isSelected());
+                }
                 else if (src == moreOptionsMenu)
                 {
                     if (getApp() != null)
@@ -230,6 +242,10 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
         gnssConstellationsMenuItem = new JCheckBoxMenuItem("GNSS Constellations", showGnssConstellations);
         gnssConstellationsMenuItem.addActionListener(menuListener);
         overlaysMenu.add(gnssConstellationsMenuItem);
+
+        gnssDopHeatmapMenuItem = new JCheckBoxMenuItem("GNSS DOP Heatmap", showGnssDopHeatmap);
+        gnssDopHeatmapMenuItem.addActionListener(menuListener);
+        overlaysMenu.add(gnssDopHeatmapMenuItem);
         popup.add(overlaysMenu);
 
         popup.addSeparator();
@@ -309,6 +325,16 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
                     && !isZoomOrRecenterModeActive())
             {
                 Point pt = SwingUtilities.convertPoint(J2DPolarEarthPanel.this, e.getPoint(), polarLabel);
+                if (gnssGeometryService != null && gnssGeometryService.isPickOnMapMode())
+                {
+                    double[] ll = polarLabel.findLLFromScreenXY(pt.x, pt.y);
+                    if (ll != null && Double.isFinite(ll[0]) && Double.isFinite(ll[1]))
+                    {
+                        gnssGeometryService.completeMapPick(ll[0], ll[1]);
+                        polarLabel.repaint();
+                        return;
+                    }
+                }
                 boolean handled = getOverlayRenderer().handleLeftClick(
                                 pt.x, pt.y, 14.0, awarenessService, showUpcomingLaunches)
                         || getGnssOverlayRenderer().handleLeftClick(
@@ -463,6 +489,10 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
         if (gnssConstellationsMenuItem != null)
         {
             gnssConstellationsMenuItem.setSelected(showGnssConstellations);
+        }
+        if (gnssDopHeatmapMenuItem != null)
+        {
+            gnssDopHeatmapMenuItem.setSelected(showGnssDopHeatmap);
         }
         if (northPoleMenu == null)
         {
@@ -918,5 +948,63 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
             gnssOverlayRenderer = new GnssOverlay2DRenderer();
         }
         return gnssOverlayRenderer;
+    }
+
+    public boolean isShowGnssDopHeatmap()
+    {
+        return showGnssDopHeatmap;
+    }
+
+    public void setShowGnssDopHeatmap(boolean show)
+    {
+        this.showGnssDopHeatmap = show;
+        if (gnssDopHeatmapMenuItem != null)
+        {
+            gnssDopHeatmapMenuItem.setSelected(show);
+        }
+        if (polarLabel != null)
+        {
+            polarLabel.repaint();
+        }
+    }
+
+    public void setGnssGeometryService(GnssGeometryService service)
+    {
+        if (this.gnssGeometryService == service)
+        {
+            return;
+        }
+        if (this.gnssGeometryService != null && this.gnssGeometryListener != null)
+        {
+            this.gnssGeometryService.removeListener(this.gnssGeometryListener);
+        }
+        this.gnssGeometryService = service;
+        if (service != null)
+        {
+            this.gnssGeometryListener = GnssDopHeatmap2DRenderer.createRepaintListener(polarLabel);
+            service.addListener(this.gnssGeometryListener);
+        }
+        else
+        {
+            this.gnssGeometryListener = null;
+        }
+        if (polarLabel != null)
+        {
+            polarLabel.repaint();
+        }
+    }
+
+    public GnssGeometryService getGnssGeometryService()
+    {
+        return gnssGeometryService;
+    }
+
+    public GnssDopHeatmap2DRenderer getGnssDopHeatmapRenderer()
+    {
+        if (gnssDopHeatmapRenderer == null)
+        {
+            gnssDopHeatmapRenderer = new GnssDopHeatmap2DRenderer();
+        }
+        return gnssDopHeatmapRenderer;
     }
 }
