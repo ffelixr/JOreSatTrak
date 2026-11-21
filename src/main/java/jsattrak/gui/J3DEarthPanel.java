@@ -93,6 +93,7 @@ import javax.swing.border.TitledBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import jsattrak.awareness.LiveAwarenessService;
+import jsattrak.awareness.gnss.GnssAwarenessService;
 import jsattrak.coverage.CoverageAnalyzer;
 import jsattrak.objects.AbstractSatellite;
 import jsattrak.utilities.ECEFModelRenderable;
@@ -106,6 +107,7 @@ import name.gano.worldwind.layers.Earth.CoverageRenderableLayer;
 import name.gano.worldwind.layers.Earth.ECEFRenderableLayer;
 import name.gano.worldwind.layers.Earth.ECIRenderableLayer;
 import name.gano.worldwind.layers.Earth.EcefTimeDepRenderableLayer;
+import name.gano.worldwind.layers.Earth.GnssConstellationLayer;
 import name.gano.worldwind.layers.Earth.GroundStationHudLayer;
 import name.gano.worldwind.layers.Earth.LaunchSitesLayer;
 import name.gano.worldwind.sunshader.CustomSunPositionProvider;
@@ -178,6 +180,8 @@ public class J3DEarthPanel extends javax.swing.JPanel implements J3DEarthCompone
     private GroundStationHudLayer gsHudLayer;
     private LaunchSitesLayer launchSitesLayer;
     private LaunchSitesLayer.ViewCoordinator launchCoordinator;
+    private GnssConstellationLayer gnssConstellationLayer;
+    private GnssConstellationLayer.ViewCoordinator gnssCoordinator;
     private boolean smoothViewChanges = true; // for 3D view smoothing (only is set after model/earth view has been changed -needs to be fixed)
     // near/far clipping plane distances for 3d windows (can effect render speed and if full orbit is shown)
      private double farClippingPlaneDistOrbit = -1;//200000000d; // good out to geo, but slow for LEO, using AutoClipping plane view I made works better
@@ -351,6 +355,13 @@ public class J3DEarthPanel extends javax.swing.JPanel implements J3DEarthCompone
         launchCoordinator = new LaunchSitesLayer.ViewCoordinator(
                 wwd,
                 launchSitesLayer,
+                LaunchSitesLayer.mjdToEpochMillis(currentMJD));
+
+        gnssConstellationLayer = new GnssConstellationLayer(null);
+        m.getLayers().add(gnssConstellationLayer);
+        gnssCoordinator = new GnssConstellationLayer.ViewCoordinator(
+                wwd,
+                gnssConstellationLayer,
                 LaunchSitesLayer.mjdToEpochMillis(currentMJD));
         
         // add the WWJ status bar at the bottom
@@ -1278,6 +1289,10 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
         {
             launchCoordinator.reattachSelectListener();
         }
+        if (gnssCoordinator != null)
+        {
+            gnssCoordinator.reattachSelectListener();
+        }
         
     } // setupView
 
@@ -1440,6 +1455,10 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
         if (launchCoordinator != null)
         {
             launchCoordinator.refreshForMjd(mjd);
+        }
+        if (gnssCoordinator != null)
+        {
+            gnssCoordinator.refreshForMjd(mjd);
         }
         
     } // set MJD
@@ -1729,11 +1748,53 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     }
 
     @Override
+    public void setGnssAwarenessService(GnssAwarenessService service)
+    {
+        if (gnssCoordinator != null)
+        {
+            gnssCoordinator.setGnssAwarenessService(service);
+        }
+    }
+
+    public GnssAwarenessService getGnssAwarenessService()
+    {
+        return gnssCoordinator != null ? gnssCoordinator.getGnssAwarenessService() : null;
+    }
+
+    @Override
+    public boolean isShowGnssConstellations()
+    {
+        return gnssCoordinator != null && gnssCoordinator.isShowGnssConstellations();
+    }
+
+    @Override
+    public void setShowGnssConstellations(boolean enabled)
+    {
+        if (gnssCoordinator != null)
+        {
+            gnssCoordinator.setShowGnssConstellations(enabled);
+        }
+    }
+
+    @Override
+    public void refreshGnssOverlay(long simEpochMillis)
+    {
+        if (gnssCoordinator != null)
+        {
+            gnssCoordinator.refreshGnssOverlay(simEpochMillis);
+        }
+    }
+
+    @Override
     public void dispose()
     {
         if (launchCoordinator != null)
         {
             launchCoordinator.dispose();
+        }
+        if (gnssCoordinator != null)
+        {
+            gnssCoordinator.dispose();
         }
     }
 

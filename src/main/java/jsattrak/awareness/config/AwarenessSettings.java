@@ -2,28 +2,44 @@ package jsattrak.awareness.config;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import jsattrak.awareness.gnss.GnssConstellation;
+import jsattrak.awareness.gnss.GnssDisplayStatus;
 
 /**
- * Top-level configuration model for launch and TLE awareness feeds.
+ * Top-level configuration model for launch, TLE, and GNSS awareness feeds.
  */
 public class AwarenessSettings {
 
+    public static final int CURRENT_SCHEMA_VERSION = 2;
+
+    private int schemaVersion;
     private boolean autoFetchOnStartup;
     private int defaultHorizonDays = 7;
+    private Boolean gnssFeedEnabled = Boolean.TRUE;
+    private Boolean gnssShowOrbitRings3d = Boolean.TRUE;
+    private Map<String, Boolean> gnssConstellationEnabled = defaultConstellationMap();
+    private Map<String, Boolean> gnssStatusFilter = defaultStatusFilterMap();
     private List<DataSourceConfig> sources = new ArrayList<>();
 
     public AwarenessSettings() {
     }
 
     /**
-     * Builds the default offline-first settings with public LL2 and CelesTrak endpoints.
+     * Builds the default offline-first settings with public LL2, CelesTrak, and GNSS endpoints.
      */
     public static AwarenessSettings createDefaults() {
         AwarenessSettings settings = new AwarenessSettings();
+        settings.setSchemaVersion(CURRENT_SCHEMA_VERSION);
         settings.setAutoFetchOnStartup(false);
         settings.setDefaultHorizonDays(7);
+        settings.setGnssFeedEnabled(true);
+        settings.setGnssShowOrbitRings3d(true);
+        settings.setGnssConstellationEnabled(defaultConstellationMap());
+        settings.setGnssStatusFilter(defaultStatusFilterMap());
 
         List<DataSourceConfig> defaults = new ArrayList<>();
         defaults.add(new DataSourceConfig(
@@ -68,8 +84,188 @@ public class AwarenessSettings {
                 15,
                 false
         ));
+        defaults.addAll(createDefaultGnssSources());
         settings.setSources(defaults);
         return settings;
+    }
+
+    /**
+     * Builds the default public, no-auth GNSS data sources for Layer 1.
+     */
+    public static List<DataSourceConfig> createDefaultGnssSources() {
+        List<DataSourceConfig> gnss = new ArrayList<>();
+        gnss.add(new DataSourceConfig(
+                "igs-sat-metadata",
+                DataSourceConfig.FeedCategory.GNSS_CATALOG,
+                "",
+                "IGS Satellite Metadata (SINEX)",
+                "https://files.igs.org/pub/station/general/igs_satellite_metadata.snx",
+                true,
+                1,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                1440,
+                false
+        ));
+        gnss.add(new DataSourceConfig(
+                "celestrak-gnss-tle",
+                DataSourceConfig.FeedCategory.GNSS_ORBITS_TLE,
+                "",
+                "CelesTrak GNSS Combined",
+                "https://celestrak.org/NORAD/elements/gp.php?GROUP=gnss&FORMAT=tle",
+                true,
+                1,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                1440,
+                false
+        ));
+        gnss.add(new DataSourceConfig(
+                "bkg-brdc-nav",
+                DataSourceConfig.FeedCategory.GNSS_BROADCAST_NAV,
+                "",
+                "BKG Multi-GNSS Broadcast Nav (BRDC)",
+                "https://igs.bkg.bund.de/root_ftp/NTRIP/BRDC/",
+                true,
+                1,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                15,
+                false
+        ));
+        gnss.add(new DataSourceConfig(
+                "navcen-gps-status",
+                DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS,
+                "GPS_STATUS",
+                "NAVCEN GPS Constellation Status",
+                "https://www.navcen.uscg.gov/gps-constellation",
+                true,
+                1,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                15,
+                false
+        ));
+        gnss.add(new DataSourceConfig(
+                "navcen-gps-nanu",
+                DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS,
+                "GPS_NANU",
+                "NAVCEN GPS NANU Archive",
+                "https://www.navcen.uscg.gov/sites/default/files/gps/nanu/",
+                true,
+                1,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                15,
+                false
+        ));
+        gnss.add(new DataSourceConfig(
+                "gsc-galileo-status",
+                DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS,
+                "GALILEO_STATUS",
+                "GSC Galileo Constellation Status",
+                "https://www.gsc-europa.eu/system-service-status/constellation-information",
+                true,
+                1,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                15,
+                false
+        ));
+        gnss.add(new DataSourceConfig(
+                "gsc-galileo-nagu",
+                DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS,
+                "GALILEO_NAGU",
+                "GSC Galileo NAGU Feed",
+                "https://www.gsc-europa.eu/system-service-status/nagu-information",
+                true,
+                1,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                15,
+                false
+        ));
+        return gnss;
+    }
+
+    public static Map<String, Boolean> defaultConstellationMap() {
+        Map<String, Boolean> map = new LinkedHashMap<>();
+        for (GnssConstellation c : GnssConstellation.layer1ActiveValues()) {
+            map.put(c.name(), Boolean.TRUE);
+        }
+        return map;
+    }
+
+    public static Map<String, Boolean> defaultStatusFilterMap() {
+        Map<String, Boolean> map = new LinkedHashMap<>();
+        for (GnssDisplayStatus s : GnssDisplayStatus.values()) {
+            map.put(s.name(), Boolean.TRUE);
+        }
+        return map;
+    }
+
+    public int getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(int schemaVersion) {
+        this.schemaVersion = schemaVersion;
+    }
+
+    public boolean isGnssFeedEnabled() {
+        return gnssFeedEnabled == null || gnssFeedEnabled.booleanValue();
+    }
+
+    public void setGnssFeedEnabled(boolean gnssFeedEnabled) {
+        this.gnssFeedEnabled = gnssFeedEnabled;
+    }
+
+    public boolean isGnssShowOrbitRings3d() {
+        return gnssShowOrbitRings3d == null || gnssShowOrbitRings3d.booleanValue();
+    }
+
+    public void setGnssShowOrbitRings3d(boolean gnssShowOrbitRings3d) {
+        this.gnssShowOrbitRings3d = gnssShowOrbitRings3d;
+    }
+
+    public Map<String, Boolean> getGnssConstellationEnabled() {
+        if (gnssConstellationEnabled == null) {
+            gnssConstellationEnabled = defaultConstellationMap();
+        }
+        return gnssConstellationEnabled;
+    }
+
+    public void setGnssConstellationEnabled(Map<String, Boolean> gnssConstellationEnabled) {
+        this.gnssConstellationEnabled = gnssConstellationEnabled != null
+                ? new LinkedHashMap<>(gnssConstellationEnabled)
+                : defaultConstellationMap();
+    }
+
+    public Map<String, Boolean> getGnssStatusFilter() {
+        if (gnssStatusFilter == null) {
+            gnssStatusFilter = defaultStatusFilterMap();
+        }
+        return gnssStatusFilter;
+    }
+
+    public void setGnssStatusFilter(Map<String, Boolean> gnssStatusFilter) {
+        this.gnssStatusFilter = gnssStatusFilter != null
+                ? new LinkedHashMap<>(gnssStatusFilter)
+                : defaultStatusFilterMap();
     }
 
     public boolean isAutoFetchOnStartup() {
@@ -109,5 +305,19 @@ public class AwarenessSettings {
                 .filter(source -> source.getFeedCategory() == category)
                 .sorted(Comparator.comparingInt(DataSourceConfig::getPriority))
                 .toList();
+    }
+
+    /**
+     * Returns enabled sources for {@code category} grouped by {@code providerScope}, preserving
+     * first-seen scope order and sorting each scope ascending by priority.
+     */
+    public Map<String, List<DataSourceConfig>> getEnabledSourcesGroupedByScope(
+            DataSourceConfig.FeedCategory category) {
+        Map<String, List<DataSourceConfig>> grouped = new LinkedHashMap<>();
+        for (DataSourceConfig source : getEnabledSourcesByCategory(category)) {
+            String scope = source.getProviderScope();
+            grouped.computeIfAbsent(scope, k -> new ArrayList<>()).add(source);
+        }
+        return grouped;
     }
 }

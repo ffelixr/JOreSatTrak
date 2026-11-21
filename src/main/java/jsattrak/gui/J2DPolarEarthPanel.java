@@ -46,6 +46,9 @@ import javax.swing.SwingUtilities;
 import javax.swing.border.BevelBorder;
 import jsattrak.awareness.AwarenessStateListener;
 import jsattrak.awareness.LiveAwarenessService;
+import jsattrak.awareness.gnss.GnssAwarenessService;
+import jsattrak.awareness.gnss.GnssStateListener;
+import jsattrak.awareness.gnss.map.GnssOverlay2DRenderer;
 import jsattrak.awareness.map.LaunchOverlay2DRenderer;
 import jsattrak.objects.AbstractSatellite;
 import jsattrak.objects.GroundStation;
@@ -66,6 +69,7 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
     private transient JMenuItem latlonLinesMenu, toggleCoastlinesMenu, resetViewMenu, moreOptionsMenu;
     private transient JMenu overlaysMenu;
     private transient JCheckBoxMenuItem upcomingLaunchesMenuItem;
+    private transient JCheckBoxMenuItem gnssConstellationsMenuItem;
 
     private transient JToggleButton zoomInToggleButton;
     private transient JToggleButton zoomOutToggleButton;
@@ -78,9 +82,13 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
     private LandMassRegions landMass = new LandMassRegions();
 
     private boolean showUpcomingLaunches = true;
+    private boolean showGnssConstellations = true;
     private transient LiveAwarenessService awarenessService;
     private transient AwarenessStateListener awarenessListener;
     private transient LaunchOverlay2DRenderer overlayRenderer = new LaunchOverlay2DRenderer();
+    private transient GnssAwarenessService gnssAwarenessService;
+    private transient GnssStateListener gnssAwarenessListener;
+    private transient GnssOverlay2DRenderer gnssOverlayRenderer = new GnssOverlay2DRenderer();
 
     public J2DPolarEarthPanel()
     {
@@ -172,6 +180,10 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
                 {
                     setShowUpcomingLaunches(upcomingLaunchesMenuItem.isSelected());
                 }
+                else if (src == gnssConstellationsMenuItem)
+                {
+                    setShowGnssConstellations(gnssConstellationsMenuItem.isSelected());
+                }
                 else if (src == moreOptionsMenu)
                 {
                     if (getApp() != null)
@@ -215,6 +227,9 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
         upcomingLaunchesMenuItem = new JCheckBoxMenuItem("Upcoming Launches", showUpcomingLaunches);
         upcomingLaunchesMenuItem.addActionListener(menuListener);
         overlaysMenu.add(upcomingLaunchesMenuItem);
+        gnssConstellationsMenuItem = new JCheckBoxMenuItem("GNSS Constellations", showGnssConstellations);
+        gnssConstellationsMenuItem.addActionListener(menuListener);
+        overlaysMenu.add(gnssConstellationsMenuItem);
         popup.add(overlaysMenu);
 
         popup.addSeparator();
@@ -294,7 +309,11 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
                     && !isZoomOrRecenterModeActive())
             {
                 Point pt = SwingUtilities.convertPoint(J2DPolarEarthPanel.this, e.getPoint(), polarLabel);
-                if (getOverlayRenderer().handleLeftClick(pt.x, pt.y, 14.0, awarenessService, showUpcomingLaunches))
+                boolean handled = getOverlayRenderer().handleLeftClick(
+                                pt.x, pt.y, 14.0, awarenessService, showUpcomingLaunches)
+                        || getGnssOverlayRenderer().handleLeftClick(
+                                pt.x, pt.y, 12.0, gnssAwarenessService, showGnssConstellations);
+                if (handled)
                 {
                     polarLabel.repaint();
                 }
@@ -341,6 +360,16 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
                     awarenessService,
                     showUpcomingLaunches,
                     simEpoch);
+            if (J2DPolarEarthPanel.this.getToolTipText() == null)
+            {
+                getGnssOverlayRenderer().updateHoverTooltip(
+                        J2DPolarEarthPanel.this,
+                        pt.x,
+                        pt.y,
+                        12.0,
+                        gnssAwarenessService,
+                        showGnssConstellations);
+            }
 
             double[] ll = polarLabel.findLLFromScreenXY(pt.x, pt.y);
             if (ll != null)
@@ -430,6 +459,10 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
         if (upcomingLaunchesMenuItem != null)
         {
             upcomingLaunchesMenuItem.setSelected(showUpcomingLaunches);
+        }
+        if (gnssConstellationsMenuItem != null)
+        {
+            gnssConstellationsMenuItem.setSelected(showGnssConstellations);
         }
         if (northPoleMenu == null)
         {
@@ -827,5 +860,63 @@ public class J2DPolarEarthPanel extends JPanel implements ComponentListener, Ser
             overlayRenderer = new LaunchOverlay2DRenderer();
         }
         return overlayRenderer;
+    }
+
+    public boolean isShowGnssConstellations()
+    {
+        return showGnssConstellations;
+    }
+
+    public void setShowGnssConstellations(boolean show)
+    {
+        this.showGnssConstellations = show;
+        if (gnssConstellationsMenuItem != null)
+        {
+            gnssConstellationsMenuItem.setSelected(show);
+        }
+        if (polarLabel != null)
+        {
+            polarLabel.repaint();
+        }
+    }
+
+    public void setGnssAwarenessService(GnssAwarenessService service)
+    {
+        if (this.gnssAwarenessService == service)
+        {
+            return;
+        }
+        if (this.gnssAwarenessService != null && this.gnssAwarenessListener != null)
+        {
+            this.gnssAwarenessService.removeListener(this.gnssAwarenessListener);
+        }
+        this.gnssAwarenessService = service;
+        if (service != null)
+        {
+            this.gnssAwarenessListener = GnssOverlay2DRenderer.createRepaintListener(polarLabel);
+            service.addListener(this.gnssAwarenessListener);
+        }
+        else
+        {
+            this.gnssAwarenessListener = null;
+        }
+        if (polarLabel != null)
+        {
+            polarLabel.repaint();
+        }
+    }
+
+    public GnssAwarenessService getGnssAwarenessService()
+    {
+        return gnssAwarenessService;
+    }
+
+    public GnssOverlay2DRenderer getGnssOverlayRenderer()
+    {
+        if (gnssOverlayRenderer == null)
+        {
+            gnssOverlayRenderer = new GnssOverlay2DRenderer();
+        }
+        return gnssOverlayRenderer;
     }
 }

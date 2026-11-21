@@ -68,6 +68,7 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
         bgColorPanel.setBackground( j2dpanel.getBackgroundColor() );
         latLongLinesCheckBox.setSelected( j2dpanel.getShowLatLonLines()  );
         showUpcomingLaunchesCheckBox.setSelected( j2dpanel.isShowUpcomingLaunches() );
+        showGnssConstellationsCheckBox.setSelected( j2dpanel.isShowGnssConstellations() );
         
 //        if(j2dpanel.getImageMapNum() == 0)
 //        {
@@ -152,6 +153,7 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
         bgColorButton = new javax.swing.JButton();
         latLongLinesCheckBox = new javax.swing.JCheckBox();
         showUpcomingLaunchesCheckBox = new javax.swing.JCheckBox();
+        showGnssConstellationsCheckBox = new javax.swing.JCheckBox();
         jLabel1 = new javax.swing.JLabel();
         zoomIncrementTextField = new javax.swing.JTextField();
         fastImageScalingRadioButton = new javax.swing.JRadioButton();
@@ -235,6 +237,11 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
         showUpcomingLaunchesCheckBox.setSelected(true);
         showUpcomingLaunchesCheckBox.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 0, 0, 0));
         showUpcomingLaunchesCheckBox.setMargin(new java.awt.Insets(0, 0, 0, 0));
+
+        showGnssConstellationsCheckBox.setText("Show GNSS Constellations");
+        showGnssConstellationsCheckBox.setSelected(true);
+        showGnssConstellationsCheckBox.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 0, 0, 0));
+        showGnssConstellationsCheckBox.setMargin(new java.awt.Insets(0, 0, 0, 0));
 
         jLabel1.setText("Zoom Increment Factor:");
 
@@ -620,7 +627,8 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
                                         .addContainerGap()
                                         .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                                             .addComponent(latLongLinesCheckBox)
-                                            .addComponent(showUpcomingLaunchesCheckBox))))
+                                            .addComponent(showUpcomingLaunchesCheckBox)
+                                            .addComponent(showGnssConstellationsCheckBox))))
                                 .addGap(6, 6, 6))
                             .addGroup(layout.createSequentialGroup()
                                 .addContainerGap()
@@ -651,6 +659,8 @@ public class TwoDViewPropertiesPanel extends javax.swing.JPanel implements java.
                 .addComponent(latLongLinesCheckBox)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(showUpcomingLaunchesCheckBox)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(showGnssConstellationsCheckBox)
                 .addGap(12, 12, 12)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(jLabel1)
@@ -897,6 +907,7 @@ private void imageBrowseButtonActionPerformed(java.awt.event.ActionEvent evt) {/
     private javax.swing.JComboBox regionsComboBox;
     private javax.swing.JCheckBox showDarknessCheckBox;
     private javax.swing.JCheckBox showDatTimeCheckBox;
+    private javax.swing.JCheckBox showGnssConstellationsCheckBox;
     private javax.swing.JCheckBox showUpcomingLaunchesCheckBox;
     private javax.swing.JRadioButton smoothScalingRadioButton;
     private javax.swing.JButton sunColorButton;
@@ -915,6 +926,7 @@ private void imageBrowseButtonActionPerformed(java.awt.event.ActionEvent evt) {/
         j2dpanel.setBackgroundColor( bgColorPanel.getBackground() );
         j2dpanel.setShowLatLonLines( latLongLinesCheckBox.isSelected()  );
         j2dpanel.setShowUpcomingLaunches( showUpcomingLaunchesCheckBox.isSelected() );
+        j2dpanel.setShowGnssConstellations( showGnssConstellationsCheckBox.isSelected() );
         
 //        if(blueMarbleImageRadioButton.isSelected() )
 //        {

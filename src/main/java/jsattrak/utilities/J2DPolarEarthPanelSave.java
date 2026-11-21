@@ -63,6 +63,11 @@ public class J2DPolarEarthPanelSave implements Serializable
     private float drawingLineWidth = 2.0f;
     private float textLabelFontSize = 12.0f;
     private Boolean showUpcomingLaunches = Boolean.TRUE;
+    private Boolean showGnssConstellations = Boolean.TRUE;
+
+    public J2DPolarEarthPanelSave()
+    {
+    }
 
     public J2DPolarEarthPanelSave(J2DPolarEarthPanel panel, int x, int y, Dimension d)
     {
@@ -100,6 +105,7 @@ public class J2DPolarEarthPanelSave implements Serializable
         this.drawingLineWidth = panel.getDrawingLineWidth();
         this.textLabelFontSize = panel.getTextLabelFontSize();
         this.showUpcomingLaunches = Boolean.valueOf(panel.isShowUpcomingLaunches());
+        this.showGnssConstellations = Boolean.valueOf(panel.isShowGnssConstellations());
     }
 
     public Boolean getShowUpcomingLaunches()
@@ -110,6 +116,21 @@ public class J2DPolarEarthPanelSave implements Serializable
     public void setShowUpcomingLaunches(Boolean showUpcomingLaunches)
     {
         this.showUpcomingLaunches = showUpcomingLaunches;
+    }
+
+    public Boolean getShowGnssConstellations()
+    {
+        return showGnssConstellations;
+    }
+
+    public void setShowGnssConstellations(Boolean showGnssConstellations)
+    {
+        this.showGnssConstellations = showGnssConstellations;
+    }
+
+    public static boolean resolveShowGnssDefault(Boolean saved)
+    {
+        return saved == null || saved.booleanValue();
     }
 
     public void copySettings2PanelAndFrame(J2DPolarEarthPanel newPanel, JInternalFrame iframe)
@@ -161,8 +182,9 @@ public class J2DPolarEarthPanelSave implements Serializable
 
         newPanel.setDrawingLineWidth(drawingLineWidth);
         newPanel.setTextLabelFontSize(textLabelFontSize);
-        // Legacy .jst files omit showUpcomingLaunches (XStream deserializes null); default to true
+        // Legacy .jst files omit showUpcomingLaunches / showGnssConstellations (XStream deserializes null); default to true
         newPanel.setShowUpcomingLaunches(showUpcomingLaunches == null || showUpcomingLaunches.booleanValue());
+        newPanel.setShowGnssConstellations(resolveShowGnssDefault(showGnssConstellations));
         newPanel.repaint();
     }
 }

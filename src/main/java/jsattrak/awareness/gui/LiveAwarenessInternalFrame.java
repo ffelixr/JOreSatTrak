@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.TimeZone;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import javax.swing.BorderFactory;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
@@ -31,6 +32,10 @@ import jsattrak.awareness.AwarenessFeed;
 import jsattrak.awareness.AwarenessStateListener;
 import jsattrak.awareness.LaunchRecord;
 import jsattrak.awareness.LiveAwarenessService;
+import jsattrak.awareness.gnss.GnssAwarenessService;
+import jsattrak.awareness.gnss.GnssSatelliteState;
+import jsattrak.awareness.gnss.GnssStateListener;
+import jsattrak.awareness.gnss.gui.GnssAwarenessTab;
 
 /**
  * Unified MDI hub hosting Live Awareness feed tabs (starting with Launches), manual Refresh,
@@ -39,12 +44,15 @@ import jsattrak.awareness.LiveAwarenessService;
 public class LiveAwarenessInternalFrame extends JInternalFrame {
 
     private final LiveAwarenessService service;
+    private final GnssAwarenessService gnssService;
     private final JTabbedPane feedTabbedPane;
     private final LaunchesAwarenessTab launchesTab;
+    private final GnssAwarenessTab gnssTab;
     private final JLabel syncStatusLabel;
     private final JButton refreshButton;
     private final JButton sourcesButton;
     private final AwarenessStateListener serviceListener;
+    private final GnssStateListener gnssListener;
     private final List<AwarenessFeed> feeds = new ArrayList<>();
     private final List<Boolean> lastTabOverlayStates = new ArrayList<>();
 
@@ -69,8 +77,22 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
             Consumer<LaunchRecord> onImportTles,
             Runnable onOpenSatBrowser,
             Runnable onOpenSources) {
+        this(service, null, onJumpToT0, onCenterMaps, onImportTles, onOpenSatBrowser, onOpenSources, null, null);
+    }
+
+    public LiveAwarenessInternalFrame(
+            LiveAwarenessService service,
+            GnssAwarenessService gnssService,
+            Consumer<Long> onJumpToT0,
+            BiConsumer<Double, Double> onCenterMaps,
+            Consumer<LaunchRecord> onImportTles,
+            Runnable onOpenSatBrowser,
+            Runnable onOpenSources,
+            Consumer<GnssSatelliteState> onAddGnssToObjectList,
+            Predicate<GnssSatelliteState> isGnssInObjectList) {
         super("Live Awareness", true, true, true, true);
         this.service = Objects.requireNonNull(service, "service");
+        this.gnssService = gnssService;
         setDefaultCloseOperation(HIDE_ON_CLOSE);
         Icon frameIcon = loadIcon("/icons/logo/JSatTrakLogo_16.png");
         if (frameIcon != null) {
@@ -96,9 +118,14 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         if (refreshIcon != null) {
             refreshButton.setIcon(refreshIcon);
         }
-        refreshButton.setToolTipText("Fetch latest launches and TLE catalogs");
+        refreshButton.setToolTipText("Fetch latest data for the active feed");
         refreshButton.addActionListener(e -> {
-            service.refreshNowAsync();
+            AwarenessFeed active = activeFeed();
+            if (active == gnssService && gnssService != null) {
+                gnssService.refreshNowAsync();
+            } else {
+                service.refreshNowAsync();
+            }
             updateHeaderAndTabs();
         });
 
@@ -121,10 +148,22 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         feedTabbedPane = new JTabbedPane();
         launchesTab = new LaunchesAwarenessTab(service, onJumpToT0, onCenterMaps, onImportTles, onOpenSatBrowser);
         addFeedTab(service, launchesTab);
+        if (gnssService != null) {
+            gnssTab = new GnssAwarenessTab(
+                    gnssService,
+                    onJumpToT0,
+                    onCenterMaps,
+                    onAddGnssToObjectList,
+                    isGnssInObjectList);
+            addFeedTab(gnssService, gnssTab);
+        } else {
+            gnssTab = null;
+        }
+        feedTabbedPane.addChangeListener(e -> updateHeaderAndTabs());
         root.add(feedTabbedPane, BorderLayout.CENTER);
 
         setContentPane(root);
-        setSize(780, 560);
+        setSize(820, 580);
         setMinimumSize(new Dimension(540, 380));
 
         this.serviceListener = new AwarenessStateListener() {
@@ -141,13 +180,45 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
             public void onStatusMessage(String message, boolean isWarning) {
                 runOnEdt(() -> {
                     updateHeaderAndTabs();
-                    if (message != null && !message.isBlank()) {
+                    if (activeFeed() == service && message != null && !message.isBlank()) {
                         syncStatusLabel.setToolTipText(message);
                     }
                 });
             }
         };
         service.addListener(serviceListener);
+
+        if (gnssService != null) {
+            this.gnssListener = new GnssStateListener() {
+                @Override
+                public void onGnssDataChanged() {
+                    runOnEdt(LiveAwarenessInternalFrame.this::updateHeaderAndTabs);
+                }
+
+                @Override
+                public void onGnssSelectionChanged(String selectedPrnId) {
+                }
+
+                @Override
+                public void onGnssStatusMessage(String message, boolean isWarning) {
+                    runOnEdt(() -> {
+                        updateHeaderAndTabs();
+                        if (activeFeed() == gnssService && message != null && !message.isBlank()) {
+                            syncStatusLabel.setToolTipText(message);
+                        }
+                    });
+                }
+
+                @Override
+                public void onOpenGnssUiRequested() {
+                    runOnEdt(() -> selectFeedTab(GnssAwarenessService.FEED_ID));
+                }
+            };
+            gnssService.addListener(gnssListener);
+        } else {
+            this.gnssListener = null;
+        }
+
         updateHeaderAndTabs();
     }
 
@@ -178,6 +249,9 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         this.lastDisplayTz = displayTz != null ? displayTz : TimeZone.getTimeZone("UTC");
 
         launchesTab.refreshDisplay(simEpochMillis, realTimeMode, this.lastDisplayTz);
+        if (gnssTab != null) {
+            gnssTab.refreshDisplay(simEpochMillis, realTimeMode, this.lastDisplayTz);
+        }
         updateHeaderAndTabs();
     }
 
@@ -185,12 +259,35 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
     public void dispose() {
         this.disposed = true;
         service.removeListener(serviceListener);
+        if (gnssService != null && gnssListener != null) {
+            gnssService.removeListener(gnssListener);
+        }
         launchesTab.dispose();
+        if (gnssTab != null) {
+            gnssTab.dispose();
+        }
         super.dispose();
     }
 
     public LaunchesAwarenessTab getLaunchesTab() {
         return launchesTab;
+    }
+
+    public GnssAwarenessTab getGnssTab() {
+        return gnssTab;
+    }
+
+    public void selectFeedTab(String feedId) {
+        if (feedId == null || feedId.isBlank()) {
+            return;
+        }
+        for (int i = 0; i < feeds.size() && i < feedTabbedPane.getTabCount(); i++) {
+            if (feedId.equalsIgnoreCase(feeds.get(i).getFeedId())) {
+                feedTabbedPane.setSelectedIndex(i);
+                updateHeaderAndTabs();
+                return;
+            }
+        }
     }
 
     public JTabbedPane getFeedTabbedPane() {
@@ -225,8 +322,22 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         }
     }
 
+    private AwarenessFeed activeFeed() {
+        int idx = feedTabbedPane != null ? feedTabbedPane.getSelectedIndex() : -1;
+        if (idx >= 0 && idx < feeds.size()) {
+            return feeds.get(idx);
+        }
+        return service;
+    }
+
     private void updateHeaderAndTabs() {
-        boolean refreshing = service.isRefreshing();
+        AwarenessFeed active = activeFeed();
+        boolean isGnssActive = active == gnssService && gnssService != null;
+        boolean refreshing = isGnssActive ? gnssService.isRefreshing() : service.isRefreshing();
+        boolean stale = isGnssActive ? gnssService.isDataStale() : service.isDataStale();
+        long lastSync = isGnssActive ? gnssService.getLastSuccessfulSyncMillis() : service.getLastSuccessfulSyncMillis();
+        String lastErr = isGnssActive ? gnssService.getLastErrorMessage() : service.getLastErrorMessage();
+
         if (refreshButton.isEnabled() == refreshing) {
             refreshButton.setEnabled(!refreshing);
         }
@@ -241,17 +352,14 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
             statusColor = defaultForeground();
             statusTooltip = null;
             updateTooltip = false;
-        } else if (service.isDataStale()) {
-            long lastSync = service.getLastSuccessfulSyncMillis();
+        } else if (stale) {
             statusText = lastSync > 0L
                     ? "Stale \u00B7 last synced " + LaunchDetailsInspectorPanel.formatDateTime(lastSync, lastDisplayTz)
                     : "Stale \u00B7 sync failed (no cached data)";
             statusColor = new Color(0xFB, 0x8C, 0x00);
-            String err = service.getLastErrorMessage();
-            statusTooltip = (err != null && !err.isBlank()) ? err : "Last refresh failed";
-        } else if (service.getLastSuccessfulSyncMillis() > 0L) {
-            statusText = "Synced " + LaunchDetailsInspectorPanel.formatDateTime(
-                    service.getLastSuccessfulSyncMillis(), lastDisplayTz);
+            statusTooltip = (lastErr != null && !lastErr.isBlank()) ? lastErr : "Last refresh failed";
+        } else if (lastSync > 0L) {
+            statusText = "Synced " + LaunchDetailsInspectorPanel.formatDateTime(lastSync, lastDisplayTz);
             statusColor = mutedForeground();
             statusTooltip = "Last successful sync";
         } else {
@@ -294,6 +402,11 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
     private int countForFeed(AwarenessFeed feed) {
         if (feed == service) {
             return service.getVisibleUpcomingLaunches(lastSimEpochMillis).size();
+        }
+        if (feed == gnssService && gnssService != null) {
+            return gnssTab != null
+                    ? gnssTab.getVisibleSatelliteCount()
+                    : gnssService.getVisibleSatelliteStates(lastSimEpochMillis).size();
         }
         return feed.getActiveItemCount();
     }

@@ -1,5 +1,8 @@
 package jsattrak.awareness.config;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFileAttributeView;
@@ -8,6 +11,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class AwarenessSettingsStoreTest {
 
@@ -33,7 +37,10 @@ public class AwarenessSettingsStoreTest {
         assertEq(true, defaultTleSources.get(1).isEnabled());
         assertEq(15, new DataSourceConfig().getRefreshIntervalMinutes());
         for (DataSourceConfig defaultSource : defaults.getSources()) {
-            assertEq(15, defaultSource.getRefreshIntervalMinutes());
+            int expectedMinutes = (defaultSource.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_CATALOG
+                    || defaultSource.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_ORBITS_TLE)
+                    ? 1440 : 15;
+            assertEq(expectedMinutes, defaultSource.getRefreshIntervalMinutes());
         }
 
         defaults.setAutoFetchOnStartup(true);
@@ -119,6 +126,55 @@ public class AwarenessSettingsStoreTest {
         AwarenessSettingsStore store = AwarenessSettingsStore.createDefault();
         Path expected = Path.of(System.getProperty("user.home"), ".joresattrak", "awareness-settings.json");
         assertEq(expected, store.getSettingsPath());
+    }
+
+    @Test
+    void defaultsIncludeAllPublicNoAuthGnssSources() {
+        AwarenessSettings defaults = AwarenessSettings.createDefaults();
+        assertTrue(defaults.isGnssFeedEnabled());
+        assertTrue(defaults.isGnssShowOrbitRings3d());
+        assertEquals(1, defaults.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.GNSS_CATALOG).size());
+        assertEquals(1, defaults.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.GNSS_ORBITS_TLE).size());
+        assertEquals(1, defaults.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.GNSS_BROADCAST_NAV).size());
+        assertEquals(4, defaults.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS).size());
+        assertTrue(defaults.getSources().stream().allMatch(s -> s.getAuthMode() == AuthMode.NONE));
+    }
+
+    @Test
+    void migratesPreGnssSettingsFileWithoutLosingExistingLaunchSources(@TempDir Path tmpDir) throws Exception {
+        Path file = tmpDir.resolve("awareness-settings.json");
+        String legacyJson = """
+                {
+                  "autoFetchOnStartup": true,
+                  "defaultHorizonDays": 3,
+                  "sources": [
+                    {
+                      "id": "ll2-paid",
+                      "feedCategory": "LAUNCH",
+                      "displayName": "LL2 Pro",
+                      "endpointUrl": "https://ll.example/2.2.0/launch/",
+                      "enabled": true,
+                      "priority": 1,
+                      "authMode": "API_KEY_HEADER",
+                      "authKeyName": "Authorization",
+                      "authSecret": "Token topsecret",
+                      "authUsername": "",
+                      "refreshIntervalMinutes": 5,
+                      "syncFixedPadsToGroundStations": true
+                    }
+                  ]
+                }
+                """;
+        Files.writeString(file, legacyJson);
+
+        AwarenessSettingsStore store = new AwarenessSettingsStore(file);
+        AwarenessSettings loaded = store.load();
+        assertTrue(loaded.isAutoFetchOnStartup());
+        assertEquals(3, loaded.getDefaultHorizonDays());
+        assertTrue(loaded.isGnssFeedEnabled());
+        assertEquals("Token topsecret", loaded.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.LAUNCH).get(0).getAuthSecret());
+        assertEquals(1, loaded.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.GNSS_BROADCAST_NAV).size());
+        assertEquals(4, loaded.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS).size());
     }
 
     private static void assertEq(Object expected, Object actual) {

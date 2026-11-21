@@ -10,11 +10,16 @@ public class DataSourceConfig {
      */
     public enum FeedCategory {
         LAUNCH,
-        TLE
+        TLE,
+        GNSS_CATALOG,
+        GNSS_ORBITS_TLE,
+        GNSS_BROADCAST_NAV,
+        GNSS_OPERATOR_STATUS
     }
 
     private String id = "";
     private FeedCategory feedCategory;
+    private String providerScope = "";
     private String displayName = "";
     private String endpointUrl = "";
     private boolean enabled;
@@ -41,8 +46,26 @@ public class DataSourceConfig {
                             String authUsername,
                             int refreshIntervalMinutes,
                             boolean syncFixedPadsToGroundStations) {
+        this(id, feedCategory, "", displayName, endpointUrl, enabled, priority, authMode,
+                authKeyName, authSecret, authUsername, refreshIntervalMinutes, syncFixedPadsToGroundStations);
+    }
+
+    public DataSourceConfig(String id,
+                            FeedCategory feedCategory,
+                            String providerScope,
+                            String displayName,
+                            String endpointUrl,
+                            boolean enabled,
+                            int priority,
+                            AuthMode authMode,
+                            String authKeyName,
+                            String authSecret,
+                            String authUsername,
+                            int refreshIntervalMinutes,
+                            boolean syncFixedPadsToGroundStations) {
         this.id = id;
         this.feedCategory = feedCategory;
+        this.providerScope = providerScope != null ? providerScope : "";
         this.displayName = displayName;
         this.endpointUrl = endpointUrl;
         this.enabled = enabled;
@@ -53,6 +76,14 @@ public class DataSourceConfig {
         this.authUsername = authUsername;
         this.refreshIntervalMinutes = refreshIntervalMinutes;
         this.syncFixedPadsToGroundStations = syncFixedPadsToGroundStations;
+    }
+
+    public String getProviderScope() {
+        return providerScope != null ? providerScope : "";
+    }
+
+    public void setProviderScope(String providerScope) {
+        this.providerScope = providerScope != null ? providerScope : "";
     }
 
     public String getId() {
