@@ -365,6 +365,13 @@ public class LaunchSitesLayer extends RenderableLayer {
      * while never intercepting right-click or drag events.
      */
     public static SelectListener createSelectListener(LiveAwarenessService service, Runnable onMarkerClicked) {
+        return createSelectListener(service, onMarkerClicked, null);
+    }
+
+    public static SelectListener createSelectListener(
+            LiveAwarenessService service,
+            Runnable onMarkerClicked,
+            java.util.function.BooleanSupplier suppressSelection) {
         return new SelectListener() {
             private WeakReference<LaunchSitesLayer> lastTooltipLayer = new WeakReference<>(null);
             private WeakReference<Highlightable> lastHighlighted = new WeakReference<>(null);
@@ -376,6 +383,9 @@ public class LaunchSitesLayer extends RenderableLayer {
                 }
                 String action = event.getEventAction();
                 if (SelectEvent.LEFT_CLICK.equals(action)) {
+                    if (suppressSelection != null && suppressSelection.getAsBoolean()) {
+                        return;
+                    }
                     String launchId = extractLaunchId(event.getTopObject());
                     if (launchId != null) {
                         event.consume();
@@ -501,6 +511,7 @@ public class LaunchSitesLayer extends RenderableLayer {
         private LiveAwarenessService awarenessService;
         private AwarenessStateListener awarenessListener;
         private SelectListener selectListener;
+        private java.util.function.BooleanSupplier pickSuppressionCheck;
         private long lastSimEpochMillis;
         private List<ClusterSignature> lastRenderedSignature = List.of();
         private double lastRenderedThresholdDeg = Double.NaN;
@@ -536,7 +547,14 @@ public class LaunchSitesLayer extends RenderableLayer {
                 if (service != null) {
                     this.awarenessListener = new WeakAwarenessListener(this, service);
                     service.addListener(this.awarenessListener);
-                    this.selectListener = createSelectListener(service, null);
+                    WeakReference<ViewCoordinator> selfRef = new WeakReference<>(this);
+                    this.selectListener = createSelectListener(
+                            service,
+                            null,
+                            () -> {
+                                ViewCoordinator c = selfRef.get();
+                                return c != null && c.isPickSuppressed();
+                            });
                     wwd.addSelectListener(this.selectListener);
                 } else {
                     this.awarenessListener = null;
@@ -549,6 +567,20 @@ public class LaunchSitesLayer extends RenderableLayer {
                 applyCurrentStateLocked(this.lastSimEpochMillis, eyeAlt, true);
             }
             wwd.redraw();
+        }
+
+        public void setPickSuppressionCheck(java.util.function.BooleanSupplier check) {
+            synchronized (stateLock) {
+                this.pickSuppressionCheck = check;
+            }
+        }
+
+        private boolean isPickSuppressed() {
+            java.util.function.BooleanSupplier check;
+            synchronized (stateLock) {
+                check = this.pickSuppressionCheck;
+            }
+            return check != null && check.getAsBoolean();
         }
 
         /**

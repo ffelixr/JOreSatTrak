@@ -80,6 +80,7 @@ public class J2DEarthPanelSave implements Serializable
     private float textLabelFontSize = 12.0f; // default value in case it is missing
     private Boolean showUpcomingLaunches = Boolean.TRUE;
     private Boolean showGnssConstellations = Boolean.TRUE;
+    private Boolean showGnssDopHeatmap = Boolean.TRUE;
 
     // renderable objects
     Vector<JSatTrakRenderable> renderableObjects; //added 21 March 2009 -- bug to save coverage anaylsis and other renderables
@@ -135,6 +136,7 @@ public class J2DEarthPanelSave implements Serializable
         textLabelFontSize = panel.getTextLabelFontSize();
         showUpcomingLaunches = Boolean.valueOf(panel.isShowUpcomingLaunches());
         showGnssConstellations = Boolean.valueOf(panel.isShowGnssConstellations());
+        showGnssDopHeatmap = Boolean.valueOf(panel.isShowGnssDopHeatmap());
          
     } // J2DEarthPanelSave constructor
 
@@ -159,6 +161,21 @@ public class J2DEarthPanelSave implements Serializable
     }
 
     public static boolean resolveShowGnssDefault(Boolean saved)
+    {
+        return saved == null || saved.booleanValue();
+    }
+
+    public Boolean getShowGnssDopHeatmap()
+    {
+        return showGnssDopHeatmap;
+    }
+
+    public void setShowGnssDopHeatmap(Boolean showGnssDopHeatmap)
+    {
+        this.showGnssDopHeatmap = showGnssDopHeatmap;
+    }
+
+    public static boolean resolveShowGnssDopHeatmapDefault(Boolean saved)
     {
         return saved == null || saved.booleanValue();
     }
@@ -222,6 +239,7 @@ public class J2DEarthPanelSave implements Serializable
         // Legacy .jst files omit showUpcomingLaunches / showGnssConstellations (XStream deserializes null); default to true
         newPanel.setShowUpcomingLaunches(showUpcomingLaunches == null || showUpcomingLaunches.booleanValue());
         newPanel.setShowGnssConstellations(resolveShowGnssDefault(showGnssConstellations));
+        newPanel.setShowGnssDopHeatmap(resolveShowGnssDopHeatmapDefault(showGnssDopHeatmap));
 
     }  
 } //J2DEarthPanelSave class

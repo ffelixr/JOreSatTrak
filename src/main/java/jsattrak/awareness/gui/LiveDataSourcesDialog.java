@@ -181,6 +181,14 @@ public class LiveDataSourcesDialog extends JDialog {
         private final boolean preservedGnssShowOrbitRings3d;
         private final Map<String, Boolean> preservedGnssConstellationEnabled;
         private final Map<String, Boolean> preservedGnssStatusFilter;
+        private final double preservedGnssElevationMaskDeg;
+        private final boolean preservedGnssIncludeNonOperationalInDop;
+        private final String preservedGnssDopHeatmapMetric;
+        private final double preservedGnssDopHeatmapResolutionDeg;
+        private final double preservedGnssDopHeatmapOpacity;
+        private final double preservedGnssObserverLatDeg;
+        private final double preservedGnssObserverLonDeg;
+        private final double preservedGnssObserverAltMeters;
 
         private final JCheckBox autoFetchCheckBox;
         private final JCheckBox gnssFeedEnabledCheckBox;
@@ -269,6 +277,14 @@ public class LiveDataSourcesDialog extends JDialog {
             this.preservedGnssShowOrbitRings3d = gnssInitial.isGnssShowOrbitRings3d();
             this.preservedGnssConstellationEnabled = new java.util.LinkedHashMap<>(gnssInitial.getGnssConstellationEnabled());
             this.preservedGnssStatusFilter = new java.util.LinkedHashMap<>(gnssInitial.getGnssStatusFilter());
+            this.preservedGnssElevationMaskDeg = gnssInitial.getGnssElevationMaskDeg();
+            this.preservedGnssIncludeNonOperationalInDop = gnssInitial.isGnssIncludeNonOperationalInDop();
+            this.preservedGnssDopHeatmapMetric = gnssInitial.getGnssDopHeatmapMetric();
+            this.preservedGnssDopHeatmapResolutionDeg = gnssInitial.getGnssDopHeatmapResolutionDeg();
+            this.preservedGnssDopHeatmapOpacity = gnssInitial.getGnssDopHeatmapOpacity();
+            this.preservedGnssObserverLatDeg = gnssInitial.getGnssObserverLatDeg();
+            this.preservedGnssObserverLonDeg = gnssInitial.getGnssObserverLonDeg();
+            this.preservedGnssObserverAltMeters = gnssInitial.getGnssObserverAltMeters();
 
             // Top: global startup + GNSS feed preferences
             JPanel topPanel = new JPanel(new BorderLayout(12, 4));
@@ -474,6 +490,30 @@ public class LiveDataSourcesDialog extends JDialog {
             settings.setGnssStatusFilter(liveGnss != null
                     ? liveGnss.getGnssStatusFilter()
                     : preservedGnssStatusFilter);
+            settings.setGnssElevationMaskDeg(liveGnss != null
+                    ? liveGnss.getGnssElevationMaskDeg()
+                    : preservedGnssElevationMaskDeg);
+            settings.setGnssIncludeNonOperationalInDop(liveGnss != null
+                    ? liveGnss.isGnssIncludeNonOperationalInDop()
+                    : preservedGnssIncludeNonOperationalInDop);
+            settings.setGnssDopHeatmapMetric(liveGnss != null
+                    ? liveGnss.getGnssDopHeatmapMetric()
+                    : preservedGnssDopHeatmapMetric);
+            settings.setGnssDopHeatmapResolutionDeg(liveGnss != null
+                    ? liveGnss.getGnssDopHeatmapResolutionDeg()
+                    : preservedGnssDopHeatmapResolutionDeg);
+            settings.setGnssDopHeatmapOpacity(liveGnss != null
+                    ? liveGnss.getGnssDopHeatmapOpacity()
+                    : preservedGnssDopHeatmapOpacity);
+            settings.setGnssObserverLatDeg(liveGnss != null
+                    ? liveGnss.getGnssObserverLatDeg()
+                    : preservedGnssObserverLatDeg);
+            settings.setGnssObserverLonDeg(liveGnss != null
+                    ? liveGnss.getGnssObserverLonDeg()
+                    : preservedGnssObserverLonDeg);
+            settings.setGnssObserverAltMeters(liveGnss != null
+                    ? liveGnss.getGnssObserverAltMeters()
+                    : preservedGnssObserverAltMeters);
 
             List<DataSourceConfig> combined = new ArrayList<>();
             for (DataSourceConfig.FeedCategory cat : TAB_CATEGORIES) {

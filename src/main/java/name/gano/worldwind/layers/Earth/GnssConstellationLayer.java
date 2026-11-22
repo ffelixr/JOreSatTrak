@@ -520,6 +520,12 @@ public class GnssConstellationLayer extends RenderableLayer {
     }
 
     public static SelectListener createSelectListener(GnssAwarenessService service) {
+        return createSelectListener(service, null);
+    }
+
+    public static SelectListener createSelectListener(
+            GnssAwarenessService service,
+            java.util.function.BooleanSupplier suppressSelection) {
         return new SelectListener() {
             private WeakReference<GnssConstellationLayer> lastTooltipLayer = new WeakReference<>(null);
             private WeakReference<Highlightable> lastHighlighted = new WeakReference<>(null);
@@ -531,6 +537,9 @@ public class GnssConstellationLayer extends RenderableLayer {
                 }
                 String action = event.getEventAction();
                 if (SelectEvent.LEFT_CLICK.equals(action)) {
+                    if (suppressSelection != null && suppressSelection.getAsBoolean()) {
+                        return;
+                    }
                     String prn = extractPrnId(event.getTopObject());
                     if (prn != null) {
                         event.consume();
@@ -667,6 +676,7 @@ public class GnssConstellationLayer extends RenderableLayer {
         private GnssAwarenessService service;
         private GnssStateListener listener;
         private SelectListener selectListener;
+        private java.util.function.BooleanSupplier pickSuppressionCheck;
         private long lastSimEpochMillis;
         private long lastRebuiltEpochMillis = Long.MIN_VALUE;
 
@@ -699,7 +709,13 @@ public class GnssConstellationLayer extends RenderableLayer {
                 if (service != null) {
                     this.listener = new WeakGnssListener(this, service);
                     service.addListener(this.listener);
-                    this.selectListener = createSelectListener(service);
+                    WeakReference<ViewCoordinator> selfRef = new WeakReference<>(this);
+                    this.selectListener = createSelectListener(
+                            service,
+                            () -> {
+                                ViewCoordinator c = selfRef.get();
+                                return c != null && c.isPickSuppressed();
+                            });
                     wwd.addSelectListener(this.selectListener);
                     layer.rebuildRenderables(this.lastSimEpochMillis);
                 } else {
@@ -707,6 +723,20 @@ public class GnssConstellationLayer extends RenderableLayer {
                 }
             }
             wwd.redraw();
+        }
+
+        public void setPickSuppressionCheck(java.util.function.BooleanSupplier check) {
+            synchronized (stateLock) {
+                this.pickSuppressionCheck = check;
+            }
+        }
+
+        private boolean isPickSuppressed() {
+            java.util.function.BooleanSupplier check;
+            synchronized (stateLock) {
+                check = this.pickSuppressionCheck;
+            }
+            return check != null && check.getAsBoolean();
         }
 
         public void dispose() {

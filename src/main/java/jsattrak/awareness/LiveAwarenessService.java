@@ -806,6 +806,14 @@ public class LiveAwarenessService implements AwarenessFeed {
         copy.setGnssShowOrbitRings3d(source.isGnssShowOrbitRings3d());
         copy.setGnssConstellationEnabled(source.getGnssConstellationEnabled());
         copy.setGnssStatusFilter(source.getGnssStatusFilter());
+        copy.setGnssElevationMaskDeg(source.getGnssElevationMaskDeg());
+        copy.setGnssIncludeNonOperationalInDop(source.isGnssIncludeNonOperationalInDop());
+        copy.setGnssDopHeatmapMetric(source.getGnssDopHeatmapMetric());
+        copy.setGnssDopHeatmapResolutionDeg(source.getGnssDopHeatmapResolutionDeg());
+        copy.setGnssDopHeatmapOpacity(source.getGnssDopHeatmapOpacity());
+        copy.setGnssObserverLatDeg(source.getGnssObserverLatDeg());
+        copy.setGnssObserverLonDeg(source.getGnssObserverLonDeg());
+        copy.setGnssObserverAltMeters(source.getGnssObserverAltMeters());
         List<DataSourceConfig> copiedSources = new ArrayList<>();
         if (source.getSources() != null) {
             for (DataSourceConfig item : source.getSources()) {

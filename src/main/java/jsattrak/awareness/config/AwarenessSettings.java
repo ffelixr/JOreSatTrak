@@ -23,6 +23,14 @@ public class AwarenessSettings {
     private Boolean gnssShowOrbitRings3d = Boolean.TRUE;
     private Map<String, Boolean> gnssConstellationEnabled = defaultConstellationMap();
     private Map<String, Boolean> gnssStatusFilter = defaultStatusFilterMap();
+    private Double gnssElevationMaskDeg = 10.0;
+    private Boolean gnssIncludeNonOperationalInDop = Boolean.FALSE;
+    private String gnssDopHeatmapMetric = "PDOP";
+    private Double gnssDopHeatmapResolutionDeg = 5.0;
+    private Double gnssDopHeatmapOpacity = 0.45;
+    private Double gnssObserverLatDeg = 40.4168;
+    private Double gnssObserverLonDeg = -3.7038;
+    private Double gnssObserverAltMeters = 650.0;
     private List<DataSourceConfig> sources = new ArrayList<>();
 
     public AwarenessSettings() {
@@ -290,6 +298,72 @@ public class AwarenessSettings {
 
     public void setSources(List<DataSourceConfig> sources) {
         this.sources = sources;
+    }
+
+    public double getGnssElevationMaskDeg() {
+        return gnssElevationMaskDeg != null ? gnssElevationMaskDeg : 10.0;
+    }
+
+    public void setGnssElevationMaskDeg(double gnssElevationMaskDeg) {
+        this.gnssElevationMaskDeg = gnssElevationMaskDeg;
+    }
+
+    public boolean isGnssIncludeNonOperationalInDop() {
+        return gnssIncludeNonOperationalInDop != null && gnssIncludeNonOperationalInDop.booleanValue();
+    }
+
+    public void setGnssIncludeNonOperationalInDop(boolean gnssIncludeNonOperationalInDop) {
+        this.gnssIncludeNonOperationalInDop = gnssIncludeNonOperationalInDop;
+    }
+
+    public String getGnssDopHeatmapMetric() {
+        return (gnssDopHeatmapMetric != null && !gnssDopHeatmapMetric.isBlank()) ? gnssDopHeatmapMetric : "PDOP";
+    }
+
+    public void setGnssDopHeatmapMetric(String gnssDopHeatmapMetric) {
+        this.gnssDopHeatmapMetric = (gnssDopHeatmapMetric != null && !gnssDopHeatmapMetric.isBlank())
+                ? gnssDopHeatmapMetric : "PDOP";
+    }
+
+    public double getGnssDopHeatmapResolutionDeg() {
+        return (gnssDopHeatmapResolutionDeg != null && gnssDopHeatmapResolutionDeg > 0.0)
+                ? gnssDopHeatmapResolutionDeg : 5.0;
+    }
+
+    public void setGnssDopHeatmapResolutionDeg(double gnssDopHeatmapResolutionDeg) {
+        this.gnssDopHeatmapResolutionDeg = gnssDopHeatmapResolutionDeg;
+    }
+
+    public double getGnssDopHeatmapOpacity() {
+        return gnssDopHeatmapOpacity != null ? gnssDopHeatmapOpacity : 0.45;
+    }
+
+    public void setGnssDopHeatmapOpacity(double gnssDopHeatmapOpacity) {
+        this.gnssDopHeatmapOpacity = gnssDopHeatmapOpacity;
+    }
+
+    public double getGnssObserverLatDeg() {
+        return gnssObserverLatDeg != null ? gnssObserverLatDeg : 40.4168;
+    }
+
+    public void setGnssObserverLatDeg(double gnssObserverLatDeg) {
+        this.gnssObserverLatDeg = gnssObserverLatDeg;
+    }
+
+    public double getGnssObserverLonDeg() {
+        return gnssObserverLonDeg != null ? gnssObserverLonDeg : -3.7038;
+    }
+
+    public void setGnssObserverLonDeg(double gnssObserverLonDeg) {
+        this.gnssObserverLonDeg = gnssObserverLonDeg;
+    }
+
+    public double getGnssObserverAltMeters() {
+        return gnssObserverAltMeters != null ? gnssObserverAltMeters : 650.0;
+    }
+
+    public void setGnssObserverAltMeters(double gnssObserverAltMeters) {
+        this.gnssObserverAltMeters = gnssObserverAltMeters;
     }
 
     /**

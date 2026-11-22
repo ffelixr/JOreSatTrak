@@ -224,6 +224,8 @@ public class J2dEarthLabel2 extends JLabel  implements java.io.Serializable
             drawFootPrint(g2, lla[0], lla[1], lla[2], true, sunColor, sunColor, sunAlpha, numPtsSunFootPrint ); // draw footprint
             //System.out.println("Sun -x = " + sun.getOpositeSunPosition()[0]);
         }
+
+        paintGnssDopHeatmapOverlay(g2, w, h);
         
         
         
@@ -760,11 +762,66 @@ public class J2dEarthLabel2 extends JLabel  implements java.io.Serializable
                     simEpochMillis,
                     clipRect,
                     projector);
+            earthPanel.getGnssDopHeatmapRenderer().paintObserverPin(
+                    g2,
+                    earthPanel.getGnssGeometryService(),
+                    projector);
+            earthPanel.getGnssDopHeatmapRenderer().paintColorScaleLegend(
+                    g2,
+                    earthPanel.getGnssGeometryService(),
+                    earthPanel.isShowGnssDopHeatmap(),
+                    clipRect);
         }
         finally
         {
             g2.setClip(oldClip);
         }
+    }
+
+    private void paintGnssDopHeatmapOverlay(Graphics2D g2, int w, int h)
+    {
+        if (earthPanel == null || earthPanel.getGnssGeometryService() == null)
+        {
+            return;
+        }
+        int effImgW = imageWidth;
+        int effImgH = imageHeight;
+        if ((effImgW <= 0 || effImgH <= 0) && w > 0 && h > 0)
+        {
+            if ((double) w / h > aspectRatio)
+            {
+                effImgH = h;
+                effImgW = (int) (h * aspectRatio);
+            }
+            else
+            {
+                effImgW = w;
+                effImgH = (int) (w / aspectRatio);
+            }
+        }
+        if (effImgW <= 0 || effImgH <= 0)
+        {
+            return;
+        }
+        int leftX = (w - effImgW) / 2;
+        int topY = (h - effImgH) / 2;
+        double longSpan = 360.0 / Math.max(1.0, zoomFactor);
+        double latSpan = 180.0 / Math.max(1.0, zoomFactor);
+        double minLon = centerLong - longSpan / 2.0;
+        double maxLon = centerLong + longSpan / 2.0;
+        double minLat = centerLat - latSpan / 2.0;
+        double maxLat = centerLat + latSpan / 2.0;
+        long simEpochMillis = currentTime != null ? currentTime.getTimeInMillis() : System.currentTimeMillis();
+        earthPanel.getGnssDopHeatmapRenderer().paintEquirectangularHeatmap(
+                g2,
+                earthPanel.getGnssGeometryService(),
+                earthPanel.isShowGnssDopHeatmap(),
+                simEpochMillis,
+                new Rectangle(leftX, topY, effImgW, effImgH),
+                minLon,
+                maxLon,
+                minLat,
+                maxLat);
     }
     
     // function to find the Linearly interpolated latitude at long = +/- 180

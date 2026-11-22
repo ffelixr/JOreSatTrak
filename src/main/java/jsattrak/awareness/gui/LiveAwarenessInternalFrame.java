@@ -9,14 +9,18 @@ import java.awt.FlowLayout;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.TimeZone;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import javax.swing.BorderFactory;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
@@ -35,7 +39,12 @@ import jsattrak.awareness.LiveAwarenessService;
 import jsattrak.awareness.gnss.GnssAwarenessService;
 import jsattrak.awareness.gnss.GnssSatelliteState;
 import jsattrak.awareness.gnss.GnssStateListener;
+import jsattrak.awareness.gnss.geometry.GnssDopGrid;
+import jsattrak.awareness.gnss.geometry.GnssGeometryListener;
+import jsattrak.awareness.gnss.geometry.GnssGeometryService;
 import jsattrak.awareness.gnss.gui.GnssAwarenessTab;
+import jsattrak.awareness.gnss.gui.GnssGeometryTab;
+import jsattrak.objects.GroundStation;
 
 /**
  * Unified MDI hub hosting Live Awareness feed tabs (starting with Launches), manual Refresh,
@@ -45,14 +54,17 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
 
     private final LiveAwarenessService service;
     private final GnssAwarenessService gnssService;
+    private final GnssGeometryService geometryService;
     private final JTabbedPane feedTabbedPane;
     private final LaunchesAwarenessTab launchesTab;
     private final GnssAwarenessTab gnssTab;
+    private final GnssGeometryTab gnssGeometryTab;
     private final JLabel syncStatusLabel;
     private final JButton refreshButton;
     private final JButton sourcesButton;
     private final AwarenessStateListener serviceListener;
     private final GnssStateListener gnssListener;
+    private final GnssGeometryListener geometryListener;
     private final List<AwarenessFeed> feeds = new ArrayList<>();
     private final List<Boolean> lastTabOverlayStates = new ArrayList<>();
 
@@ -90,9 +102,26 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
             Runnable onOpenSources,
             Consumer<GnssSatelliteState> onAddGnssToObjectList,
             Predicate<GnssSatelliteState> isGnssInObjectList) {
+        this(service, gnssService, null, null, onJumpToT0, onCenterMaps, onImportTles,
+                onOpenSatBrowser, onOpenSources, onAddGnssToObjectList, isGnssInObjectList);
+    }
+
+    public LiveAwarenessInternalFrame(
+            LiveAwarenessService service,
+            GnssAwarenessService gnssService,
+            GnssGeometryService geometryService,
+            Supplier<Collection<GroundStation>> groundStationsSupplier,
+            Consumer<Long> onJumpToT0,
+            BiConsumer<Double, Double> onCenterMaps,
+            Consumer<LaunchRecord> onImportTles,
+            Runnable onOpenSatBrowser,
+            Runnable onOpenSources,
+            Consumer<GnssSatelliteState> onAddGnssToObjectList,
+            Predicate<GnssSatelliteState> isGnssInObjectList) {
         super("Live Awareness", true, true, true, true);
         this.service = Objects.requireNonNull(service, "service");
         this.gnssService = gnssService;
+        this.geometryService = geometryService;
         setDefaultCloseOperation(HIDE_ON_CLOSE);
         Icon frameIcon = loadIcon("/icons/logo/JSatTrakLogo_16.png");
         if (frameIcon != null) {
@@ -121,7 +150,7 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         refreshButton.setToolTipText("Fetch latest data for the active feed");
         refreshButton.addActionListener(e -> {
             AwarenessFeed active = activeFeed();
-            if (active == gnssService && gnssService != null) {
+            if ((active == gnssService || active == geometryService) && gnssService != null) {
                 gnssService.refreshNowAsync();
             } else {
                 service.refreshNowAsync();
@@ -159,7 +188,26 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         } else {
             gnssTab = null;
         }
+        if (geometryService != null) {
+            gnssGeometryTab = new GnssGeometryTab(geometryService, groundStationsSupplier, onJumpToT0);
+            addFeedTab(geometryService, gnssGeometryTab);
+        } else {
+            gnssGeometryTab = null;
+        }
         feedTabbedPane.addChangeListener(e -> updateHeaderAndTabs());
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentShown(ComponentEvent e) {
+                updateHeaderAndTabs();
+            }
+
+            @Override
+            public void componentHidden(ComponentEvent e) {
+                if (geometryService != null) {
+                    geometryService.setGeometryTabVisible(false);
+                }
+            }
+        });
         root.add(feedTabbedPane, BorderLayout.CENTER);
 
         setContentPane(root);
@@ -219,6 +267,23 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
             this.gnssListener = null;
         }
 
+        if (geometryService != null) {
+            this.geometryListener = new GnssGeometryListener() {
+                @Override
+                public void onGeometryDataChanged() {
+                    runOnEdt(LiveAwarenessInternalFrame.this::updateHeaderAndTabs);
+                }
+
+                @Override
+                public void onHeatmapUpdated(GnssDopGrid grid) {
+                    runOnEdt(LiveAwarenessInternalFrame.this::updateHeaderAndTabs);
+                }
+            };
+            geometryService.addListener(this.geometryListener);
+        } else {
+            this.geometryListener = null;
+        }
+
         updateHeaderAndTabs();
     }
 
@@ -252,6 +317,9 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         if (gnssTab != null) {
             gnssTab.refreshDisplay(simEpochMillis, realTimeMode, this.lastDisplayTz);
         }
+        if (gnssGeometryTab != null) {
+            gnssGeometryTab.refreshDisplay(simEpochMillis, realTimeMode, this.lastDisplayTz);
+        }
         updateHeaderAndTabs();
     }
 
@@ -262,9 +330,16 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         if (gnssService != null && gnssListener != null) {
             gnssService.removeListener(gnssListener);
         }
+        if (geometryService != null && geometryListener != null) {
+            geometryService.removeListener(geometryListener);
+            geometryService.setGeometryTabVisible(false);
+        }
         launchesTab.dispose();
         if (gnssTab != null) {
             gnssTab.dispose();
+        }
+        if (gnssGeometryTab != null) {
+            gnssGeometryTab.dispose();
         }
         super.dispose();
     }
@@ -275,6 +350,10 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
 
     public GnssAwarenessTab getGnssTab() {
         return gnssTab;
+    }
+
+    public GnssGeometryTab getGnssGeometryTab() {
+        return gnssGeometryTab;
     }
 
     public void selectFeedTab(String feedId) {
@@ -332,7 +411,10 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
 
     private void updateHeaderAndTabs() {
         AwarenessFeed active = activeFeed();
-        boolean isGnssActive = active == gnssService && gnssService != null;
+        if (geometryService != null) {
+            geometryService.setGeometryTabVisible(active == geometryService && !disposed);
+        }
+        boolean isGnssActive = (active == gnssService || active == geometryService) && gnssService != null;
         boolean refreshing = isGnssActive ? gnssService.isRefreshing() : service.isRefreshing();
         boolean stale = isGnssActive ? gnssService.isDataStale() : service.isDataStale();
         long lastSync = isGnssActive ? gnssService.getLastSuccessfulSyncMillis() : service.getLastSuccessfulSyncMillis();

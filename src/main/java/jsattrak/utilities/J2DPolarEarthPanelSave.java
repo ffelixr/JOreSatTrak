@@ -64,6 +64,7 @@ public class J2DPolarEarthPanelSave implements Serializable
     private float textLabelFontSize = 12.0f;
     private Boolean showUpcomingLaunches = Boolean.TRUE;
     private Boolean showGnssConstellations = Boolean.TRUE;
+    private Boolean showGnssDopHeatmap = Boolean.TRUE;
 
     public J2DPolarEarthPanelSave()
     {
@@ -106,6 +107,7 @@ public class J2DPolarEarthPanelSave implements Serializable
         this.textLabelFontSize = panel.getTextLabelFontSize();
         this.showUpcomingLaunches = Boolean.valueOf(panel.isShowUpcomingLaunches());
         this.showGnssConstellations = Boolean.valueOf(panel.isShowGnssConstellations());
+        this.showGnssDopHeatmap = Boolean.valueOf(panel.isShowGnssDopHeatmap());
     }
 
     public Boolean getShowUpcomingLaunches()
@@ -129,6 +131,21 @@ public class J2DPolarEarthPanelSave implements Serializable
     }
 
     public static boolean resolveShowGnssDefault(Boolean saved)
+    {
+        return saved == null || saved.booleanValue();
+    }
+
+    public Boolean getShowGnssDopHeatmap()
+    {
+        return showGnssDopHeatmap;
+    }
+
+    public void setShowGnssDopHeatmap(Boolean showGnssDopHeatmap)
+    {
+        this.showGnssDopHeatmap = showGnssDopHeatmap;
+    }
+
+    public static boolean resolveShowGnssDopHeatmapDefault(Boolean saved)
     {
         return saved == null || saved.booleanValue();
     }
@@ -185,6 +202,7 @@ public class J2DPolarEarthPanelSave implements Serializable
         // Legacy .jst files omit showUpcomingLaunches / showGnssConstellations (XStream deserializes null); default to true
         newPanel.setShowUpcomingLaunches(showUpcomingLaunches == null || showUpcomingLaunches.booleanValue());
         newPanel.setShowGnssConstellations(resolveShowGnssDefault(showGnssConstellations));
+        newPanel.setShowGnssDopHeatmap(resolveShowGnssDopHeatmapDefault(showGnssDopHeatmap));
         newPanel.repaint();
     }
 }

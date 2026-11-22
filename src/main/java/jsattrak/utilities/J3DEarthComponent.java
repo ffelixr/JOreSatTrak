@@ -26,6 +26,7 @@ import gov.nasa.worldwind.layers.LayerList;
 import java.awt.Point;
 import jsattrak.awareness.LiveAwarenessService;
 import jsattrak.awareness.gnss.GnssAwarenessService;
+import jsattrak.awareness.gnss.geometry.GnssGeometryService;
 import jsattrak.gui.JSatTrak;
 import name.gano.worldwind.geom.ECIRadialGrid;
 import name.gano.worldwind.layers.Earth.EcefTimeDepRenderableLayer;
@@ -98,6 +99,11 @@ public interface  J3DEarthComponent
     public default boolean isShowGnssConstellations() { return false; }
     public default void setShowGnssConstellations(boolean enabled) {}
     public default void refreshGnssOverlay(long simEpochMillis) {}
+    // Live Awareness GNSS DOP heatmap overlay (Layer 2)
+    public default void setGnssGeometryService(GnssGeometryService service) {}
+    public default boolean isShowGnssDopHeatmap() { return false; }
+    public default void setShowGnssDopHeatmap(boolean enabled) {}
+    public default void refreshGnssDopHeatmap(long simEpochMillis) {}
     public void dispose();
 
 }

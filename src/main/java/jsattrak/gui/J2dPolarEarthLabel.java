@@ -409,6 +409,15 @@ public class J2dPolarEarthLabel extends JLabel implements Serializable
                 simEpochMillis,
                 new Rectangle(0, 0, w, h),
                 projector);
+        polarPanel.getGnssDopHeatmapRenderer().paintObserverPin(
+                g2,
+                polarPanel.getGnssGeometryService(),
+                projector);
+        polarPanel.getGnssDopHeatmapRenderer().paintColorScaleLegend(
+                g2,
+                polarPanel.getGnssGeometryService(),
+                polarPanel.isShowGnssDopHeatmap(),
+                new Rectangle(0, 0, w, h));
     }
 
     private int[] projectLaunchToDiscs(LaunchRecord record, int[][] discs)
@@ -501,6 +510,24 @@ public class J2dPolarEarthLabel extends JLabel implements Serializable
         if (drawSun && sun != null)
         {
             drawSunTerminatorPolar(g2, discCircle, poleSign, projCx, projCy, radius, maxAng);
+        }
+
+        // 3b. Draw GNSS DOP heatmap clipped cleanly inside polar disc
+        if (polarPanel != null && polarPanel.getGnssGeometryService() != null)
+        {
+            long simEpochMillis = currentTime != null ? currentTime.getTimeInMillis() : System.currentTimeMillis();
+            polarPanel.getGnssDopHeatmapRenderer().paintPolarDiscHeatmap(
+                    g2,
+                    polarPanel.getGnssGeometryService(),
+                    polarPanel.isShowGnssDopHeatmap(),
+                    simEpochMillis,
+                    poleSign,
+                    discCx,
+                    discCy,
+                    radius,
+                    projCx,
+                    projCy,
+                    maxAng);
         }
 
         // 4. Draw polar Lat/Lon grid
