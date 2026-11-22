@@ -116,6 +116,7 @@ public class GnssEphemerisProvider {
     private volatile ParsedRinexNavStore localRinexStore;
     private volatile ParsedSp3Store localSp3Store;
     private volatile String loadedLocalFileName = "";
+    private volatile byte[] lastBrdcRawBytesRef;
     private volatile int lastBrdcByteHash;
 
     /**
@@ -126,17 +127,23 @@ public class GnssEphemerisProvider {
     public int loadBrdcBytes(byte[] rawBytes, String sourceName) {
         if (rawBytes == null || rawBytes.length == 0) {
             this.brdcStore = null;
+            this.lastBrdcRawBytesRef = null;
             this.lastBrdcByteHash = 0;
             return 0;
         }
+        if (rawBytes == this.lastBrdcRawBytesRef && this.brdcStore != null) {
+            return this.brdcStore.messagesByPrn.size();
+        }
         int hash = java.util.Arrays.hashCode(rawBytes);
         if (hash == this.lastBrdcByteHash && this.brdcStore != null) {
+            this.lastBrdcRawBytesRef = rawBytes;
             return this.brdcStore.messagesByPrn.size();
         }
         try {
             byte[] plain = unwrapGzipIfNeeded(rawBytes);
             ParsedRinexNavStore store = parseRinexNav(plain, sourceName != null ? sourceName : "BKG BRDC", false);
             this.brdcStore = store;
+            this.lastBrdcRawBytesRef = rawBytes;
             this.lastBrdcByteHash = hash;
             return store.messagesByPrn.size();
         } catch (IOException | RuntimeException e) {
@@ -247,8 +254,18 @@ public class GnssEphemerisProvider {
             }
         }
 
-        // Union with PRNs present in local SP3 / RINEX or BRDC so offline/historical analysis always has PRNs
-        Set<String> allPrns = new LinkedHashSet<>(catalogMap.keySet());
+        long lastLiveSync = awarenessService != null ? awarenessService.getLastSuccessfulSyncMillis() : 0L;
+        boolean outsideLiveWindow = lastLiveSync <= 0L
+                || Math.abs(simEpochMillis - lastLiveSync) > SP3_LIVE_HEALTH_WINDOW_MILLIS;
+
+        // Union with PRNs present in local SP3 / RINEX or BRDC; when analyzing a historical epoch
+        // (>24h from live sync) with a local SP3/RINEX loaded, keep PRNs to those in the historical file
+        // so out-of-era live TLEs are never mixed into historical DOPs.
+        boolean historicalLocalOnly = outsideLiveWindow && (sp3 != null || localRnx != null);
+        Set<String> allPrns = new LinkedHashSet<>();
+        if (!historicalLocalOnly) {
+            allPrns.addAll(catalogMap.keySet());
+        }
         if (sp3 != null) {
             allPrns.addAll(sp3.ephemerisByPrn.keySet());
         }
@@ -259,16 +276,12 @@ public class GnssEphemerisProvider {
             allPrns.addAll(brdc.messagesByPrn.keySet());
         }
 
-        Map<String, TLE> matchedTles = awarenessService != null
+        Map<String, TLE> matchedTles = (!historicalLocalOnly && awarenessService != null)
                 ? awarenessService.getMatchedTlesByPrn()
                 : Map.of();
 
         Frame itrf = FramesFactory.getITRF(IERSConventions.IERS_2010, true);
         AbsoluteDate targetDate = new AbsoluteDate(new Date(simEpochMillis), TimeScalesFactory.getUTC());
-
-        long lastLiveSync = awarenessService != null ? awarenessService.getLastSuccessfulSyncMillis() : 0L;
-        boolean outsideLiveWindow = lastLiveSync <= 0L
-                || Math.abs(simEpochMillis - lastLiveSync) > SP3_LIVE_HEALTH_WINDOW_MILLIS;
 
         List<GnssDopCalculator.CandidateSatellite> candidates = new ArrayList<>(allPrns.size());
         int sp3Count = 0;
@@ -300,6 +313,7 @@ public class GnssEphemerisProvider {
             // 1. Resolve ITRF/ECEF vector in strict priority: SP3 -> Local RINEX -> Live BRDC -> TLE
             double[] ecef = null;
             GnssOrbitSource orbitSource = GnssOrbitSource.NONE;
+            boolean usedLocalRinexOrbit = false;
 
             if (sp3 != null) {
                 ecef = tryPropagateSp3(sp3, prnId, targetDate, itrf);
@@ -311,6 +325,7 @@ public class GnssEphemerisProvider {
                 ecef = tryPropagateRinex(localRnx, prnId, constellation, simEpochMillis, targetDate, itrf);
                 if (ecef != null) {
                     orbitSource = GnssOrbitSource.BRDC;
+                    usedLocalRinexOrbit = true;
                 }
             }
             if (ecef == null && brdc != null) {
@@ -319,7 +334,7 @@ public class GnssEphemerisProvider {
                     orbitSource = GnssOrbitSource.BRDC;
                 }
             }
-            if (ecef == null) {
+            if (ecef == null && !historicalLocalOnly) {
                 TLE tle = matchedTles.get(prnId);
                 if (tle != null) {
                     GnssOrbitPropagator.GeodeticPosition gp = GnssOrbitPropagator
@@ -337,11 +352,12 @@ public class GnssEphemerisProvider {
             }
 
             // 2. Resolve effective health status
-            GnssDisplayStatus status = resolveHealthStatus(
+            HealthResolution healthRes = resolveHealthStatus(
                     prnId, constellation, catEntry, orbitSource,
-                    simEpochMillis, awarenessService, localRnx, outsideLiveWindow);
+                    simEpochMillis, awarenessService,
+                    usedLocalRinexOrbit ? localRnx : null, outsideLiveWindow);
 
-            if (orbitSource == GnssOrbitSource.SP3 && outsideLiveWindow) {
+            if (healthRes.sp3WithoutHealthFlags()) {
                 sp3UsedWithoutHealthFlags = true;
             }
 
@@ -354,7 +370,7 @@ public class GnssEphemerisProvider {
             }
 
             candidates.add(new GnssDopCalculator.CandidateSatellite(
-                    prnId, constellation, status, orbitSource, ecef[0], ecef[1], ecef[2]));
+                    prnId, constellation, healthRes.status(), orbitSource, ecef[0], ecef[1], ecef[2]));
         }
 
         GnssOrbitSource.Summary orbitSummary = GnssOrbitSource.Summary.fromCounts(
@@ -362,19 +378,25 @@ public class GnssEphemerisProvider {
         return new ResolvedEpochSnapshot(Collections.unmodifiableList(candidates), orbitSummary);
     }
 
-    private static GnssDisplayStatus resolveHealthStatus(
+    private record HealthResolution(GnssDisplayStatus status, boolean sp3WithoutHealthFlags) {
+    }
+
+    private static HealthResolution resolveHealthStatus(
             String prnId,
             GnssConstellation constellation,
             GnssCatalogEntry catEntry,
             GnssOrbitSource orbitSource,
             long simEpochMillis,
             GnssAwarenessService awarenessService,
-            ParsedRinexNavStore localRnx,
+            ParsedRinexNavStore usedLocalRnx,
             boolean outsideLiveWindow) {
-        // If local RINEX Nav is loaded and covers this PRN, its own svHealth flag rules this epoch
-        if (localRnx != null && localRnx.healthByPrn.containsKey(prnId)) {
-            BroadcastHealthRecord rec = localRnx.healthByPrn.get(prnId);
-            return (rec != null && rec.healthy()) ? GnssDisplayStatus.OPERATIONAL : GnssDisplayStatus.UNAVAILABLE;
+        // Only use embedded svHealth when the local RINEX actually supplied this satellite's orbit
+        if (usedLocalRnx != null && usedLocalRnx.healthByPrn.containsKey(prnId)) {
+            BroadcastHealthRecord rec = usedLocalRnx.healthByPrn.get(prnId);
+            GnssDisplayStatus st = (rec != null && rec.healthy())
+                    ? GnssDisplayStatus.OPERATIONAL
+                    : GnssDisplayStatus.UNAVAILABLE;
+            return new HealthResolution(st, false);
         }
         GnssCatalogEntry effectiveEntry = catEntry != null
                 ? catEntry
@@ -384,11 +406,12 @@ public class GnssEphemerisProvider {
                 : null;
         GnssDisplayStatus liveStatus = liveRes != null ? liveRes.status() : GnssDisplayStatus.NO_STATUS_DATA;
 
-        // For SP3 without live health flags (>24h from live sync or offline): treat SP3 SVs as usable
+        // For SP3 without live health flags (>24h from live sync, offline, or NO_STATUS_DATA):
+        // treat SP3 SVs as usable and flag missing health provenance accurately.
         if (orbitSource == GnssOrbitSource.SP3 && (outsideLiveWindow || liveStatus == GnssDisplayStatus.NO_STATUS_DATA)) {
-            return GnssDisplayStatus.OPERATIONAL;
+            return new HealthResolution(GnssDisplayStatus.OPERATIONAL, true);
         }
-        return liveStatus;
+        return new HealthResolution(liveStatus, false);
     }
 
     private static double[] tryPropagateSp3(

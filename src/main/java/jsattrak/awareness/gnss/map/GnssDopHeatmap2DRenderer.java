@@ -34,9 +34,28 @@ public class GnssDopHeatmap2DRenderer {
     private static final Color PIN_COLOR = new Color(0x00, 0xE5, 0xFF);
     private static final Color PIN_OUTLINE = new Color(10, 14, 20, 235);
 
+    private record PolarDiscCache(
+            GnssDopGrid grid,
+            int alpha,
+            int poleSign,
+            int radius,
+            int offsetX,
+            int offsetY,
+            double maxAng,
+            BufferedImage image,
+            int paintedPixels) {
+        boolean matches(GnssDopGrid g, int a, int p, int r, int ox, int oy, double ma) {
+            return grid == g && alpha == a && poleSign == p && radius == r
+                    && offsetX == ox && offsetY == oy && Double.compare(maxAng, ma) == 0;
+        }
+    }
+
     private volatile GnssDopGrid cachedGrid;
     private volatile double cachedOpacity = -1.0;
     private volatile BufferedImage cachedRgbaImage;
+    private volatile PolarDiscCache northPolarCache;
+    private volatile PolarDiscCache southPolarCache;
+    private volatile int polarDiscCacheHits;
 
     public static GnssGeometryListener createRepaintListener(JComponent target) {
         return new GnssGeometryListener() {
@@ -155,13 +174,23 @@ public class GnssDopHeatmap2DRenderer {
             return 0;
         }
 
-        int size = radius * 2 + 1;
-        BufferedImage discImg = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
         int alpha = Math.max(0, Math.min(255, (int) Math.round(service.getHeatmapOpacity() * 255.0)));
-        boolean isCount = grid.getMetric() == GnssDopMetric.VISIBLE_SVS;
-        int rSq = radius * radius;
         int originX = discCx - radius;
         int originY = discCy - radius;
+        int relProjX = projCx - discCx;
+        int relProjY = projCy - discCy;
+
+        PolarDiscCache existing = poleSign >= 0 ? northPolarCache : southPolarCache;
+        if (existing != null && existing.matches(grid, alpha, poleSign, radius, relProjX, relProjY, maxAng)) {
+            polarDiscCacheHits++;
+            g2.drawImage(existing.image(), originX, originY, null);
+            return existing.paintedPixels();
+        }
+
+        int size = radius * 2 + 1;
+        BufferedImage discImg = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        boolean isCount = grid.getMetric() == GnssDopMetric.VISIBLE_SVS;
+        int rSq = radius * radius;
         int paintedPixels = 0;
 
         for (int py = 0; py < size; py++) {
@@ -180,15 +209,26 @@ public class GnssDopHeatmap2DRenderer {
                     continue;
                 }
                 double val = grid.getValueAt(ll[0], ll[1]);
-                Color c = isCount
-                        ? GnssDopGrid.colorForVisibleCount((int) Math.round(val), alpha)
-                        : GnssDopGrid.colorForDop(val, alpha);
-                discImg.setRGB(px, py, c.getRGB());
+                int argb = isCount
+                        ? GnssDopGrid.argbForVisibleCount((int) Math.round(val), alpha)
+                        : GnssDopGrid.argbForDop(val, alpha);
+                discImg.setRGB(px, py, argb);
                 paintedPixels++;
             }
         }
+        PolarDiscCache updated = new PolarDiscCache(
+                grid, alpha, poleSign, radius, relProjX, relProjY, maxAng, discImg, paintedPixels);
+        if (poleSign >= 0) {
+            northPolarCache = updated;
+        } else {
+            southPolarCache = updated;
+        }
         g2.drawImage(discImg, originX, originY, null);
         return paintedPixels;
+    }
+
+    public int getPolarDiscCacheHitCountForTest() {
+        return polarDiscCacheHits;
     }
 
     /**

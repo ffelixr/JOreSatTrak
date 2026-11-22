@@ -338,7 +338,7 @@ public class GnssGeometryTab extends JPanel implements GnssGeometryListener {
             observerCombo.setSelectedItem(CUSTOM_COORDS_LABEL);
             updatingControls = false;
             service.setObserver(new GnssObserverPosition(CUSTOM_COORDS_LABEL, lat, lon, alt));
-        } catch (NumberFormatException ignored) {
+        } catch (IllegalArgumentException ignored) {
             updatingControls = false;
         }
     }

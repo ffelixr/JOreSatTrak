@@ -207,8 +207,9 @@ class GnssGeometryIntegrationTest {
                         .filter(s -> s.epochMillis() == t3)
                         .findFirst()
                         .orElseThrow();
-                assertEquals(solT3.usedCount() == solT3.visibleCount() ? solT3.visibleCount() : sampleT3.visibleCount(),
-                        sampleT3.visibleCount());
+                assertEquals(solT3.visibleCount(), sampleT3.visibleCount());
+                assertTrue(Double.isNaN(solT3.pdop()) || solT3.pdop() >= solT3WhatIf.pdop(),
+                        "Outage exclusion should degrade or lose DOP fix relative to what-if inclusion");
 
                 // 6. Enable heatmap master gate -> 2D & 3D heatmaps render cleanly
                 geometry.setMapOverlayEnabled(true);
@@ -240,6 +241,7 @@ class GnssGeometryIntegrationTest {
                 assertTrue(helpHtml.contains("VDOP"));
                 assertTrue(helpHtml.contains("TDOP"));
                 assertTrue(helpHtml.contains("SP3"));
+                assertTrue(helpHtml.contains("2.5\u00b0") || helpHtml.contains("2.5"));
                 assertTrue(helpHtml.toLowerCase(Locale.ROOT).contains("elevation mask"));
                 // Compile-time check for JSatTrak.getGnssGeometryService()
                 assertNotNull(JSatTrak.class.getMethod("getGnssGeometryService"));

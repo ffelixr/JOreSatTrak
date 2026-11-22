@@ -267,8 +267,13 @@ public class GnssDopHeatmapLayer extends RenderableLayer {
                 if (this.service != null && this.listener != null) {
                     this.service.removeListener(this.listener);
                 }
-                if (this.pickMouseListener != null && wwd instanceof Component comp) {
-                    comp.removeMouseListener(this.pickMouseListener);
+                if (this.pickMouseListener != null) {
+                    if (wwd.getInputHandler() != null) {
+                        wwd.getInputHandler().removeMouseListener(this.pickMouseListener);
+                    }
+                    if (wwd instanceof Component comp) {
+                        comp.removeMouseListener(this.pickMouseListener);
+                    }
                     this.pickMouseListener = null;
                 }
                 this.service = service;
@@ -276,28 +281,28 @@ public class GnssDopHeatmapLayer extends RenderableLayer {
                 if (service != null) {
                     this.listener = new WeakGeometryListener(this, service);
                     service.addListener(this.listener);
-                    if (wwd instanceof Component comp) {
-                        this.pickMouseListener = new MouseAdapter() {
-                            @Override
-                            public void mouseClicked(MouseEvent e) {
-                                if (e.getButton() != MouseEvent.BUTTON1 || e.getClickCount() != 1) {
-                                    return;
-                                }
-                                GnssGeometryService current = getGnssGeometryService();
-                                if (current == null || !current.isPickOnMapMode()) {
-                                    return;
-                                }
-                                Position pos = wwd.getCurrentPosition();
-                                if (pos == null && wwd.getView() != null) {
-                                    pos = wwd.getView().computePositionFromScreenPoint(e.getX(), e.getY());
-                                }
-                                if (pos != null) {
-                                    current.completeMapPick(
-                                            pos.getLatitude().degrees,
-                                            pos.getLongitude().degrees);
-                                }
+                    this.pickMouseListener = new MouseAdapter() {
+                        @Override
+                        public void mouseClicked(MouseEvent e) {
+                            if (e.getButton() != MouseEvent.BUTTON1 || e.getClickCount() != 1) {
+                                return;
                             }
-                        };
+                            GnssGeometryService current = getGnssGeometryService();
+                            if (current == null || !current.isPickOnMapMode()) {
+                                return;
+                            }
+                            Position pos = computeSurfacePickPosition(wwd, e.getX(), e.getY());
+                            if (pos != null) {
+                                e.consume();
+                                current.completeMapPick(
+                                        pos.getLatitude().degrees,
+                                        pos.getLongitude().degrees);
+                            }
+                        }
+                    };
+                    if (wwd.getInputHandler() != null) {
+                        wwd.getInputHandler().addMouseListener(this.pickMouseListener);
+                    } else if (wwd instanceof Component comp) {
                         comp.addMouseListener(this.pickMouseListener);
                     }
                     layer.rebuildRenderables(this.lastSimEpochMillis);
@@ -340,11 +345,29 @@ public class GnssDopHeatmapLayer extends RenderableLayer {
 
         public void reattachPickListener() {
             synchronized (stateLock) {
-                if (this.pickMouseListener != null && wwd instanceof Component comp) {
-                    comp.removeMouseListener(this.pickMouseListener);
-                    comp.addMouseListener(this.pickMouseListener);
+                if (this.pickMouseListener != null) {
+                    if (wwd.getInputHandler() != null) {
+                        wwd.getInputHandler().removeMouseListener(this.pickMouseListener);
+                        wwd.getInputHandler().addMouseListener(this.pickMouseListener);
+                    } else if (wwd instanceof Component comp) {
+                        comp.removeMouseListener(this.pickMouseListener);
+                        comp.addMouseListener(this.pickMouseListener);
+                    }
                 }
             }
+        }
+
+        static Position computeSurfacePickPosition(WorldWindow wwd, int x, int y) {
+            if (wwd == null) {
+                return null;
+            }
+            if (wwd.getView() != null) {
+                Position surfacePos = wwd.getView().computePositionFromScreenPoint(x, y);
+                if (surfacePos != null) {
+                    return surfacePos;
+                }
+            }
+            return wwd.getCurrentPosition();
         }
 
         public void dispose() {

@@ -4054,9 +4054,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
 
                 @Override
                 public void onPickOnMapModeChanged(boolean pickMode) {
-                    if (pickMode) {
-                        setStatusMessage("Click any 2D, Polar, or 3D map to set GNSS observer...");
-                    }
+                    setStatusMessage(pickMode
+                            ? "Click any 2D, Polar, or 3D map to set GNSS observer..."
+                            : "Ready");
                     forceRepainting();
                 }
 
@@ -4314,7 +4314,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                   provenance and warn when SP3 is evaluated without live health flags.</li>
                   <li><b>Polar Skyplot &amp; 24h Profile</b>: Plots azimuth/elevation tracks, exclusion reasons, and a 24h DOP timeline
                   (click any sample to jump the Sim Clock).</li>
-                  <li><b>Global DOP Heatmap</b>: Toggleable global grid overlay across 2D, Polar, and 3D views (5\u00b0/10\u00b0/15\u00b0 resolution).</li>
+                  <li><b>Global DOP Heatmap</b>: Toggleable global grid overlay across 2D, Polar, and 3D views (5\u00b0 / 2.5\u00b0 resolution).</li>
                 </ul>
                 </body></html>
                 """;

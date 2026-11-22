@@ -153,4 +153,91 @@ class GnssGeometryServiceTest {
             awareness.shutdown();
         }
     }
+
+    @Test
+    void persistSettingsDoesNotFireLayer1OrWipeCachesAndVisibleSvsGridMatchesCalculator(@TempDir Path tmpDir) {
+        JSatTrak.initOrekitData();
+        long t0 = Instant.parse("2026-11-21T00:00:00Z").toEpochMilli();
+        Map<String, BroadcastHealthRecord> health = Map.of(
+                "G01", new BroadcastHealthRecord("G01", GnssConstellation.GPS, "LNAV", t0, 0, true, "OK"),
+                "G02", new BroadcastHealthRecord("G02", GnssConstellation.GPS, "LNAV", t0, 0, true, "OK"),
+                "G05", new BroadcastHealthRecord("G05", GnssConstellation.GPS, "LNAV", t0, 0, true, "OK"),
+                "G12", new BroadcastHealthRecord("G12", GnssConstellation.GPS, "LNAV", t0, 0, true, "OK"),
+                "G18", new BroadcastHealthRecord("G18", GnssConstellation.GPS, "LNAV", t0, 1, false, "UNHEALTHY"),
+                "E11", new BroadcastHealthRecord("E11", GnssConstellation.GALILEO, "INAV", t0, 0, true, "OK"),
+                "R05", new BroadcastHealthRecord("R05", GnssConstellation.GLONASS, "FDMA", t0, 0, true, "OK"),
+                "C19", new BroadcastHealthRecord("C19", GnssConstellation.BEIDOU, "D1", t0, 0, true, "OK")
+        );
+        AwarenessSettingsStore store = new AwarenessSettingsStore(tmpDir.resolve("awareness-settings.json"));
+        GnssAwarenessService awareness = GnssAwarenessService.createForTest(
+                tmpDir, distributedCatalog(), distributedTles(), health, Map.of(), List.of());
+        java.util.concurrent.atomic.AtomicInteger layer1Changes = new java.util.concurrent.atomic.AtomicInteger();
+        awareness.addListener(new jsattrak.awareness.gnss.GnssStateListener() {
+            @Override
+            public void onGnssDataChanged() {
+                layer1Changes.incrementAndGet();
+            }
+
+            @Override
+            public void onGnssSelectionChanged(String selectedPrnId) {
+            }
+
+            @Override
+            public void onGnssStatusMessage(String message, boolean isWarning) {
+            }
+        });
+
+        GnssGeometryService service = new GnssGeometryService(awareness, store);
+        try {
+            service.setObserver(new GnssObserverPosition("Equator", 0.0, 0.0, 0.0));
+            service.setMapOverlayEnabled(true);
+            service.setHeatmapMetric(GnssDopMetric.VISIBLE_SVS);
+            GnssDopGrid visGrid = service.computeHeatmapBlockingForTest(t0);
+
+            // Adjusting opacity or moving observer must not fire Layer-1 notifyDataChanged() or wipe grid cache
+            layer1Changes.set(0);
+            service.setHeatmapOpacity(0.75);
+            service.setObserver(new GnssObserverPosition("Shifted", 2.5, 2.5, 0.0));
+            assertEquals(0, layer1Changes.get(), "persistLayer2Settings must not fire Layer-1 notifyDataChanged");
+            assertSame(visGrid, service.getLatestHeatmapGrid(), "Observer/opacity change must preserve cached grid");
+
+            // VISIBLE_SVS grid counts all above-mask SVs (matching point visibleCount even with G18 unhealthy)
+            double cellLat = 2.5;
+            double cellLon = 2.5;
+            GnssDopSolution cellSol = GnssDopCalculator.computePointDop(
+                    t0,
+                    new GnssObserverPosition("Cell", cellLat, cellLon, 0.0),
+                    service.getElevationMaskDeg(),
+                    false,
+                    new GnssEphemerisProvider().resolveSatellitesAtEpoch(t0, awareness).candidates());
+            assertEquals(cellSol.visibleCount(), (int) Math.round(visGrid.getValueAt(cellLat, cellLon)));
+
+            // All SVs unavailable -> 0 used SVs still preserves orbit provenance (not NONE/"No orbits")
+            Map<String, BroadcastHealthRecord> allBadHealth = new java.util.LinkedHashMap<>();
+            for (GnssCatalogEntry e : distributedCatalog()) {
+                allBadHealth.put(e.prnId(), new BroadcastHealthRecord(e.prnId(), e.constellation(), "LNAV", t0, 1, false, "UNHEALTHY"));
+            }
+            GnssAwarenessService allUnhealthy = GnssAwarenessService.createForTest(
+                    tmpDir.resolve("allbad"), distributedCatalog(), distributedTles(), allBadHealth, Map.of(), List.of());
+            GnssGeometryService allBadSvc = new GnssGeometryService(allUnhealthy,
+                    new AwarenessSettingsStore(tmpDir.resolve("bad-settings.json")));
+            try {
+                allBadSvc.setObserver(new GnssObserverPosition("Equator", 0.0, 0.0, 0.0));
+                GnssDopSolution zeroUsedSol = allBadSvc.computePointSolution(t0);
+                assertEquals(0, zeroUsedSol.usedCount());
+                assertFalse(zeroUsedSol.fixAvailable());
+                assertEquals(GnssOrbitSource.TLE_FALLBACK, zeroUsedSol.orbitSource().primary());
+            } finally {
+                allBadSvc.shutdown();
+                allUnhealthy.shutdown();
+            }
+
+            // Reject non-finite observer coordinates
+            assertThrows(IllegalArgumentException.class,
+                    () -> new GnssObserverPosition("Bad", Double.NaN, 0.0, 0.0));
+        } finally {
+            service.shutdown();
+            awareness.shutdown();
+        }
+    }
 }

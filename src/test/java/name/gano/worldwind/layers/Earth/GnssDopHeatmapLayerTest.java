@@ -72,6 +72,23 @@ class GnssDopHeatmapLayerTest {
             // 4. Per-window disable -> 0 SurfaceImage
             layer.setEnabled(false);
             assertEquals(0, collectRenderables(layer, SurfaceImage.class).size());
+
+            // 5. Pick-on-Map suppresses LEFT_CLICK selection on GNSS & Launch layers and prefers surface pick
+            geometry.setPickOnMapMode(true);
+            gov.nasa.worldwind.render.PointPlacemark gnssMarker =
+                    new gov.nasa.worldwind.render.PointPlacemark(gov.nasa.worldwind.geom.Position.fromDegrees(0, 0, 20000));
+            gnssMarker.setValue(GnssConstellationLayer.GNSS_PRN_KEY, "G01");
+            gov.nasa.worldwind.pick.PickedObjectList gnssPicked = new gov.nasa.worldwind.pick.PickedObjectList();
+            gnssPicked.add(new gov.nasa.worldwind.pick.PickedObject(0, gnssMarker));
+            var gnssSelListener = GnssConstellationLayer.createSelectListener(awareness, geometry::isPickOnMapMode);
+            gnssSelListener.selected(new gov.nasa.worldwind.event.SelectEvent(
+                    new Object(), gov.nasa.worldwind.event.SelectEvent.LEFT_CLICK, new java.awt.Point(10, 10), gnssPicked));
+            assertNull(awareness.getSelectedPrnId(), "Pick on Map must suppress GNSS satellite selection");
+
+            geometry.setPickOnMapMode(false);
+            gnssSelListener.selected(new gov.nasa.worldwind.event.SelectEvent(
+                    new Object(), gov.nasa.worldwind.event.SelectEvent.LEFT_CLICK, new java.awt.Point(10, 10), gnssPicked));
+            assertEquals("G01", awareness.getSelectedPrnId());
         } finally {
             geometry.shutdown();
             awareness.shutdown();

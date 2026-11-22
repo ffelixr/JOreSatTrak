@@ -137,9 +137,6 @@ public class GnssGeometryService implements AwarenessFeed {
     public void setMapOverlayEnabled(boolean enabled) {
         if (this.mapOverlayEnabled != enabled) {
             this.mapOverlayEnabled = enabled;
-            if (!enabled) {
-                this.latestHeatmapGrid = this.latestHeatmapGrid; // preserve cache in case toggled right back
-            }
             dispatchCallbacks(false, l -> l.onGeometryDataChanged());
             dispatchCallbacks(false, l -> l.onHeatmapUpdated(enabled ? this.latestHeatmapGrid : null));
         }
@@ -241,7 +238,9 @@ public class GnssGeometryService implements AwarenessFeed {
         if (Double.compare(this.heatmapOpacity, clamped) != 0) {
             this.heatmapOpacity = clamped;
             persistLayer2Settings();
-            dispatchCallbacks(false, l -> l.onHeatmapUpdated(this.latestHeatmapGrid));
+            if (this.mapOverlayEnabled) {
+                dispatchCallbacks(false, l -> l.onHeatmapUpdated(this.latestHeatmapGrid));
+            }
         }
     }
 
@@ -326,16 +325,22 @@ public class GnssGeometryService implements AwarenessFeed {
                 this.elevationMaskDeg,
                 this.includeNonOperational,
                 snap.candidates());
-        // Preserve epoch-level provenance (including SP3 noHealthFlags & fileLabel) from ephemeris snapshot
-        GnssOrbitSource.Summary effectiveSummary = snap.orbitSource() != null
-                ? new GnssOrbitSource.Summary(
-                raw.orbitSource().primary(),
-                raw.orbitSource().sp3Count(),
-                raw.orbitSource().brdcCount(),
-                raw.orbitSource().tleCount(),
-                snap.orbitSource().noHealthFlags(),
-                snap.orbitSource().fileLabel())
-                : raw.orbitSource();
+        // Preserve epoch-level provenance (including SP3 noHealthFlags & fileLabel); when all SVs
+        // are masked out or excluded (usedCount == 0), still report the resolved epoch provenance.
+        GnssOrbitSource.Summary effectiveSummary;
+        if (raw.usedCount() == 0 && snap.orbitSource() != null && snap.orbitSource().primary() != GnssOrbitSource.NONE) {
+            effectiveSummary = snap.orbitSource();
+        } else if (snap.orbitSource() != null) {
+            effectiveSummary = new GnssOrbitSource.Summary(
+                    raw.orbitSource().primary(),
+                    raw.orbitSource().sp3Count(),
+                    raw.orbitSource().brdcCount(),
+                    raw.orbitSource().tleCount(),
+                    snap.orbitSource().noHealthFlags(),
+                    snap.orbitSource().fileLabel());
+        } else {
+            effectiveSummary = raw.orbitSource();
+        }
         GnssDopSolution result = new GnssDopSolution(
                 raw.epochMillis(),
                 raw.observer(),
@@ -517,16 +522,20 @@ public class GnssGeometryService implements AwarenessFeed {
 
     private void invalidateDerivedCaches() {
         this.dataVersion.incrementAndGet();
+        this.seriesGeneration.incrementAndGet();
+        this.heatmapGeneration.incrementAndGet();
         this.seriesDataVersion = -1L;
         this.heatmapDataVersion = -1L;
     }
 
     private void invalidateSeriesCache() {
+        this.seriesGeneration.incrementAndGet();
         this.seriesAnchorEpochMillis = Long.MIN_VALUE;
         this.seriesDataVersion = -1L;
     }
 
     private void invalidateHeatmapCache() {
+        this.heatmapGeneration.incrementAndGet();
         this.heatmapDataVersion = -1L;
     }
 
@@ -548,10 +557,8 @@ public class GnssGeometryService implements AwarenessFeed {
         try {
             if (settingsStore != null) {
                 settingsStore.save(current);
-                awarenessService.applySettingsSnapshotWithoutSaving(current);
-            } else {
-                awarenessService.updateSettings(current);
             }
+            awarenessService.syncSettingsSilently(current);
         } catch (IOException ignored) {
         }
     }

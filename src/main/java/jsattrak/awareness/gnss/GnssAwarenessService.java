@@ -163,6 +163,20 @@ public class GnssAwarenessService implements AwarenessFeed {
             Map<String, BroadcastHealthRecord> health,
             Map<String, OperatorStatusRecord> opStatus,
             List<GnssOutageNotice> notices) {
+        return createForTest(tmpDir, catalog, tles, health, opStatus, notices, Clock.systemUTC().millis());
+    }
+
+    /**
+     * Creates an offline test service preloaded with deterministic fixtures anchored at {@code nowMillis}.
+     */
+    public static GnssAwarenessService createForTest(
+            Path tmpDir,
+            List<GnssCatalogEntry> catalog,
+            List<TLE> tles,
+            Map<String, BroadcastHealthRecord> health,
+            Map<String, OperatorStatusRecord> opStatus,
+            List<GnssOutageNotice> notices,
+            long nowMillis) {
         Path baseDir;
         try {
             baseDir = tmpDir != null ? tmpDir : Files.createTempDirectory("gnss-test");
@@ -170,7 +184,7 @@ public class GnssAwarenessService implements AwarenessFeed {
             throw new IllegalStateException("Unable to create temp directory for GNSS test service", e);
         }
         AwarenessSettingsStore store = new AwarenessSettingsStore(baseDir.resolve("awareness-settings.json"));
-        long now = Clock.systemUTC().millis();
+        long now = nowMillis;
         List<GnssCatalogEntry> cleanCat = catalog != null ? List.copyOf(catalog) : List.of();
         List<TLE> cleanTles = tles != null ? List.copyOf(tles) : List.of();
         Map<String, BroadcastHealthRecord> cleanHealth = health != null ? Map.copyOf(health) : Map.of();
@@ -202,7 +216,7 @@ public class GnssAwarenessService implements AwarenessFeed {
         };
         OperatorStatusClient opClient = new OperatorStatusClient() {
             @Override
-            public OperatorFetchResult fetchAll(Map<String, List<DataSourceConfig>> scopedSources, long nowMillis) {
+            public OperatorFetchResult fetchAll(Map<String, List<DataSourceConfig>> scopedSources, long nowArg) {
                 return new OperatorFetchResult(cleanOp, cleanNotices, true, true, Map.of(), Map.of());
             }
         };
@@ -216,7 +230,7 @@ public class GnssAwarenessService implements AwarenessFeed {
                 tleClient,
                 navClient,
                 opClient,
-                Clock.systemUTC());
+                Clock.fixed(java.time.Instant.ofEpochMilli(now), java.time.ZoneOffset.UTC));
         svc.preloadForTest(cleanCat, cleanTles, cleanHealth, cleanOp, cleanNotices, now);
         return svc;
     }
@@ -357,6 +371,14 @@ public class GnssAwarenessService implements AwarenessFeed {
         Objects.requireNonNull(updated, "updated");
         settingsStore.save(updated);
         applySettingsSnapshotWithoutSaving(updated);
+    }
+
+    /**
+     * Updates the in-memory settings reference without rescheduling Layer-1 timers or firing
+     * {@code notifyDataChanged()}, used by Layer-2 preference writes that do not alter Layer-1 feeds.
+     */
+    public void syncSettingsSilently(AwarenessSettings updated) {
+        this.settings = Objects.requireNonNull(updated, "updated");
     }
 
     public void applySettingsSnapshotWithoutSaving(AwarenessSettings updated) {

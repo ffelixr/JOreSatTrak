@@ -1786,6 +1786,15 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     @Override
     public void setGnssGeometryService(GnssGeometryService service)
     {
+        java.util.function.BooleanSupplier suppress = () -> service != null && service.isPickOnMapMode();
+        if (launchCoordinator != null)
+        {
+            launchCoordinator.setPickSuppressionCheck(suppress);
+        }
+        if (gnssCoordinator != null)
+        {
+            gnssCoordinator.setPickSuppressionCheck(suppress);
+        }
         if (gnssDopCoordinator != null)
         {
             gnssDopCoordinator.setGnssGeometryService(service);

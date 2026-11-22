@@ -144,6 +144,16 @@ class GnssDopHeatmap2DTest {
             J2DPolarEarthPanelSave savePolar = new J2DPolarEarthPanelSave();
             savePolar.setShowGnssDopHeatmap(null);
             assertTrue(J2DPolarEarthPanelSave.resolveShowGnssDopHeatmapDefault(savePolar.getShowGnssDopHeatmap()));
+
+            // 6. Polar heatmap cache reuses rendered disc image on steady-state repaints
+            assertEquals(GnssDopGrid.colorForDop(1.8, 180).getRGB(), GnssDopGrid.argbForDop(1.8, 180));
+            BufferedImage directPolar = new BufferedImage(450, 470, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D gDir = directPolar.createGraphics();
+            renderer.paintPolarDiscHeatmap(gDir, geometry, true, T0, 1, 225, 108, 100, 225, 108, 90.0);
+            assertEquals(0, renderer.getPolarDiscCacheHitCountForTest());
+            renderer.paintPolarDiscHeatmap(gDir, geometry, true, T0, 1, 225, 108, 100, 225, 108, 90.0);
+            assertEquals(1, renderer.getPolarDiscCacheHitCountForTest());
+            gDir.dispose();
         } finally {
             geometry.shutdown();
             awareness.shutdown();

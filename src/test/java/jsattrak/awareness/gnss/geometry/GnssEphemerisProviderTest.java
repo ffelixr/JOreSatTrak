@@ -139,6 +139,63 @@ class GnssEphemerisProviderTest {
 
         provider.clearLocalFile();
         assertEquals("", provider.getLoadedLocalFileName());
+
+        // Also test live SP3 without health flags (NO_STATUS_DATA within 24h) + historical SP3 excluding live TLEs
+        GnssAwarenessService partialLive = GnssAwarenessService.createForTest(
+                tmpDir.resolve("live"), sampleCatalog(), sampleTles(), Map.of(), Map.of(), List.of(), histEpoch);
+        provider.loadLocalFile(sp3Path);
+        GnssEphemerisProvider.ResolvedEpochSnapshot liveNoHealth =
+                provider.resolveSatellitesAtEpoch(histEpoch, partialLive);
+        assertEquals(GnssOrbitSource.MIXED, liveNoHealth.orbitSource().primary());
+        assertEquals(4, liveNoHealth.orbitSource().sp3Count());
+        assertEquals(1, liveNoHealth.orbitSource().tleCount());
+        assertTrue(liveNoHealth.orbitSource().noHealthFlags());
+
+        // Historical SP3 (>24h from live sync) must not mix out-of-era 2026 C19 TLE
+        GnssAwarenessService liveIn2026 = GnssAwarenessService.createForTest(
+                tmpDir.resolve("live2026"), sampleCatalog(), sampleTles(), Map.of(), Map.of(), List.of(),
+                Instant.parse("2026-11-21T00:00:00Z").toEpochMilli());
+        GnssEphemerisProvider.ResolvedEpochSnapshot histNoLiveLeak =
+                provider.resolveSatellitesAtEpoch(histEpoch, liveIn2026);
+        assertEquals(GnssOrbitSource.SP3, histNoLiveLeak.orbitSource().primary());
+        assertTrue(histNoLiveLeak.candidates().stream().allMatch(s -> s.orbitSource() == GnssOrbitSource.SP3));
+
+        // Load local .rnx.gz where G01 is unhealthy at T0: historical epoch uses svHealth, T0+12h live TLE ignores stale local health
+        String localRnxUnhealthyG01 = MIXED_RINEX3_FIXTURE.replace(
+                "     2.000000000000D+00 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                        + "     5.184000000000D+05 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                        + "E11",
+                "     2.000000000000D+00 1.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                        + "     5.184000000000D+05 0.000000000000D+00 0.000000000000D+00 0.000000000000D+00\n"
+                        + "E11");
+        Path localRnxPath = tmpDir.resolve("local_nav.rnx.gz");
+        Files.write(localRnxPath, gzip(localRnxUnhealthyG01));
+        GnssEphemerisProvider.LocalLoadSummary rnxSummary = provider.loadLocalFile(localRnxPath);
+        assertEquals(GnssOrbitSource.BRDC, rnxSummary.sourceType());
+        assertEquals(4, rnxSummary.satelliteCount());
+
+        long liveT0 = Instant.parse("2026-11-21T00:00:00Z").toEpochMilli();
+        GnssAwarenessService healthyLive = GnssAwarenessService.createForTest(
+                tmpDir.resolve("healthy"), sampleCatalog(), sampleTles(),
+                Map.of(
+                        "G01", new BroadcastHealthRecord("G01", GnssConstellation.GPS, "LNAV", liveT0, 0, true, "OK"),
+                        "E11", new BroadcastHealthRecord("E11", GnssConstellation.GALILEO, "INAV", liveT0, 0, true, "OK"),
+                        "C19", new BroadcastHealthRecord("C19", GnssConstellation.BEIDOU, "D1", liveT0, 0, true, "OK"),
+                        "R05", new BroadcastHealthRecord("R05", GnssConstellation.GLONASS, "FDMA", liveT0, 0, true, "OK")),
+                Map.of(), List.of(), liveT0);
+
+        GnssEphemerisProvider.ResolvedEpochSnapshot atLocalWindow =
+                provider.resolveSatellitesAtEpoch(liveT0 + 600_000L, healthyLive);
+        var g01Local = atLocalWindow.candidates().stream().filter(s -> s.prnId().equals("G01")).findFirst().orElseThrow();
+        assertEquals(GnssOrbitSource.BRDC, g01Local.orbitSource());
+        assertEquals(jsattrak.awareness.gnss.GnssDisplayStatus.UNAVAILABLE, g01Local.status());
+
+        // Outside +-4h local RINEX window -> falls back to TLE_FALLBACK and uses live health (OPERATIONAL), not stale local G01=1
+        GnssEphemerisProvider.ResolvedEpochSnapshot outsideLocalWindow =
+                provider.resolveSatellitesAtEpoch(liveT0 + 12 * 3600_000L, healthyLive);
+        var g01Tle = outsideLocalWindow.candidates().stream().filter(s -> s.prnId().equals("G01")).findFirst().orElseThrow();
+        assertEquals(GnssOrbitSource.TLE_FALLBACK, g01Tle.orbitSource());
+        assertEquals(jsattrak.awareness.gnss.GnssDisplayStatus.OPERATIONAL, g01Tle.status());
     }
 
     private static String buildSampleSp3() {

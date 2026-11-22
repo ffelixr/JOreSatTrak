@@ -58,18 +58,18 @@ public final class GnssDopGrid {
         GnssDopMetric effectiveMetric = metric != null ? metric : GnssDopMetric.PDOP;
         double[] values = new double[latRows * lonCols];
 
-        // Pre-extract eligible satellite ECEF positions once into primitive arrays
+        // Pre-extract satellite ECEF positions once into primitive arrays; track operational flag
+        // separately so VISIBLE_SVS counts all above-mask SVs (matching GnssDopCalculator.visibleCount)
+        // while DOP computations filter non-operational SVs when includeNonOp == false.
         int satCapacity = sats != null ? sats.size() : 0;
         double[] satX = new double[satCapacity];
         double[] satY = new double[satCapacity];
         double[] satZ = new double[satCapacity];
+        boolean[] satOp = new boolean[satCapacity];
         int satCount = 0;
         if (sats != null) {
             for (GnssDopCalculator.CandidateSatellite sat : sats) {
                 if (sat == null) {
-                    continue;
-                }
-                if (!includeNonOp && sat.status() != GnssDisplayStatus.OPERATIONAL) {
                     continue;
                 }
                 if (!Double.isFinite(sat.satX()) || !Double.isFinite(sat.satY()) || !Double.isFinite(sat.satZ())) {
@@ -78,6 +78,7 @@ public final class GnssDopGrid {
                 satX[satCount] = sat.satX();
                 satY[satCount] = sat.satY();
                 satZ[satCount] = sat.satZ();
+                satOp[satCount] = includeNonOp || sat.status() == GnssDisplayStatus.OPERATIONAL;
                 satCount++;
             }
         }
@@ -111,7 +112,8 @@ public final class GnssDopGrid {
                 double sLon = sinLon[c];
                 double cLon = cosLon[c];
 
-                int vis = 0;
+                int visAll = 0;
+                int used = 0;
                 for (int i = 0; i < satCount; i++) {
                     double dx = satX[i] - obsX;
                     double dy = satY[i] - obsY;
@@ -126,19 +128,22 @@ public final class GnssDopGrid {
                     if (sinEl < sinMask) {
                         continue;
                     }
-                    double e = -sLon * dx + cLon * dy;
-                    double n = -sinLat * cLon * dx - sinLat * sLon * dy + cosLat * dz;
-                    uE[vis] = e / range;
-                    uN[vis] = n / range;
-                    uU[vis] = sinEl;
-                    vis++;
+                    visAll++;
+                    if (satOp[i]) {
+                        double e = -sLon * dx + cLon * dy;
+                        double n = -sinLat * cLon * dx - sinLat * sLon * dy + cosLat * dz;
+                        uE[used] = e / range;
+                        uN[used] = n / range;
+                        uU[used] = sinEl;
+                        used++;
+                    }
                 }
 
                 int idx = r * lonCols + c;
                 if (effectiveMetric == GnssDopMetric.VISIBLE_SVS) {
-                    values[idx] = vis;
+                    values[idx] = visAll;
                 } else {
-                    double[] dops = GnssDopCalculator.computeRawDopFromUnitVectors(uE, uN, uU, vis);
+                    double[] dops = GnssDopCalculator.computeRawDopFromUnitVectors(uE, uN, uU, used);
                     if (dops == null) {
                         values[idx] = Double.NaN;
                     } else {
@@ -148,7 +153,7 @@ public final class GnssDopGrid {
                             case HDOP -> dops[2];
                             case VDOP -> dops[3];
                             case TDOP -> dops[4];
-                            case VISIBLE_SVS -> vis;
+                            case VISIBLE_SVS -> visAll;
                         };
                     }
                 }
@@ -171,10 +176,9 @@ public final class GnssDopGrid {
             int offset = r * lonCols;
             for (int c = 0; c < lonCols; c++) {
                 double val = values[offset + c];
-                Color color = isCount
-                        ? colorForVisibleCount((int) Math.round(val), alpha)
-                        : colorForDop(val, alpha);
-                argbRow[c] = color.getRGB();
+                argbRow[c] = isCount
+                        ? argbForVisibleCount((int) Math.round(val), alpha)
+                        : argbForDop(val, alpha);
             }
             img.setRGB(0, r, lonCols, 1, argbRow, 0, lonCols);
         }
@@ -192,43 +196,57 @@ public final class GnssDopGrid {
     }
 
     /**
+     * Packed ARGB integer for a DOP value (zero per-pixel {@link Color} allocations).
+     */
+    public static int argbForDop(double dop, int alpha) {
+        int a = clampAlpha(alpha) << 24;
+        if (!Double.isFinite(dop) || dop <= 0.0) {
+            return a | 0x6B2D5C; // No Fix
+        }
+        if (dop <= 1.5) {
+            return a | 0x1B8A5A; // Excellent
+        }
+        if (dop <= 2.5) {
+            return a | 0x52C41A; // Good
+        }
+        if (dop <= 4.0) {
+            return a | 0xFADB14; // Moderate
+        }
+        if (dop <= 6.0) {
+            return a | 0xFA8C16; // Fair
+        }
+        return a | 0xE5484D; // Poor (>6.0)
+    }
+
+    /**
+     * Packed ARGB integer for a visible satellite count (zero per-pixel {@link Color} allocations).
+     */
+    public static int argbForVisibleCount(int count, int alpha) {
+        int a = clampAlpha(alpha) << 24;
+        if (count < 4) {
+            return a | 0xE5484D; // No Fix (<4)
+        }
+        if (count <= 7) {
+            return a | 0xFA8C16; // Minimal (4-7)
+        }
+        if (count <= 15) {
+            return a | 0x3FBF6A; // Good (8-15)
+        }
+        return a | 0x00B5D8; // Strong (>=16)
+    }
+
+    /**
      * Maps a DOP value to its semantic quality color (with magenta {@code #6B2D5C} for No Fix).
      */
     public static Color colorForDop(double dop, int alpha) {
-        int a = clampAlpha(alpha);
-        if (!Double.isFinite(dop) || dop <= 0.0) {
-            return new Color(0x6B, 0x2D, 0x5C, a); // No Fix
-        }
-        if (dop <= 1.5) {
-            return new Color(0x1B, 0x8A, 0x5A, a); // Excellent
-        }
-        if (dop <= 2.5) {
-            return new Color(0x52, 0xC4, 0x1A, a); // Good
-        }
-        if (dop <= 4.0) {
-            return new Color(0xFA, 0xDB, 0x14, a); // Moderate
-        }
-        if (dop <= 6.0) {
-            return new Color(0xFA, 0x8C, 0x16, a); // Fair
-        }
-        return new Color(0xE5, 0x48, 0x4D, a); // Poor (>6.0)
+        return new Color(argbForDop(dop, alpha), true);
     }
 
     /**
      * Maps a visible satellite count to its semantic availability color.
      */
     public static Color colorForVisibleCount(int count, int alpha) {
-        int a = clampAlpha(alpha);
-        if (count < 4) {
-            return new Color(0xE5, 0x48, 0x4D, a); // No Fix (<4)
-        }
-        if (count <= 7) {
-            return new Color(0xFA, 0x8C, 0x16, a); // Minimal (4-7)
-        }
-        if (count <= 15) {
-            return new Color(0x3F, 0xBF, 0x6A, a); // Good (8-15)
-        }
-        return new Color(0x00, 0xB5, 0xD8, a); // Strong (>=16)
+        return new Color(argbForVisibleCount(count, alpha), true);
     }
 
     private static int clampAlpha(int alpha) {
