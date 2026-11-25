@@ -76,6 +76,18 @@ public class AwarenessSettingsStore {
         if (isPreGnssSchema && !hasAnyGnssSource) {
             sources.addAll(AwarenessSettings.createDefaultGnssSources());
         }
+        boolean hasStationCatalog = sources.stream().anyMatch(s ->
+                s.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG);
+        boolean hasObsArchive = sources.stream().anyMatch(s ->
+                s.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_OBSERVATION_ARCHIVE);
+        if (!hasStationCatalog || !hasObsArchive) {
+            for (DataSourceConfig def : AwarenessSettings.createDefaultGnssStationSources()) {
+                if ((def.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG && !hasStationCatalog)
+                        || (def.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_OBSERVATION_ARCHIVE && !hasObsArchive)) {
+                    sources.add(def);
+                }
+            }
+        }
         settings.setSchemaVersion(AwarenessSettings.CURRENT_SCHEMA_VERSION);
         for (DataSourceConfig source : sources) {
             if (source.getProviderScope() == null) {

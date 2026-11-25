@@ -814,6 +814,10 @@ public class LiveAwarenessService implements AwarenessFeed {
         copy.setGnssObserverLatDeg(source.getGnssObserverLatDeg());
         copy.setGnssObserverLonDeg(source.getGnssObserverLonDeg());
         copy.setGnssObserverAltMeters(source.getGnssObserverAltMeters());
+        copy.setGnssStationNetworksEnabled(source.getGnssStationNetworksEnabled());
+        copy.setGnssRegionalScanRadiusKm(source.getGnssRegionalScanRadiusKm());
+        copy.setGnssRegionalScanMaxStations(source.getGnssRegionalScanMaxStations());
+        copy.setGnssStationMaskDeg(source.getGnssStationMaskDeg());
         List<DataSourceConfig> copiedSources = new ArrayList<>();
         if (source.getSources() != null) {
             for (DataSourceConfig item : source.getSources()) {

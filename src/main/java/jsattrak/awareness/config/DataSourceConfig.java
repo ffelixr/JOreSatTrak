@@ -14,7 +14,9 @@ public class DataSourceConfig {
         GNSS_CATALOG,
         GNSS_ORBITS_TLE,
         GNSS_BROADCAST_NAV,
-        GNSS_OPERATOR_STATUS
+        GNSS_OPERATOR_STATUS,
+        GNSS_STATION_CATALOG,
+        GNSS_OBSERVATION_ARCHIVE
     }
 
     private String id = "";
