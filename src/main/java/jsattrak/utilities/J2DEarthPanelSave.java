@@ -81,6 +81,7 @@ public class J2DEarthPanelSave implements Serializable
     private Boolean showUpcomingLaunches = Boolean.TRUE;
     private Boolean showGnssConstellations = Boolean.TRUE;
     private Boolean showGnssDopHeatmap = Boolean.TRUE;
+    private Boolean showGnssStations = Boolean.TRUE;
 
     // renderable objects
     Vector<JSatTrakRenderable> renderableObjects; //added 21 March 2009 -- bug to save coverage anaylsis and other renderables
@@ -137,6 +138,7 @@ public class J2DEarthPanelSave implements Serializable
         showUpcomingLaunches = Boolean.valueOf(panel.isShowUpcomingLaunches());
         showGnssConstellations = Boolean.valueOf(panel.isShowGnssConstellations());
         showGnssDopHeatmap = Boolean.valueOf(panel.isShowGnssDopHeatmap());
+        showGnssStations = Boolean.valueOf(panel.isShowGnssStations());
          
     } // J2DEarthPanelSave constructor
 
@@ -176,6 +178,21 @@ public class J2DEarthPanelSave implements Serializable
     }
 
     public static boolean resolveShowGnssDopHeatmapDefault(Boolean saved)
+    {
+        return saved == null || saved.booleanValue();
+    }
+
+    public Boolean getShowGnssStations()
+    {
+        return showGnssStations;
+    }
+
+    public void setShowGnssStations(Boolean showGnssStations)
+    {
+        this.showGnssStations = showGnssStations;
+    }
+
+    public static boolean resolveShowGnssStationsDefault(Boolean saved)
     {
         return saved == null || saved.booleanValue();
     }
@@ -240,6 +257,7 @@ public class J2DEarthPanelSave implements Serializable
         newPanel.setShowUpcomingLaunches(showUpcomingLaunches == null || showUpcomingLaunches.booleanValue());
         newPanel.setShowGnssConstellations(resolveShowGnssDefault(showGnssConstellations));
         newPanel.setShowGnssDopHeatmap(resolveShowGnssDopHeatmapDefault(showGnssDopHeatmap));
+        newPanel.setShowGnssStations(resolveShowGnssStationsDefault(showGnssStations));
 
     }  
 } //J2DEarthPanelSave class

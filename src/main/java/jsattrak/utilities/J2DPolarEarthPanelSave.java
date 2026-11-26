@@ -65,6 +65,7 @@ public class J2DPolarEarthPanelSave implements Serializable
     private Boolean showUpcomingLaunches = Boolean.TRUE;
     private Boolean showGnssConstellations = Boolean.TRUE;
     private Boolean showGnssDopHeatmap = Boolean.TRUE;
+    private Boolean showGnssStations = Boolean.TRUE;
 
     public J2DPolarEarthPanelSave()
     {
@@ -108,6 +109,7 @@ public class J2DPolarEarthPanelSave implements Serializable
         this.showUpcomingLaunches = Boolean.valueOf(panel.isShowUpcomingLaunches());
         this.showGnssConstellations = Boolean.valueOf(panel.isShowGnssConstellations());
         this.showGnssDopHeatmap = Boolean.valueOf(panel.isShowGnssDopHeatmap());
+        this.showGnssStations = Boolean.valueOf(panel.isShowGnssStations());
     }
 
     public Boolean getShowUpcomingLaunches()
@@ -146,6 +148,21 @@ public class J2DPolarEarthPanelSave implements Serializable
     }
 
     public static boolean resolveShowGnssDopHeatmapDefault(Boolean saved)
+    {
+        return saved == null || saved.booleanValue();
+    }
+
+    public Boolean getShowGnssStations()
+    {
+        return showGnssStations;
+    }
+
+    public void setShowGnssStations(Boolean showGnssStations)
+    {
+        this.showGnssStations = showGnssStations;
+    }
+
+    public static boolean resolveShowGnssStationsDefault(Boolean saved)
     {
         return saved == null || saved.booleanValue();
     }
@@ -203,6 +220,7 @@ public class J2DPolarEarthPanelSave implements Serializable
         newPanel.setShowUpcomingLaunches(showUpcomingLaunches == null || showUpcomingLaunches.booleanValue());
         newPanel.setShowGnssConstellations(resolveShowGnssDefault(showGnssConstellations));
         newPanel.setShowGnssDopHeatmap(resolveShowGnssDopHeatmapDefault(showGnssDopHeatmap));
+        newPanel.setShowGnssStations(resolveShowGnssStationsDefault(showGnssStations));
         newPanel.repaint();
     }
 }

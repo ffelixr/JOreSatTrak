@@ -42,6 +42,9 @@ import jsattrak.awareness.gnss.geometry.GnssGeometryListener;
 import jsattrak.awareness.gnss.geometry.GnssGeometryService;
 import jsattrak.awareness.gnss.map.GnssDopHeatmap2DRenderer;
 import jsattrak.awareness.gnss.map.GnssOverlay2DRenderer;
+import jsattrak.awareness.gnss.map.GnssStationsOverlay2DRenderer;
+import jsattrak.awareness.gnss.stations.GnssStationListener;
+import jsattrak.awareness.gnss.stations.GnssStationService;
 import jsattrak.awareness.map.LaunchOverlay2DRenderer;
 import jsattrak.coverage.JSatTrakRenderable;
 import jsattrak.objects.AbstractSatellite;
@@ -64,6 +67,7 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
     private transient JCheckBoxMenuItem upcomingLaunchesMenuItem;
     private transient JCheckBoxMenuItem gnssConstellationsMenuItem;
     private transient JCheckBoxMenuItem gnssDopHeatmapMenuItem;
+    private transient JCheckBoxMenuItem gnssStationsMenuItem;
     //private transient ImageIcon checkMark;
     
     //private int imageMapNum = 0; //0=blue marble, 1=NOAA
@@ -99,6 +103,7 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
     private boolean showUpcomingLaunches = true;
     private boolean showGnssConstellations = true;
     private boolean showGnssDopHeatmap = true;
+    private boolean showGnssStations = true;
     private transient LiveAwarenessService awarenessService;
     private transient AwarenessStateListener awarenessListener;
     private transient LaunchOverlay2DRenderer overlayRenderer = new LaunchOverlay2DRenderer();
@@ -108,6 +113,9 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
     private transient GnssGeometryService gnssGeometryService;
     private transient GnssGeometryListener gnssGeometryListener;
     private transient GnssDopHeatmap2DRenderer gnssDopHeatmapRenderer = new GnssDopHeatmap2DRenderer();
+    private transient GnssStationService gnssStationService;
+    private transient GnssStationListener gnssStationListener;
+    private transient GnssStationsOverlay2DRenderer gnssStationsOverlayRenderer = new GnssStationsOverlay2DRenderer();
      
      
      // land mass  --  only hard coded for now
@@ -246,6 +254,10 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
                 {
                     setShowGnssDopHeatmap(gnssDopHeatmapMenuItem.isSelected());
                 }
+                else if( event.getSource() == gnssStationsMenuItem)
+                {
+                    setShowGnssStations(gnssStationsMenuItem.isSelected());
+                }
                 else if( event.getSource() == moreOptionsMenu)
                 {
                     // open more options
@@ -279,6 +291,10 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
         gnssDopHeatmapMenuItem = new JCheckBoxMenuItem("GNSS DOP Heatmap", showGnssDopHeatmap);
         gnssDopHeatmapMenuItem.addActionListener(menuListener);
         overlaysMenu.add(gnssDopHeatmapMenuItem);
+
+        gnssStationsMenuItem = new JCheckBoxMenuItem("GNSS Reference Stations", showGnssStations);
+        gnssStationsMenuItem.addActionListener(menuListener);
+        overlaysMenu.add(gnssStationsMenuItem);
         popup.add(overlaysMenu);
         
         popup.addSeparator();
@@ -959,7 +975,9 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
                 boolean handled = getOverlayRenderer().handleLeftClick(
                                 pt.x, pt.y, 14.0, awarenessService, showUpcomingLaunches)
                         || getGnssOverlayRenderer().handleLeftClick(
-                                pt.x, pt.y, 12.0, gnssAwarenessService, showGnssConstellations);
+                                pt.x, pt.y, 12.0, gnssAwarenessService, showGnssConstellations)
+                        || getGnssStationsOverlayRenderer().handleLeftClick(
+                                pt.x, pt.y, 12.0, gnssStationService, gnssGeometryService, showGnssStations, false);
                 if (handled)
                 {
                     imageMap.repaint();
@@ -996,6 +1014,17 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
                         12.0,
                         gnssAwarenessService,
                         showGnssConstellations);
+            }
+            if (J2DEarthPanel.this.getToolTipText() == null)
+            {
+                getGnssStationsOverlayRenderer().updateHoverTooltip(
+                        J2DEarthPanel.this,
+                        pt.x,
+                        pt.y,
+                        12.0,
+                        gnssStationService,
+                        showGnssStations,
+                        false);
             }
         }
 
@@ -1079,6 +1108,10 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
                 {
                     gnssDopHeatmapMenuItem.setSelected(showGnssDopHeatmap);
                 }
+                if (gnssStationsMenuItem != null)
+                {
+                    gnssStationsMenuItem.setSelected(showGnssStations);
+                }
                 popup.show(J2DEarthPanel.this, e.getX(), e.getY());
             }
         }
@@ -1107,6 +1140,10 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
             if (gnssDopHeatmapMenuItem != null)
             {
                 gnssDopHeatmapMenuItem.setSelected(showGnssDopHeatmap);
+            }
+            if (gnssStationsMenuItem != null)
+            {
+                gnssStationsMenuItem.setSelected(showGnssStations);
             }
         }
         
@@ -1799,6 +1836,64 @@ public class J2DEarthPanel extends JPanel implements ComponentListener , java.io
             gnssDopHeatmapRenderer = new GnssDopHeatmap2DRenderer();
         }
         return gnssDopHeatmapRenderer;
+    }
+
+    public boolean isShowGnssStations()
+    {
+        return showGnssStations;
+    }
+
+    public void setShowGnssStations(boolean show)
+    {
+        this.showGnssStations = show;
+        if (gnssStationsMenuItem != null)
+        {
+            gnssStationsMenuItem.setSelected(show);
+        }
+        if (imageMap != null)
+        {
+            imageMap.repaint();
+        }
+    }
+
+    public void setGnssStationService(GnssStationService service)
+    {
+        if (this.gnssStationService == service)
+        {
+            return;
+        }
+        if (this.gnssStationService != null && this.gnssStationListener != null)
+        {
+            this.gnssStationService.removeListener(this.gnssStationListener);
+        }
+        this.gnssStationService = service;
+        if (service != null)
+        {
+            this.gnssStationListener = GnssStationsOverlay2DRenderer.createRepaintListener(imageMap);
+            service.addListener(this.gnssStationListener);
+        }
+        else
+        {
+            this.gnssStationListener = null;
+        }
+        if (imageMap != null)
+        {
+            imageMap.repaint();
+        }
+    }
+
+    public GnssStationService getGnssStationService()
+    {
+        return gnssStationService;
+    }
+
+    public GnssStationsOverlay2DRenderer getGnssStationsOverlayRenderer()
+    {
+        if (gnssStationsOverlayRenderer == null)
+        {
+            gnssStationsOverlayRenderer = new GnssStationsOverlay2DRenderer();
+        }
+        return gnssStationsOverlayRenderer;
     }
  
     // SEG v4.2 -- new settings

@@ -725,6 +725,7 @@ public class J2dEarthLabel2 extends JLabel  implements java.io.Serializable
         if (effImgW <= 0 || effImgH <= 0)
         {
             earthPanel.getGnssOverlayRenderer().clear();
+            earthPanel.getGnssStationsOverlayRenderer().clearEquirectangular();
             return;
         }
 
@@ -755,6 +756,13 @@ public class J2dEarthLabel2 extends JLabel  implements java.io.Serializable
         g2.clip(clipRect);
         try
         {
+            earthPanel.getGnssStationsOverlayRenderer().paintServiceOverlay(
+                    g2,
+                    earthPanel.getGnssStationService(),
+                    earthPanel.isShowGnssStations(),
+                    clipRect,
+                    projector,
+                    false);
             earthPanel.getGnssOverlayRenderer().paintServiceOverlay(
                     g2,
                     earthPanel.getGnssAwarenessService(),

@@ -402,6 +402,13 @@ public class J2dPolarEarthLabel extends JLabel implements Serializable
             }
             return projectLatLonToDiscs(latDeg, lonDeg, discs);
         };
+        polarPanel.getGnssStationsOverlayRenderer().paintServiceOverlay(
+                g2,
+                polarPanel.getGnssStationService(),
+                polarPanel.isShowGnssStations(),
+                new Rectangle(0, 0, w, h),
+                projector,
+                true);
         polarPanel.getGnssOverlayRenderer().paintServiceOverlay(
                 g2,
                 polarPanel.getGnssAwarenessService(),
