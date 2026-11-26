@@ -15,8 +15,10 @@ import org.orekit.data.DataSource;
 import org.orekit.files.rinex.navigation.RinexNavigation;
 import org.orekit.files.rinex.navigation.RinexNavigationParser;
 import org.orekit.files.sp3.SP3;
+import org.orekit.files.sp3.SP3Coordinate;
 import org.orekit.files.sp3.SP3Ephemeris;
 import org.orekit.files.sp3.SP3Parser;
+import org.orekit.files.sp3.SP3Segment;
 import org.orekit.frames.Frame;
 import org.orekit.frames.FramesFactory;
 import org.orekit.propagation.BoundedPropagator;
@@ -25,7 +27,9 @@ import org.orekit.propagation.analytical.gnss.GLONASSAnalyticalPropagatorBuilder
 import org.orekit.propagation.analytical.gnss.GNSSPropagatorBuilder;
 import org.orekit.propagation.analytical.gnss.data.GLONASSNavigationMessage;
 import org.orekit.propagation.analytical.gnss.data.GLONASSOrbitalElements;
+import org.orekit.propagation.analytical.gnss.data.GNSSClockElements;
 import org.orekit.propagation.analytical.gnss.data.GNSSOrbitalElements;
+import org.orekit.utils.TimeStampedPVCoordinates;
 import org.orekit.time.AbsoluteDate;
 import org.orekit.time.TimeScale;
 import org.orekit.time.TimeScalesFactory;
@@ -75,6 +79,39 @@ public class GnssEphemerisProvider {
     public record ResolvedEpochSnapshot(
             List<GnssDopCalculator.CandidateSatellite> candidates,
             GnssOrbitSource.Summary orbitSource) {
+    }
+
+    public record CandidateSatelliteWithClock(
+            String prnId,
+            GnssConstellation constellation,
+            GnssDisplayStatus status,
+            GnssOrbitSource orbitSource,
+            double satX,
+            double satY,
+            double satZ,
+            double velX,
+            double velY,
+            double velZ,
+            double clockBiasSec,
+            double tgdSec,
+            boolean clockValid) {
+    }
+
+    public record ResolvedClockEpochSnapshot(
+            List<CandidateSatelliteWithClock> candidates,
+            GnssOrbitSource.Summary orbitSource) {
+    }
+
+    private record PropagatedState(
+            double satX,
+            double satY,
+            double satZ,
+            double velX,
+            double velY,
+            double velZ,
+            double clockBiasSec,
+            double tgdSec,
+            boolean clockValid) {
     }
 
     private record RinexMessageEntry(
@@ -238,6 +275,22 @@ public class GnssEphemerisProvider {
     public ResolvedEpochSnapshot resolveSatellitesAtEpoch(
             long simEpochMillis,
             GnssAwarenessService awarenessService) {
+        ResolvedClockEpochSnapshot clkSnap = resolveSatellitesWithClockAtEpoch(simEpochMillis, awarenessService);
+        List<GnssDopCalculator.CandidateSatellite> out = new ArrayList<>(clkSnap.candidates().size());
+        for (CandidateSatelliteWithClock s : clkSnap.candidates()) {
+            out.add(new GnssDopCalculator.CandidateSatellite(
+                    s.prnId(), s.constellation(), s.status(), s.orbitSource(), s.satX(), s.satY(), s.satZ()));
+        }
+        return new ResolvedEpochSnapshot(Collections.unmodifiableList(out), clkSnap.orbitSource());
+    }
+
+    /**
+     * Resolves ITRF/ECEF satellite positions, velocities, clock corrections, and operational statuses
+     * for {@code simEpochMillis} (used by Layer 3 SPP and measurement analytics).
+     */
+    public ResolvedClockEpochSnapshot resolveSatellitesWithClockAtEpoch(
+            long simEpochMillis,
+            GnssAwarenessService awarenessService) {
         syncBrdcFromAwareness(awarenessService);
 
         ParsedSp3Store sp3 = this.localSp3Store;
@@ -258,9 +311,6 @@ public class GnssEphemerisProvider {
         boolean outsideLiveWindow = lastLiveSync <= 0L
                 || Math.abs(simEpochMillis - lastLiveSync) > SP3_LIVE_HEALTH_WINDOW_MILLIS;
 
-        // Union with PRNs present in local SP3 / RINEX or BRDC; when analyzing a historical epoch
-        // (>24h from live sync) with a local SP3/RINEX loaded, keep PRNs to those in the historical file
-        // so out-of-era live TLEs are never mixed into historical DOPs.
         boolean historicalLocalOnly = outsideLiveWindow && (sp3 != null || localRnx != null);
         Set<String> allPrns = new LinkedHashSet<>();
         if (!historicalLocalOnly) {
@@ -283,7 +333,7 @@ public class GnssEphemerisProvider {
         Frame itrf = FramesFactory.getITRF(IERSConventions.IERS_2010, true);
         AbsoluteDate targetDate = new AbsoluteDate(new Date(simEpochMillis), TimeScalesFactory.getUTC());
 
-        List<GnssDopCalculator.CandidateSatellite> candidates = new ArrayList<>(allPrns.size());
+        List<CandidateSatelliteWithClock> candidates = new ArrayList<>(allPrns.size());
         int sp3Count = 0;
         int brdcCount = 0;
         int tleCount = 0;
@@ -310,48 +360,47 @@ public class GnssEphemerisProvider {
                 continue;
             }
 
-            // 1. Resolve ITRF/ECEF vector in strict priority: SP3 -> Local RINEX -> Live BRDC -> TLE
-            double[] ecef = null;
+            PropagatedState state = null;
             GnssOrbitSource orbitSource = GnssOrbitSource.NONE;
             boolean usedLocalRinexOrbit = false;
 
             if (sp3 != null) {
-                ecef = tryPropagateSp3(sp3, prnId, targetDate, itrf);
-                if (ecef != null) {
+                state = tryPropagateSp3WithClock(sp3, prnId, targetDate, itrf);
+                if (state != null) {
                     orbitSource = GnssOrbitSource.SP3;
                 }
             }
-            if (ecef == null && localRnx != null) {
-                ecef = tryPropagateRinex(localRnx, prnId, constellation, simEpochMillis, targetDate, itrf);
-                if (ecef != null) {
+            if (state == null && localRnx != null) {
+                state = tryPropagateRinexWithClock(localRnx, prnId, constellation, simEpochMillis, targetDate, itrf);
+                if (state != null) {
                     orbitSource = GnssOrbitSource.BRDC;
                     usedLocalRinexOrbit = true;
                 }
             }
-            if (ecef == null && brdc != null) {
-                ecef = tryPropagateRinex(brdc, prnId, constellation, simEpochMillis, targetDate, itrf);
-                if (ecef != null) {
+            if (state == null && brdc != null) {
+                state = tryPropagateRinexWithClock(brdc, prnId, constellation, simEpochMillis, targetDate, itrf);
+                if (state != null) {
                     orbitSource = GnssOrbitSource.BRDC;
                 }
             }
-            if (ecef == null && !historicalLocalOnly) {
+            if (state == null && !historicalLocalOnly) {
                 TLE tle = matchedTles.get(prnId);
                 if (tle != null) {
                     GnssOrbitPropagator.GeodeticPosition gp = GnssOrbitPropagator
                             .propagateGeodetic(tle, simEpochMillis)
                             .orElse(null);
                     if (gp != null) {
-                        ecef = GnssDopCalculator.geodeticToEcef(gp.latDeg(), gp.lonDeg(), gp.altMeters());
+                        double[] ecef = GnssDopCalculator.geodeticToEcef(gp.latDeg(), gp.lonDeg(), gp.altMeters());
+                        state = new PropagatedState(ecef[0], ecef[1], ecef[2], 0.0, 0.0, 0.0, 0.0, 0.0, false);
                         orbitSource = GnssOrbitSource.TLE_FALLBACK;
                     }
                 }
             }
 
-            if (ecef == null) {
+            if (state == null) {
                 continue;
             }
 
-            // 2. Resolve effective health status
             HealthResolution healthRes = resolveHealthStatus(
                     prnId, constellation, catEntry, orbitSource,
                     simEpochMillis, awarenessService,
@@ -369,13 +418,16 @@ public class GnssEphemerisProvider {
                 tleCount++;
             }
 
-            candidates.add(new GnssDopCalculator.CandidateSatellite(
-                    prnId, constellation, healthRes.status(), orbitSource, ecef[0], ecef[1], ecef[2]));
+            candidates.add(new CandidateSatelliteWithClock(
+                    prnId, constellation, healthRes.status(), orbitSource,
+                    state.satX(), state.satY(), state.satZ(),
+                    state.velX(), state.velY(), state.velZ(),
+                    state.clockBiasSec(), state.tgdSec(), state.clockValid()));
         }
 
         GnssOrbitSource.Summary orbitSummary = GnssOrbitSource.Summary.fromCounts(
                 sp3Count, brdcCount, tleCount, sp3UsedWithoutHealthFlags, fileLabel);
-        return new ResolvedEpochSnapshot(Collections.unmodifiableList(candidates), orbitSummary);
+        return new ResolvedClockEpochSnapshot(Collections.unmodifiableList(candidates), orbitSummary);
     }
 
     private record HealthResolution(GnssDisplayStatus status, boolean sp3WithoutHealthFlags) {
@@ -414,7 +466,7 @@ public class GnssEphemerisProvider {
         return new HealthResolution(liveStatus, false);
     }
 
-    private static double[] tryPropagateSp3(
+    private static PropagatedState tryPropagateSp3WithClock(
             ParsedSp3Store sp3,
             String prnId,
             AbsoluteDate targetDate,
@@ -428,17 +480,72 @@ public class GnssEphemerisProvider {
         }
         try {
             BoundedPropagator prop = sp3.propagatorCache.computeIfAbsent(prnId, k -> ephem.getPropagator());
-            Vector3D pos;
+            TimeStampedPVCoordinates pv;
             synchronized (prop) {
-                pos = prop.getPosition(targetDate, itrf);
+                pv = prop.getPVCoordinates(targetDate, itrf);
             }
-            return new double[]{pos.getX(), pos.getY(), pos.getZ()};
+            Vector3D pos = pv.getPosition();
+            Vector3D vel = pv.getVelocity();
+            double clkSec = interpolateSp3ClockSec(ephem, targetDate);
+            boolean clkValid = Double.isFinite(clkSec) && Math.abs(clkSec) < 0.99;
+            return new PropagatedState(
+                    pos.getX(), pos.getY(), pos.getZ(),
+                    vel.getX(), vel.getY(), vel.getZ(),
+                    clkValid ? clkSec : 0.0, 0.0, clkValid);
         } catch (RuntimeException e) {
             return null;
         }
     }
 
-    private static double[] tryPropagateRinex(
+    private static double interpolateSp3ClockSec(SP3Ephemeris ephem, AbsoluteDate targetDate) {
+        List<SP3Segment> segments = ephem.getSegments();
+        if (segments == null || segments.isEmpty()) {
+            return Double.NaN;
+        }
+        List<SP3Coordinate> coords = new ArrayList<>();
+        for (SP3Segment seg : segments) {
+            if (seg != null && seg.getCoordinates() != null) {
+                coords.addAll(seg.getCoordinates());
+            }
+        }
+        if (coords.isEmpty()) {
+            return Double.NaN;
+        }
+        SP3Coordinate prev = null;
+        SP3Coordinate next = null;
+        for (SP3Coordinate c : coords) {
+            if (c == null || c.getDate() == null) {
+                continue;
+            }
+            double dt = c.getDate().durationFrom(targetDate);
+            if (Math.abs(dt) < 1e-6) {
+                return c.getClockCorrection();
+            }
+            if (dt < 0.0) {
+                prev = c;
+            } else {
+                next = c;
+                break;
+            }
+        }
+        if (prev == null || next == null) {
+            SP3Coordinate single = prev != null ? prev : next;
+            return single != null ? single.getClockCorrection() : Double.NaN;
+        }
+        double c1 = prev.getClockCorrection();
+        double c2 = next.getClockCorrection();
+        if (!Double.isFinite(c1) || !Double.isFinite(c2) || Math.abs(c1) >= 0.99 || Math.abs(c2) >= 0.99) {
+            return Double.NaN;
+        }
+        double span = next.getDate().durationFrom(prev.getDate());
+        if (span <= 0.0) {
+            return c1;
+        }
+        double frac = targetDate.durationFrom(prev.getDate()) / span;
+        return c1 + frac * (c2 - c1);
+    }
+
+    private static PropagatedState tryPropagateRinexWithClock(
             ParsedRinexNavStore store,
             String prnId,
             GnssConstellation constellation,
@@ -472,11 +579,32 @@ public class GnssEphemerisProvider {
             if (prop == null) {
                 return null;
             }
-            Vector3D pos;
+            TimeStampedPVCoordinates pv;
             synchronized (prop) {
-                pos = prop.getPosition(targetDate, itrf);
+                pv = prop.getPVCoordinates(targetDate, itrf);
             }
-            return new double[]{pos.getX(), pos.getY(), pos.getZ()};
+            Vector3D pos = pv.getPosition();
+            Vector3D vel = pv.getVelocity();
+            double clkBiasSec = 0.0;
+            double tgdSec = 0.0;
+            boolean clkValid = false;
+            double c = 299_792_458.0;
+            if (chosen.keplerElements() instanceof GNSSClockElements clk) {
+                double dt = targetDate.durationFrom(chosen.keplerElements().getDate());
+                double rel = -2.0 * pos.dotProduct(vel) / (c * c);
+                clkBiasSec = clk.getAf0() + clk.getAf1() * dt + clk.getAf2() * dt * dt + rel;
+                double rawTgd = clk.getTGD();
+                tgdSec = Double.isFinite(rawTgd) ? rawTgd : 0.0;
+                clkValid = Double.isFinite(clkBiasSec);
+            } else if (chosen.glonassElements() instanceof GLONASSNavigationMessage glo) {
+                double dt = targetDate.durationFrom(glo.getDate());
+                clkBiasSec = -glo.getTN() + glo.getGammaN() * dt;
+                clkValid = Double.isFinite(clkBiasSec);
+            }
+            return new PropagatedState(
+                    pos.getX(), pos.getY(), pos.getZ(),
+                    vel.getX(), vel.getY(), vel.getZ(),
+                    clkBiasSec, tgdSec, clkValid);
         } catch (RuntimeException e) {
             return null;
         }
