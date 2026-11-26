@@ -160,7 +160,19 @@ public class OperatorStatusClient {
             long nowMillis,
             Map<String, OperatorStatusRecord> statusOut,
             List<GnssOutageNotice> noticesOut) throws IOException {
-        String body = sendGetString(source.getEndpointUrl(), source);
+        String url = source.getEndpointUrl().trim();
+        String body;
+        try {
+            body = sendGetString(url, source);
+        } catch (IOException e) {
+            if (SCOPE_GPS_NANU.equals(scope)
+                    && url.toLowerCase(Locale.ROOT).contains("navcen.uscg.gov/sites/default/files/gps/nanu")) {
+                url = "https://www.navcen.uscg.gov/gps-constellation";
+                body = sendGetString(url, source);
+            } else {
+                throw e;
+            }
+        }
 
         if (SCOPE_GPS_STATUS.equals(scope)) {
             List<OperatorStatusRecord> parsed = NavcenParser.parseConstellationStatus(body, nowMillis);
@@ -169,7 +181,7 @@ public class OperatorStatusClient {
             }
             parsed.forEach(r -> statusOut.put(r.prnId(), r));
         } else if (SCOPE_GPS_NANU.equals(scope)) {
-            List<GnssOutageNotice> parsed = fetchNanuDirectoryOrSingle(source, body, nowMillis);
+            List<GnssOutageNotice> parsed = fetchNanuDirectoryOrSingle(url, source, body, nowMillis);
             noticesOut.addAll(parsed);
         } else if (SCOPE_GALILEO_STATUS.equals(scope)) {
             List<OperatorStatusRecord> parsed = GscGalileoParser.parseConstellationStatus(body, nowMillis);
@@ -178,7 +190,17 @@ public class OperatorStatusClient {
             }
             parsed.forEach(r -> statusOut.put(r.prnId(), r));
         } else if (SCOPE_GALILEO_NAGU.equals(scope)) {
-            List<GnssOutageNotice> parsed = GscGalileoParser.parseNagus(body);
+            List<GnssOutageNotice> parsed;
+            try {
+                parsed = GscGalileoParser.parseNagus(body);
+            } catch (IOException e) {
+                if (url.toLowerCase(Locale.ROOT).contains("/system-service-status/nagu-information")) {
+                    String activeBody = sendGetString("https://www.gsc-europa.eu/system-status/user-notifications", source);
+                    parsed = GscGalileoParser.parseNagus(activeBody);
+                } else {
+                    throw e;
+                }
+            }
             noticesOut.addAll(parsed);
         } else {
             // Fallback inference from URL/content if scope wasn't set by user
@@ -197,6 +219,7 @@ public class OperatorStatusClient {
     }
 
     private List<GnssOutageNotice> fetchNanuDirectoryOrSingle(
+            String resolvedUrl,
             DataSourceConfig source,
             String body,
             long nowMillis) throws IOException {
@@ -205,7 +228,12 @@ public class OperatorStatusClient {
             return NavcenParser.applyCancellations(List.of(single.get()));
         }
 
-        URI baseUri = URI.create(source.getEndpointUrl().trim());
+        List<GnssOutageNotice> tableNanus = NavcenParser.parseHtmlTableNanus(body);
+        if (!tableNanus.isEmpty()) {
+            return tableNanus;
+        }
+
+        URI baseUri = URI.create(resolvedUrl);
         List<String> nnuLinks = extractLinks(body, ".nnu");
         if (nnuLinks.isEmpty()) {
             int year = Instant.ofEpochMilli(nowMillis).atZone(ZoneOffset.UTC).getYear();

@@ -341,8 +341,15 @@ public final class RinexNavHealthParser {
         if (len > 0) {
             pb.unread(sig, 0, len);
         }
-        if (len == 2 && (sig[0] & 0xFF) == 0x1F && (sig[1] & 0xFF) == 0x8B) {
-            return new GZIPInputStream(pb);
+        if (len == 2 && (sig[0] & 0xFF) == 0x1F) {
+            int b1 = sig[1] & 0xFF;
+            if (b1 == 0x8B) {
+                return new GZIPInputStream(pb);
+            }
+            if (b1 == 0x9D) {
+                org.orekit.data.DataSource ds = new org.orekit.data.DataSource("nav.Z", () -> pb);
+                return new org.orekit.data.UnixCompressFilter().filter(ds).getOpener().openStreamOnce();
+            }
         }
         return pb;
     }

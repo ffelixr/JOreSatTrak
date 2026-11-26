@@ -99,6 +99,16 @@ public class AwarenessSettingsStore {
             if (source.getProviderScope() == null) {
                 source.setProviderScope("");
             }
+            if (source.getEndpointUrl() != null) {
+                String trimmedUrl = source.getEndpointUrl().trim();
+                if (trimmedUrl.equalsIgnoreCase("https://celestrak.org/NORAD/elements/gp.php?GROUP=last-30-days&FORMAT=tle")) {
+                    source.setEndpointUrl("https://celestrak.org/NORAD/elements/gp.php?GROUP=last-30-days&FORMAT=csv");
+                } else if (trimmedUrl.equalsIgnoreCase("https://www.navcen.uscg.gov/sites/default/files/gps/nanu/")) {
+                    source.setEndpointUrl("https://www.navcen.uscg.gov/gps-constellation");
+                } else if (trimmedUrl.equalsIgnoreCase("https://www.gsc-europa.eu/system-service-status/nagu-information")) {
+                    source.setEndpointUrl("https://www.gsc-europa.eu/system-status/user-notifications");
+                }
+            }
             if (source.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG
                     && source.getEndpointUrl() != null
                     && source.getEndpointUrl().trim().equalsIgnoreCase("https://geodesy.noaa.gov/CORS/All_CORS.txt")) {

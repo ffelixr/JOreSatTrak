@@ -47,21 +47,7 @@ public class TleFeedClient {
         if (source == null || source.getEndpointUrl() == null || source.getEndpointUrl().isBlank()) {
             throw new IOException("TLE source endpoint URL is empty");
         }
-        HttpRequest request;
-        try {
-            request = HttpRequestAuthApplier.buildRequest(
-                    source.getEndpointUrl(), source, requestTimeout);
-        } catch (IllegalArgumentException e) {
-            throw new IOException("Invalid TLE source endpoint URL: " + e.getMessage(), e);
-        }
-        HttpResponse<String> response;
-        try {
-            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("TLE feed request interrupted", e);
-        }
-
+        HttpResponse<String> response = sendWithCelesTrakCsvFallback(source.getEndpointUrl(), source);
         int status = response.statusCode();
         if (status < 200 || status >= 300) {
             throw new IOException("HTTP " + status + " from " + sourceLabel(source));
@@ -77,10 +63,7 @@ public class TleFeedClient {
             return new ConnectionTestResult(false, 0, 0, "Endpoint URL is empty");
         }
         try {
-            HttpRequest request = HttpRequestAuthApplier.buildRequest(
-                    source.getEndpointUrl(), source, requestTimeout);
-            HttpResponse<String> response = httpClient.send(
-                    request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            HttpResponse<String> response = sendWithCelesTrakCsvFallback(source.getEndpointUrl(), source);
             int status = response.statusCode();
             if (status >= 200 && status < 300) {
                 try {
@@ -92,13 +75,45 @@ public class TleFeedClient {
                 }
             }
             return new ConnectionTestResult(false, status, 0, "HTTP " + status);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return new ConnectionTestResult(false, 0, 0, "Connection test interrupted");
         } catch (Exception e) {
             String msg = e.getMessage();
             return new ConnectionTestResult(false, 0, 0,
                     (msg != null && !msg.isBlank()) ? msg : e.getClass().getSimpleName());
+        }
+    }
+
+    private HttpResponse<String> sendWithCelesTrakCsvFallback(String url, DataSourceConfig source)
+            throws IOException {
+        HttpResponse<String> response = sendGet(url, source);
+        int status = response.statusCode();
+        String body = response.body();
+        String lowerUrl = url.toLowerCase(Locale.ROOT);
+        boolean isCelesTrakTle = lowerUrl.contains("celestrak.org")
+                && lowerUrl.contains("gp.php")
+                && lowerUrl.contains("format=tle");
+        boolean noGpData = status >= 200 && status < 300
+                && body != null
+                && body.trim().startsWith("No GP data found");
+        if (isCelesTrakTle && (status == 404 || noGpData)) {
+            String csvUrl = url.replaceAll("(?i)FORMAT=tle", "FORMAT=csv");
+            return sendGet(csvUrl, source);
+        }
+        return response;
+    }
+
+    private HttpResponse<String> sendGet(String url, DataSourceConfig source)
+            throws IOException {
+        HttpRequest request;
+        try {
+            request = HttpRequestAuthApplier.buildRequest(url, source, requestTimeout);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid TLE source endpoint URL: " + e.getMessage(), e);
+        }
+        try {
+            return httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("TLE feed request interrupted", e);
         }
     }
 

@@ -192,9 +192,11 @@ public record GnssReferenceStation(
         if (other == null) {
             return this;
         }
-        EnumSet<GnssStationNetwork> mergedNets = EnumSet.copyOf(this.networks);
+        EnumSet<GnssStationNetwork> mergedNets = EnumSet.noneOf(GnssStationNetwork.class);
+        mergedNets.addAll(this.networks);
         mergedNets.addAll(other.networks);
-        EnumSet<GnssConstellation> mergedConsts = EnumSet.copyOf(this.supportedConstellations);
+        EnumSet<GnssConstellation> mergedConsts = EnumSet.noneOf(GnssConstellation.class);
+        mergedConsts.addAll(this.supportedConstellations);
         mergedConsts.addAll(other.supportedConstellations);
 
         List<String> mergedFormats = new ArrayList<>(this.availableFormats);

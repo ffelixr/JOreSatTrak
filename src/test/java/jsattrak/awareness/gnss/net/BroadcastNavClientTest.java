@@ -75,4 +75,87 @@ public class BroadcastNavClientTest {
             server.stop(0);
         }
     }
+
+    @Test
+    void discoversAndParsesUnixCompressedBrdcLastRnxZ() throws Exception {
+        byte[] zData = unixCompressLiteral9Bit(RinexNavHealthParserTest.RINEX3_FIXTURE);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        try {
+            server.createContext("/brdc/", exchange -> {
+                String path = exchange.getRequestURI().getPath();
+                if (path.endsWith("/brdc/")) {
+                    String html = """
+                            <html><body>
+                            <a href="2020/">2020/</a>
+                            <a href="brdc_last.rnx.Z">brdc_last.rnx.Z</a>
+                            </body></html>
+                            """;
+                    byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().add("Content-Type", "text/html");
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(bytes);
+                    }
+                } else if (path.endsWith("brdc_last.rnx.Z")) {
+                    exchange.getResponseHeaders().add("Content-Type", "application/x-compress");
+                    exchange.sendResponseHeaders(200, zData.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(zData);
+                    }
+                } else {
+                    exchange.sendResponseHeaders(404, -1);
+                }
+                exchange.close();
+            });
+            server.start();
+            String base = "http://127.0.0.1:" + server.getAddress().getPort();
+            DataSourceConfig zSource = new DataSourceConfig(
+                    "bkg-z", DataSourceConfig.FeedCategory.GNSS_BROADCAST_NAV, "",
+                    "BKG NTRIP BRDC", base + "/brdc/", true, 1, AuthMode.NONE, "", "", "", 15, false);
+
+            BroadcastNavClient client = new BroadcastNavClient();
+            BroadcastNavClient.BroadcastFetchResult result = client.fetchLatest(List.of(zSource));
+            assertTrue(result.resolvedFileUrl().endsWith("brdc_last.rnx.Z"));
+            assertTrue(result.parsed().latestByPrn().containsKey("G01"));
+            assertTrue(result.parsed().latestByPrn().get("G01").healthy());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private static byte[] unixCompressLiteral9Bit(String text) {
+        byte[] raw = text.getBytes(StandardCharsets.US_ASCII);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        out.write(0x1F);
+        out.write(0x9D);
+        out.write(0x8C); // blockMode=true, maxBits=12
+        long bitBuf = 0L;
+        int bitCount = 0;
+        int emittedSinceClear = 0;
+        for (byte b : raw) {
+            if (emittedSinceClear >= 200) {
+                bitBuf |= (256L << bitCount);
+                bitCount += 9;
+                while (bitCount >= 8) {
+                    out.write((int) (bitBuf & 0xFFL));
+                    bitBuf >>>= 8;
+                    bitCount -= 8;
+                }
+                emittedSinceClear = 0;
+            }
+            int code = b & 0xFF;
+            bitBuf |= ((long) code << bitCount);
+            bitCount += 9;
+            while (bitCount >= 8) {
+                out.write((int) (bitBuf & 0xFFL));
+                bitBuf >>>= 8;
+                bitCount -= 8;
+            }
+            emittedSinceClear++;
+        }
+        if (bitCount > 0) {
+            out.write((int) (bitBuf & 0xFFL));
+        }
+        return out.toByteArray();
+    }
 }

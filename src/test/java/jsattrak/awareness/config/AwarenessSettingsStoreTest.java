@@ -178,6 +178,61 @@ public class AwarenessSettingsStoreTest {
         assertEquals(4, loaded.getEnabledSourcesByCategory(DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS).size());
     }
 
+    @Test
+    void migratesRetiredCelesTrakNavcenNanuAndGscNaguUrls(@TempDir Path tmpDir) throws Exception {
+        Path file = tmpDir.resolve("awareness-settings-legacy-urls.json");
+        String json = """
+                {
+                  "schemaVersion": 3,
+                  "autoFetchOnStartup": false,
+                  "defaultHorizonDays": 7,
+                  "sources": [
+                    {
+                      "id": "celestrak-tle-new",
+                      "feedCategory": "TLE",
+                      "displayName": "CelesTrak Last 30 Days",
+                      "endpointUrl": "https://celestrak.org/NORAD/elements/gp.php?GROUP=last-30-days&FORMAT=tle",
+                      "enabled": true,
+                      "priority": 1,
+                      "authMode": "NONE",
+                      "refreshIntervalMinutes": 15
+                    },
+                    {
+                      "id": "navcen-gps-nanu",
+                      "feedCategory": "GNSS_OPERATOR_STATUS",
+                      "providerScope": "GPS_NANU",
+                      "displayName": "NAVCEN GPS NANU Archive",
+                      "endpointUrl": "https://www.navcen.uscg.gov/sites/default/files/gps/nanu/",
+                      "enabled": true,
+                      "priority": 1,
+                      "authMode": "NONE",
+                      "refreshIntervalMinutes": 15
+                    },
+                    {
+                      "id": "gsc-galileo-nagu",
+                      "feedCategory": "GNSS_OPERATOR_STATUS",
+                      "providerScope": "GALILEO_NAGU",
+                      "displayName": "GSC Galileo NAGU Feed",
+                      "endpointUrl": "https://www.gsc-europa.eu/system-service-status/nagu-information",
+                      "enabled": true,
+                      "priority": 1,
+                      "authMode": "NONE",
+                      "refreshIntervalMinutes": 15
+                    }
+                  ]
+                }
+                """;
+        Files.writeString(file, json);
+
+        AwarenessSettings loaded = new AwarenessSettingsStore(file).load();
+        assertEquals("https://celestrak.org/NORAD/elements/gp.php?GROUP=last-30-days&FORMAT=csv",
+                loaded.getSources().get(0).getEndpointUrl());
+        assertEquals("https://www.navcen.uscg.gov/gps-constellation",
+                loaded.getSources().get(1).getEndpointUrl());
+        assertEquals("https://www.gsc-europa.eu/system-status/user-notifications",
+                loaded.getSources().get(2).getEndpointUrl());
+    }
+
     private static void assertEq(Object expected, Object actual) {
         if (!Objects.equals(expected, actual)) {
             throw new AssertionError("Expected <" + expected + "> but was <" + actual + ">");

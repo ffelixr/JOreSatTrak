@@ -794,18 +794,26 @@ public class GnssEphemerisProvider {
     }
 
     private static byte[] unwrapGzipIfNeeded(byte[] raw) throws IOException {
-        if (raw.length >= 2 && (raw[0] & 0xFF) == 0x1F && (raw[1] & 0xFF) == 0x8B) {
-            ByteArrayOutputStream out = new ByteArrayOutputStream(raw.length * 4);
-            byte[] buf = new byte[8192];
-            try (GZIPInputStream gz = new GZIPInputStream(new ByteArrayInputStream(raw))) {
-                int n;
-                while ((n = gz.read(buf)) != -1) {
-                    out.write(buf, 0, n);
+        if (raw.length >= 2 && (raw[0] & 0xFF) == 0x1F) {
+            int b1 = raw[1] & 0xFF;
+            if (b1 == 0x8B || b1 == 0x9D) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream(raw.length * 4);
+                byte[] buf = new byte[8192];
+                try (java.io.InputStream compressed = (b1 == 0x8B)
+                        ? new GZIPInputStream(new ByteArrayInputStream(raw))
+                        : new org.orekit.data.UnixCompressFilter()
+                                .filter(new DataSource("nav.Z", () -> new ByteArrayInputStream(raw)))
+                                .getOpener()
+                                .openStreamOnce()) {
+                    int n;
+                    while ((n = compressed.read(buf)) != -1) {
+                        out.write(buf, 0, n);
+                    }
+                } catch (EOFException eof) {
+                    // Salvage decompressed content before a truncated compressed tail
                 }
-            } catch (EOFException eof) {
-                // Salvage decompressed content before a truncated GZIP tail
+                return out.toByteArray();
             }
-            return out.toByteArray();
         }
         return raw;
     }

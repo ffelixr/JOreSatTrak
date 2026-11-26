@@ -451,6 +451,21 @@ class GnssStationCatalogClientTest {
         AwarenessSettings migratedSingle = new AwarenessSettingsStore(fileOnlyAllCors).load();
         assertEquals("https://geodesy.noaa.gov/CORS/UFCORS_site_list.txt",
                 migratedSingle.getSources().get(0).getEndpointUrl());
+
+        // 5. Merging stations with empty supportedConstellations (e.g., sparse M3G metadata) must not throw
+        GnssReferenceStation emptyConstsA = new GnssReferenceStation(
+                "TEST00EUR", "TEST", "Test A", "EUR", GnssStationNetwork.EUREF,
+                EnumSet.of(GnssStationNetwork.EUREF), 48.0, 2.0, 100.0, null,
+                "", "", "", "", Set.of(), List.of(), 0L, -1, Double.NaN, GnssStationStatus.UNKNOWN, "");
+        GnssReferenceStation emptyConstsB = new GnssReferenceStation(
+                "TEST00EUR", "TEST", "Test B", "EUR", GnssStationNetwork.IGS,
+                EnumSet.of(GnssStationNetwork.IGS), 48.0, 2.0, 100.0, null,
+                "POLARX5", "", "", "", Set.of(), List.of(), 0L, -1, Double.NaN, GnssStationStatus.UNKNOWN, "");
+        List<GnssReferenceStation> emptyConstsMerged = GnssStationCatalogClient.deduplicateStations(
+                List.of(emptyConstsA, emptyConstsB));
+        assertEquals(1, emptyConstsMerged.size());
+        assertEquals(2, emptyConstsMerged.get(0).networks().size());
+        assertTrue(emptyConstsMerged.get(0).supportedConstellations().isEmpty());
     }
 
     private static void respondText(com.sun.net.httpserver.HttpExchange ex, int code, String contentType, String body)
