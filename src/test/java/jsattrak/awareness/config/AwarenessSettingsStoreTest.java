@@ -38,7 +38,8 @@ public class AwarenessSettingsStoreTest {
         assertEq(15, new DataSourceConfig().getRefreshIntervalMinutes());
         for (DataSourceConfig defaultSource : defaults.getSources()) {
             int expectedMinutes = (defaultSource.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_CATALOG
-                    || defaultSource.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_ORBITS_TLE)
+                    || defaultSource.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_ORBITS_TLE
+                    || defaultSource.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG)
                     ? 1440 : 15;
             assertEq(expectedMinutes, defaultSource.getRefreshIntervalMinutes());
         }

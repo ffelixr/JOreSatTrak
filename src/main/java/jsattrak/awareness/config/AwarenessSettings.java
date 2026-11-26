@@ -14,7 +14,7 @@ import jsattrak.awareness.gnss.GnssDisplayStatus;
  */
 public class AwarenessSettings {
 
-    public static final int CURRENT_SCHEMA_VERSION = 2;
+    public static final int CURRENT_SCHEMA_VERSION = 3;
 
     private int schemaVersion;
     private boolean autoFetchOnStartup;

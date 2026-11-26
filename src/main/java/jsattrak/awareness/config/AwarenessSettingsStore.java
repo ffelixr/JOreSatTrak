@@ -70,7 +70,9 @@ public class AwarenessSettingsStore {
 
     private static AwarenessSettings migrateAndNormalize(AwarenessSettings settings) {
         List<DataSourceConfig> sources = new ArrayList<>(settings.getSources());
-        boolean isPreGnssSchema = settings.getSchemaVersion() < AwarenessSettings.CURRENT_SCHEMA_VERSION;
+        int schemaVersion = settings.getSchemaVersion();
+        boolean isPreGnssSchema = schemaVersion < 2;
+        boolean isPreGnssStationsSchema = schemaVersion < AwarenessSettings.CURRENT_SCHEMA_VERSION;
         boolean hasAnyGnssSource = sources.stream().anyMatch(s -> s.getFeedCategory() != null
                 && s.getFeedCategory().name().startsWith("GNSS_"));
         if (isPreGnssSchema && !hasAnyGnssSource) {
@@ -80,7 +82,7 @@ public class AwarenessSettingsStore {
                 s.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG);
         boolean hasObsArchive = sources.stream().anyMatch(s ->
                 s.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_OBSERVATION_ARCHIVE);
-        if (!hasStationCatalog || !hasObsArchive) {
+        if (isPreGnssStationsSchema && (!hasStationCatalog || !hasObsArchive)) {
             for (DataSourceConfig def : AwarenessSettings.createDefaultGnssStationSources()) {
                 if ((def.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG && !hasStationCatalog)
                         || (def.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_OBSERVATION_ARCHIVE && !hasObsArchive)) {
