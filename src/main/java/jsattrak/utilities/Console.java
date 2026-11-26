@@ -28,11 +28,13 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 
 public class Console extends FilterOutputStream
 {
 
+    private static final String LOG_PREFIX = "[JOreSatTrak] ";
     private static ArrayList<ConsoleListener> registeredListeners = new ArrayList<ConsoleListener>();
     public static final PrintStream originalOut = System.out;
     public static final PrintStream originalErr = System.err;
@@ -42,10 +44,20 @@ public class Console extends FilterOutputStream
         // Tee stdout and stderr so logs appear in both the GUI console and terminal
         PrintStream printStream =
                 new PrintStream(
-                new Console(new ByteArrayOutputStream()), true);
+                new Console(new ByteArrayOutputStream()), true, StandardCharsets.UTF_8);
         System.setOut(printStream);
         System.setErr(printStream);
     }
+
+    /**
+     * Ensures stdout/stderr redirection is installed before early startup logging.
+     */
+    public static void install()
+    {
+        // Static initializer performs the installation once on class load.
+    }
+
+    private final ByteArrayOutputStream lineBuffer = new ByteArrayOutputStream();
 
     public Console(OutputStream out)
     {
@@ -55,25 +67,90 @@ public class Console extends FilterOutputStream
     /* Override Ancestor method */
     public void write(byte b[]) throws IOException
     {
-        originalOut.write(b);
-        String str = new String(b);
-        logMessage(str);
+        write(b, 0, b.length);
     }
 
     /* Override Ancestor method */
     public void write(byte b[], int off, int len) throws IOException
     {
-        originalOut.write(b, off, len);
-        String str = new String(b, off, len);
-        logMessage(str);
+        synchronized (lineBuffer)
+        {
+            for (int i = 0; i < len; i++)
+            {
+                processByte(b[off + i]);
+            }
+        }
     }
 
     /* Override Ancestor method */
     public void write(int b) throws IOException
     {
-        originalOut.write(b);
-        String str = new String(new char[]{(char) b});
-        logMessage(str);
+        synchronized (lineBuffer)
+        {
+            processByte(b);
+        }
+    }
+
+    @Override
+    public void flush() throws IOException
+    {
+        originalOut.flush();
+    }
+
+    @Override
+    public void close() throws IOException
+    {
+        synchronized (lineBuffer)
+        {
+            if (lineBuffer.size() > 0)
+            {
+                emitBufferedLine();
+            }
+        }
+        originalOut.flush();
+    }
+
+    private void processByte(int b) throws IOException
+    {
+        lineBuffer.write(b);
+        if (b == '\n')
+        {
+            emitBufferedLine();
+        }
+    }
+
+    private void emitBufferedLine() throws IOException
+    {
+        String rawLine = lineBuffer.toString(StandardCharsets.UTF_8);
+        lineBuffer.reset();
+        String formatted = formatWithPrefix(rawLine);
+        originalOut.write(formatted.getBytes(StandardCharsets.UTF_8));
+        logMessage(formatted);
+    }
+
+    static String formatWithPrefix(String line)
+    {
+        if (line == null || line.isEmpty())
+        {
+            return "";
+        }
+        String body = line;
+        String ending = "";
+        if (body.endsWith("\r\n"))
+        {
+            body = body.substring(0, body.length() - 2);
+            ending = "\r\n";
+        }
+        else if (body.endsWith("\n"))
+        {
+            body = body.substring(0, body.length() - 1);
+            ending = "\n";
+        }
+        if (body.isBlank() || body.startsWith("[JOreSatTrak]"))
+        {
+            return body + ending;
+        }
+        return LOG_PREFIX + body + ending;
     }
 
     public static void registerOutputListener(ConsoleListener listener)

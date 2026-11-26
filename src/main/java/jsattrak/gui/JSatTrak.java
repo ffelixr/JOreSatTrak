@@ -660,7 +660,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         jMenuItem2.setText("jMenuItem2");
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
-        setTitle("JSatTrak"); // NOI18N
+        setTitle("JOreSatTrak"); // NOI18N
 
         jPanel3.setLayout(new java.awt.BorderLayout());
 
@@ -3623,7 +3623,10 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         messageTimer.restart();
 
         // so this shows up in console
-        System.out.println(msg);
+        if (msg != null && !msg.isBlank()) {
+            String prefixed = msg.startsWith("[JOreSatTrak]") ? msg : "[JOreSatTrak] " + msg;
+            System.out.println(prefixed);
+        }
     }
 
     /**
@@ -3921,6 +3924,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
      *             script runme.bsh and save output to the satLog.txt file)
      */
     public static void main(final String args[]) {
+        jsattrak.utilities.Console.install();
 
         try {
             System.out.println("[JOreSatTrak] Starting Orekit initialization...");
