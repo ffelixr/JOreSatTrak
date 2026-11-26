@@ -35,9 +35,72 @@ public record GnssReferenceStation(
         int latencyMinutes,
         double availabilityPct,
         GnssStationStatus status,
-        String observationHintUrl) {
+        String observationHintUrl,
+        boolean explicitEcef) {
 
     private static final double EARTH_RADIUS_KM = 6371.0088;
+
+    public GnssReferenceStation(
+            String stationId,
+            String shortCode,
+            String siteName,
+            String countryCode,
+            GnssStationNetwork primaryNetwork,
+            Set<GnssStationNetwork> networks,
+            double latDeg,
+            double lonDeg,
+            double altMeters,
+            double[] monumentEcef,
+            String receiverModel,
+            String receiverFirmware,
+            String antennaModel,
+            String radomeCode,
+            Set<GnssConstellation> supportedConstellations,
+            List<String> availableFormats,
+            long lastObsEpochMillis,
+            int latencyMinutes,
+            double availabilityPct,
+            GnssStationStatus status,
+            String observationHintUrl) {
+        this(stationId, shortCode, siteName, countryCode, primaryNetwork, networks,
+                latDeg, lonDeg, altMeters, monumentEcef,
+                monumentEcef != null && monumentEcef.length == 3
+                        && isFiniteVector(monumentEcef) && hasNonZeroEcef(monumentEcef),
+                receiverModel, receiverFirmware, antennaModel, radomeCode,
+                supportedConstellations, availableFormats,
+                lastObsEpochMillis, latencyMinutes, availabilityPct, status, observationHintUrl);
+    }
+
+    public GnssReferenceStation(
+            String stationId,
+            String shortCode,
+            String siteName,
+            String countryCode,
+            GnssStationNetwork primaryNetwork,
+            Set<GnssStationNetwork> networks,
+            double latDeg,
+            double lonDeg,
+            double altMeters,
+            double[] monumentEcef,
+            boolean explicitEcef,
+            String receiverModel,
+            String receiverFirmware,
+            String antennaModel,
+            String radomeCode,
+            Set<GnssConstellation> supportedConstellations,
+            List<String> availableFormats,
+            long lastObsEpochMillis,
+            int latencyMinutes,
+            double availabilityPct,
+            GnssStationStatus status,
+            String observationHintUrl) {
+        this(stationId, shortCode, siteName, countryCode, primaryNetwork, networks,
+                latDeg, lonDeg, altMeters, monumentEcef,
+                receiverModel, receiverFirmware, antennaModel, radomeCode,
+                supportedConstellations, availableFormats,
+                lastObsEpochMillis, latencyMinutes, availabilityPct, status, observationHintUrl,
+                explicitEcef);
+    }
 
     public GnssReferenceStation {
         stationId = stationId != null ? stationId.trim().toUpperCase(Locale.US) : "";
@@ -97,7 +160,8 @@ public record GnssReferenceStation(
                 supportedConstellations,
                 (availableFormats != null && !availableFormats.isEmpty()) ? availableFormats : this.availableFormats,
                 lastObsEpochMillis, latencyMinutes, availabilityPct, status,
-                (observationHintUrl != null && !observationHintUrl.isBlank()) ? observationHintUrl : this.observationHintUrl);
+                (observationHintUrl != null && !observationHintUrl.isBlank()) ? observationHintUrl : this.observationHintUrl,
+                this.explicitEcef);
     }
 
     public GnssReferenceStation withHardware(
@@ -107,16 +171,18 @@ public record GnssReferenceStation(
             String radomeCode,
             Set<GnssConstellation> constellations,
             double[] ecef) {
+        boolean hasExplicit = (ecef != null && ecef.length == 3 && isFiniteVector(ecef) && hasNonZeroEcef(ecef));
         return new GnssReferenceStation(
                 stationId, shortCode, siteName, countryCode, primaryNetwork, networks,
                 latDeg, lonDeg, altMeters,
-                (ecef != null && ecef.length == 3) ? ecef : this.monumentEcef,
+                hasExplicit ? ecef : this.monumentEcef,
                 preferNonBlank(receiverModel, this.receiverModel),
                 preferNonBlank(receiverFirmware, this.receiverFirmware),
                 preferNonBlank(antennaModel, this.antennaModel),
                 preferNonBlank(radomeCode, this.radomeCode),
                 (constellations != null && !constellations.isEmpty()) ? constellations : this.supportedConstellations,
-                availableFormats, lastObsEpochMillis, latencyMinutes, availabilityPct, status, observationHintUrl);
+                availableFormats, lastObsEpochMillis, latencyMinutes, availabilityPct, status, observationHintUrl,
+                hasExplicit || this.explicitEcef);
     }
 
     /**
@@ -139,8 +205,11 @@ public record GnssReferenceStation(
         }
 
         String bestId = this.stationId.length() >= other.stationId.length() ? this.stationId : other.stationId;
-        double[] bestEcef = hasNonZeroEcef(other.monumentEcef) && !hasNonZeroEcef(this.monumentEcef)
-                ? other.monumentEcef : this.monumentEcef;
+        boolean useOtherEcef = (other.explicitEcef && !this.explicitEcef && hasNonZeroEcef(other.monumentEcef))
+                || (!hasNonZeroEcef(this.monumentEcef) && hasNonZeroEcef(other.monumentEcef));
+        double[] bestEcef = useOtherEcef ? other.monumentEcef : this.monumentEcef;
+        boolean bestExplicitEcef = (this.explicitEcef && hasNonZeroEcef(this.monumentEcef))
+                || (other.explicitEcef && hasNonZeroEcef(other.monumentEcef));
         long bestObs = Math.max(this.lastObsEpochMillis, other.lastObsEpochMillis);
         int bestLatency = (this.latencyMinutes >= 0 && other.latencyMinutes >= 0)
                 ? Math.min(this.latencyMinutes, other.latencyMinutes)
@@ -169,7 +238,8 @@ public record GnssReferenceStation(
                 bestLatency,
                 Double.isFinite(this.availabilityPct) ? this.availabilityPct : other.availabilityPct,
                 bestStatus,
-                preferNonBlank(this.observationHintUrl, other.observationHintUrl));
+                preferNonBlank(this.observationHintUrl, other.observationHintUrl),
+                bestExplicitEcef);
     }
 
     /**

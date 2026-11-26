@@ -97,19 +97,6 @@ public class BkgHourlyRinexSource implements GnssObservationSource {
             throw new IOException("No enabled BKG observation archive configured for " + station.stationId());
         }
 
-        // Fast check when offline using previously resolved URI in disk cache (live mode only)
-        if (!useHistoricalDaily && diskCache != null) {
-            String cachedUri = lastResolvedUriByStation.get(station.stationId());
-            if (cachedUri != null) {
-                byte[] bytes = diskCache.get(cachedUri, nowMillis);
-                if (bytes != null) {
-                    RinexObservationData data = RinexObservationLoader.parse(bytes, extractFileName(cachedUri));
-                    return new ObservationFetchResult(
-                            station, data, getDisplayName(), cachedUri, nowMillis, formatLabel(cachedUri));
-                }
-            }
-        }
-
         IOException lastFailure = null;
         for (DataSourceConfig src : matching) {
             String base = src.getEndpointUrl().trim();
@@ -132,7 +119,7 @@ public class BkgHourlyRinexSource implements GnssObservationSource {
                             diskCache.put(fileUrl, payload, nowMillis);
                         }
                     }
-                    if (!useHistoricalDaily) {
+                    if (preferLatest) {
                         lastResolvedUriByStation.put(station.stationId(), fileUrl);
                     }
                     String fname = extractFileName(fileUrl);
@@ -157,11 +144,26 @@ public class BkgHourlyRinexSource implements GnssObservationSource {
                     }
                 }
                 RinexObservationData obs = RinexObservationLoader.parse(payload, extractFileName(hintUrl));
-                lastResolvedUriByStation.put(station.stationId(), hintUrl);
+                if (preferLatest) {
+                    lastResolvedUriByStation.put(station.stationId(), hintUrl);
+                }
                 return new ObservationFetchResult(
                         station, obs, getDisplayName(), hintUrl, nowMillis, formatLabel(hintUrl));
             } catch (IOException | RuntimeException e) {
                 lastFailure = (e instanceof IOException io) ? io : new IOException(e.getMessage(), e);
+            }
+        }
+
+        // Offline fallback: only serve previously cached latest URI if network probes failed
+        if (lastFailure != null && preferLatest && diskCache != null) {
+            String cachedUri = lastResolvedUriByStation.get(station.stationId());
+            if (cachedUri != null) {
+                byte[] bytes = diskCache.get(cachedUri, nowMillis);
+                if (bytes != null) {
+                    RinexObservationData data = RinexObservationLoader.parse(bytes, extractFileName(cachedUri));
+                    return new ObservationFetchResult(
+                            station, data, getDisplayName(), cachedUri, nowMillis, formatLabel(cachedUri));
+                }
             }
         }
 

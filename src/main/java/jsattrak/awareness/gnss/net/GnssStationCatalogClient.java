@@ -21,6 +21,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -424,8 +425,20 @@ public class GnssStationCatalogClient {
         double x = firstFinite(dbl(props, "x"), dbl(props, "xCoordinate"), Double.NaN);
         double y = firstFinite(dbl(props, "y"), dbl(props, "yCoordinate"), Double.NaN);
         double z = firstFinite(dbl(props, "z"), dbl(props, "zCoordinate"), Double.NaN);
-        double[] ecef = (Double.isFinite(x) && Double.isFinite(y) && Double.isFinite(z))
+        double[] ecef = (Double.isFinite(x) && Double.isFinite(y) && Double.isFinite(z) && (x != 0.0 || y != 0.0 || z != 0.0))
                 ? new double[]{x, y, z} : null;
+
+        if ((!Double.isFinite(lat) || !Double.isFinite(lon)) && ecef != null) {
+            double[] lla = jsattrak.awareness.gnss.stations.obs.LocalRinexFileSource.ecefToGeodeticDeg(
+                    ecef[0], ecef[1], ecef[2]);
+            if (Double.isFinite(lla[0]) && Double.isFinite(lla[1])) {
+                lat = lla[0];
+                lon = lla[1];
+                if (!Double.isFinite(alt)) {
+                    alt = lla[2];
+                }
+            }
+        }
 
         if (!Double.isFinite(lat) || !Double.isFinite(lon)) {
             return null;
@@ -589,48 +602,38 @@ public class GnssStationCatalogClient {
     }
 
     static List<GnssReferenceStation> deduplicateStations(List<GnssReferenceStation> input) {
-        Map<String, GnssReferenceStation> byNineChar = new LinkedHashMap<>();
+        Map<String, Integer> indexById = new HashMap<>();
         List<GnssReferenceStation> result = new ArrayList<>();
 
         for (GnssReferenceStation st : input) {
             if (st == null || st.stationId().isBlank()) {
                 continue;
             }
-            if (byNineChar.containsKey(st.stationId())) {
-                GnssReferenceStation merged = byNineChar.get(st.stationId()).mergeWith(st);
-                byNineChar.put(st.stationId(), merged);
-                continue;
-            }
-            // Match existing 4-char shortCode within 5 km baseline
-            int matchIdx = -1;
-            for (int i = 0; i < result.size(); i++) {
-                GnssReferenceStation existing = result.get(i);
-                if (existing.shortCode().equalsIgnoreCase(st.shortCode())
-                        && existing.distanceKmTo(st.latDeg(), st.lonDeg()) <= DEDUP_BASELINE_KM) {
-                    matchIdx = i;
-                    break;
+            Integer existingIdx = indexById.get(st.stationId());
+            if (existingIdx == null) {
+                for (int i = 0; i < result.size(); i++) {
+                    GnssReferenceStation existing = result.get(i);
+                    if (existing.shortCode().equalsIgnoreCase(st.shortCode())
+                            && existing.distanceKmTo(st.latDeg(), st.lonDeg()) <= DEDUP_BASELINE_KM) {
+                        existingIdx = i;
+                        break;
+                    }
                 }
             }
-            if (matchIdx >= 0) {
-                GnssReferenceStation existing = result.get(matchIdx);
+            if (existingIdx != null) {
+                GnssReferenceStation existing = result.get(existingIdx);
                 GnssReferenceStation merged = existing.mergeWith(st);
-                result.set(matchIdx, merged);
-                byNineChar.put(merged.stationId(), merged);
-                byNineChar.put(st.stationId(), merged);
+                result.set(existingIdx, merged);
+                indexById.put(existing.stationId(), existingIdx);
+                indexById.put(st.stationId(), existingIdx);
+                indexById.put(merged.stationId(), existingIdx);
             } else {
+                int newIdx = result.size();
                 result.add(st);
-                byNineChar.put(st.stationId(), st);
+                indexById.put(st.stationId(), newIdx);
             }
         }
-        // Re-sync any nineChar merges back into result list
-        List<GnssReferenceStation> finalMerged = new ArrayList<>(result.size());
-        for (GnssReferenceStation st : result) {
-            GnssReferenceStation latest = byNineChar.getOrDefault(st.stationId(), st);
-            if (!finalMerged.contains(latest)) {
-                finalMerged.add(latest);
-            }
-        }
-        return finalMerged;
+        return result;
     }
 
     private void probeBkgNrtDirectories(

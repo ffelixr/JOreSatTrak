@@ -57,6 +57,14 @@ class RegionalCn0AnomalyDetectorTest {
         assertTrue(regionalReport.centroidLatDeg() >= 40.35 && regionalReport.centroidLatDeg() <= 40.75);
         assertFalse(regionalReport.prnColumns().isEmpty());
         assertTrue(regionalReport.deltaCn0Matrix().get("ST0100ESP").get("G01") <= -7.0);
+
+        // 4. Unknown-elevation (NaN) SVs must NOT bypass the < 15 deg horizon filter
+        List<RegionalCn0AnomalyDetector.StationObservationInput> nanElevationOnly = List.of(
+                input(st1, t0, Double.NaN, 34.0, 0.0, 0),
+                input(st2, t0, Double.NaN, 33.0, 0.0, 0)
+        );
+        RegionalScanReport nanElReport = RegionalCn0AnomalyDetector.evaluate(nanElevationOnly);
+        assertEquals(RegionalScanReport.RegionalEventSeverity.NOMINAL, nanElReport.severity());
     }
 
     private static GnssReferenceStation station(String id, double lat, double lon) {

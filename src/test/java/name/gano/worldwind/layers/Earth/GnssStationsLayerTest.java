@@ -17,6 +17,8 @@ import gov.nasa.worldwind.render.SurfaceCircle;
 import java.awt.Point;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
@@ -77,6 +79,9 @@ class GnssStationsLayerTest {
                 tmpDir, List.of(), List.of(), Map.of(), Map.of(), List.of());
         awareness.syncSettingsSilently(settings);
         GnssGeometryService geometry = new GnssGeometryService(awareness, store);
+        Path sp3File = tmpDir.resolve("layer_test_ephem.sp3");
+        Files.writeString(sp3File, buildSp3AboveMadrid(), StandardCharsets.UTF_8);
+        geometry.loadLocalEphemerisFile(sp3File);
 
         List<GnssReferenceStation> stations = new ArrayList<>();
         for (int i = 0; i < 6; i++) {
@@ -318,5 +323,51 @@ class GnssStationsLayerTest {
                 99.5,
                 GnssStationStatus.ONLINE,
                 null);
+    }
+
+    private static String buildSp3AboveMadrid() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("#cP2026 11 25 18  0  0.00000000       9 ORBIT IGS20 HLM  IGS\n");
+        sb.append("## 2446 259200.00000000   900.00000000 61369 0.0000000000000\n");
+        sb.append("+    3   G01G02E11  0  0  0  0  0  0  0  0  0  0  0  0  0  0\n");
+        for (int i = 0; i < 4; i++) {
+            sb.append("+          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0\n");
+        }
+        for (int i = 0; i < 5; i++) {
+            sb.append("++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0\n");
+        }
+        sb.append("%c M  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc\n");
+        sb.append("%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc\n");
+        sb.append("%f  1.2500000  1.025000000  0.00000000000  0.000000000000000\n");
+        sb.append("%f  0.0000000  0.000000000  0.00000000000  0.000000000000000\n");
+        sb.append("%i    0    0    0    0      0      0      0      0         0\n");
+        sb.append("%i    0    0    0    0      0      0      0      0         0\n");
+        for (int i = 0; i < 4; i++) {
+            sb.append("/* Layer test SP3\n");
+        }
+        double[][] defs = {{45.0, 55.0}, {140.0, 40.0}, {300.0, 50.0}};
+        String[] names = {"PG01", "PG02", "PE11"};
+        double[] obs = jsattrak.awareness.gnss.geometry.GnssDopCalculator.geodeticToEcef(40.4, -3.7, 650.0);
+        double lat = Math.toRadians(40.4);
+        double lon = Math.toRadians(-3.7);
+        for (int step = 0; step < 9; step++) {
+            int totalMin = 18 * 60 + step * 15;
+            sb.append(String.format(Locale.US, "*  2026 11 25 %2d %2d  0.00000000%n", totalMin / 60, totalMin % 60));
+            for (int k = 0; k < names.length; k++) {
+                double az = Math.toRadians(defs[k][0]);
+                double el = Math.toRadians(defs[k][1]);
+                double r = 21_500_000.0;
+                double e = r * Math.cos(el) * Math.sin(az);
+                double n = r * Math.cos(el) * Math.cos(az);
+                double u = r * Math.sin(el);
+                double dx = -Math.sin(lon) * e - Math.sin(lat) * Math.cos(lon) * n + Math.cos(lat) * Math.cos(lon) * u;
+                double dy = Math.cos(lon) * e - Math.sin(lat) * Math.sin(lon) * n + Math.cos(lat) * Math.sin(lon) * u;
+                double dz = Math.cos(lat) * n + Math.sin(lat) * u;
+                sb.append(String.format(Locale.US, "%s%14.6f%14.6f%14.6f%14.6f%n",
+                        names[k], (obs[0] + dx) / 1000.0, (obs[1] + dy) / 1000.0, (obs[2] + dz) / 1000.0, 10.0));
+            }
+        }
+        sb.append("EOF\n");
+        return sb.toString();
     }
 }

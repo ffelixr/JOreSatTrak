@@ -590,10 +590,30 @@ public class GnssEphemerisProvider {
             boolean clkValid = false;
             double c = 299_792_458.0;
             if (chosen.keplerElements() instanceof GNSSClockElements clk) {
-                double dt = targetDate.durationFrom(chosen.keplerElements().getDate());
+                AbsoluteDate tocDate = (chosen.keplerElements() instanceof org.orekit.propagation.analytical.gnss.data.AbstractNavigationMessage<?> navMsg
+                        && navMsg.getEpochToc() != null)
+                        ? navMsg.getEpochToc()
+                        : chosen.keplerElements().getDate();
+                double dt = targetDate.durationFrom(tocDate);
                 double rel = -2.0 * pos.dotProduct(vel) / (c * c);
                 clkBiasSec = clk.getAf0() + clk.getAf1() * dt + clk.getAf2() * dt * dt + rel;
                 double rawTgd = clk.getTGD();
+                if (clk instanceof org.orekit.propagation.analytical.gnss.data.GalileoNavigationMessage gal) {
+                    double bgd = gal.getBGDE1E5a();
+                    if (Double.isFinite(bgd)) {
+                        rawTgd = bgd;
+                    }
+                } else if (clk instanceof org.orekit.propagation.analytical.gnss.data.BeidouLegacyNavigationMessage bds) {
+                    double tgd1 = bds.getTGD1();
+                    if (Double.isFinite(tgd1)) {
+                        rawTgd = tgd1;
+                    }
+                } else if (clk instanceof org.orekit.propagation.analytical.gnss.data.BeidouCivilianNavigationMessage bdsCiv) {
+                    double tgdB1 = bdsCiv.getTgdB1Cp();
+                    if (Double.isFinite(tgdB1)) {
+                        rawTgd = tgdB1;
+                    }
+                }
                 tgdSec = Double.isFinite(rawTgd) ? rawTgd : 0.0;
                 clkValid = Double.isFinite(clkBiasSec);
             } else if (chosen.glonassElements() instanceof GLONASSNavigationMessage glo) {

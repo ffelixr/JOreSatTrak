@@ -103,9 +103,10 @@ class GnssStationServiceTest {
         GnssStationService svc = new GnssStationService(
                 awareness, geom, store, cachePath, mockCat, List.of(mockObsSource), null);
 
-        // 1. Startup silence + seed load
+        // 1. Startup silence + seed load (not stale offline before first live sync)
         svc.initializeAtStartup();
         assertEquals(0, catCalls.get());
+        assertFalse(svc.isDataStale(), "Initial offline seed state must not report Stale before any sync failure");
         assertTrue(svc.getStations().size() >= 30, "Seed must populate startup stations");
         assertFalse(svc.isMapOverlayEnabled());
 
@@ -266,6 +267,71 @@ class GnssStationServiceTest {
         assertNotNull(svc.getLatestAnalysis());
         assertEquals(2, svc.getLatestRegionalReport().stations().size());
 
+        // Offset-clamped sim-epoch ticks must not cancel an in-flight explicit Fetch Latest Obs
+        long nowOutsideObs = histEpoch + 12L * 3600_000L;
+        svc.updateSimEpochMillis(nowOutsideObs, true);
+        svc.updateSimEpochMillis(nowOutsideObs + 60_000L, true);
+
+        CountDownLatch slowBarrierStart = new CountDownLatch(1);
+        CountDownLatch slowBarrierRelease = new CountDownLatch(1);
+        AtomicInteger callSeq = new AtomicInteger(0);
+        GnssObservationSource barrierSource = new GnssObservationSource() {
+            @Override public String getSourceId() { return "barrier"; }
+            @Override public String getDisplayName() { return "Barrier"; }
+            @Override public boolean supportsNetwork(GnssStationNetwork n) { return true; }
+            @Override public boolean isRealTimeStream() { return false; }
+            @Override public ObservationFetchResult fetchObservations(GnssReferenceStation s, ObservationQuery q) throws IOException {
+                int c = callSeq.incrementAndGet();
+                if (c == 2) {
+                    slowBarrierStart.countDown();
+                    try { slowBarrierRelease.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
+                }
+                RinexObservationData data = RinexObservationLoaderHelper.parseMinimal(s.stationId(), s.monumentEcef());
+                return new ObservationFetchResult(s, data, "Barrier", "mock://b" + c, q.targetEpochMillis(), "RNX");
+            }
+        };
+        GnssStationService tickIsolationSvc = new GnssStationService(
+                awareness, geom, store, tmpDir.resolve("tick-cache-2.json"),
+                mockCat, List.of(barrierSource), null);
+        CountDownLatch catLatch3 = new CountDownLatch(1);
+        CountDownLatch firstDone = new CountDownLatch(1);
+        CountDownLatch secondDone = new CountDownLatch(1);
+        tickIsolationSvc.addListener(new GnssStationListener() {
+            @Override public void onStationCatalogChanged() { catLatch3.countDown(); }
+            @Override public void onInspectionUpdated(jsattrak.awareness.gnss.stations.analysis.GnssStationAnalysis a) {
+                if (callSeq.get() == 1) firstDone.countDown();
+                else if (callSeq.get() >= 2) secondDone.countDown();
+            }
+        });
+        tickIsolationSvc.refreshNowAsync();
+        assertTrue(catLatch3.await(5, TimeUnit.SECONDS));
+        tickIsolationSvc.selectStation("MADR00ESP");
+        tickIsolationSvc.updateSimEpochMillis(histEpoch + 10L * 3600_000L, true);
+        tickIsolationSvc.fetchSelectedStationObservationsAsync();
+        assertTrue(firstDone.await(5, TimeUnit.SECONDS));
+
+        // Now start a second fetch and fire simulation ticks mid-flight; ticks must NOT drop the fetch!
+        tickIsolationSvc.fetchSelectedStationObservationsAsync();
+        assertTrue(slowBarrierStart.await(5, TimeUnit.SECONDS));
+        tickIsolationSvc.updateSimEpochMillis(histEpoch + 11L * 3600_000L, true);
+        tickIsolationSvc.updateSimEpochMillis(histEpoch + 12L * 3600_000L, true);
+        slowBarrierRelease.countDown();
+        assertTrue(secondDone.await(5, TimeUnit.SECONDS),
+                "Background sim-epoch ticks must not cancel in-flight explicit observation fetch");
+
+        // Importing a local file matching an existing catalog station preserves its existing network membership
+        Path matchingLocal = tmpDir.resolve("MADR00ESP.rnx");
+        Files.writeString(matchingLocal, buildSampleRnx("MADR00ESP", 4849202.3, -360328.9, 4114913.2), StandardCharsets.UTF_8);
+        CountDownLatch localMergeLatch = new CountDownLatch(1);
+        tickIsolationSvc.addListener(new GnssStationListener() {
+            @Override public void onStationCatalogChanged() { localMergeLatch.countDown(); }
+        });
+        tickIsolationSvc.loadLocalObservationFilesAsync(List.of(matchingLocal));
+        assertTrue(localMergeLatch.await(5, TimeUnit.SECONDS));
+        assertTrue(tickIsolationSvc.findStationById("MADR00ESP").networks().contains(GnssStationNetwork.IGS),
+                "Local RINEX import must preserve existing IGS network membership");
+
+        tickIsolationSvc.shutdown();
         svc.shutdown();
         geom.shutdown();
     }

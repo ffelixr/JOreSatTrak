@@ -213,10 +213,10 @@ public class GnssCn0ChartPanel extends JPanel {
 
         List<HitTip> tips = new ArrayList<>();
         for (Cn0ElevationPoint pt : analysis.elevationScatter()) {
-            double el = Double.isFinite(pt.elevationDeg()) ? pt.elevationDeg() : 30.0;
-            if (!Double.isFinite(pt.cn0DbHz())) {
+            if (!Double.isFinite(pt.elevationDeg()) || !Double.isFinite(pt.cn0DbHz())) {
                 continue;
             }
+            double el = pt.elevationDeg();
             int cx = (int) Math.round(px + (Math.max(0.0, Math.min(90.0, el)) / 90.0) * pw);
             int cy = yForCn0(pt.cn0DbHz(), py, ph);
             Color dotColor = colorForDelta(pt.deltaCn0DbHz());
@@ -229,6 +229,12 @@ public class GnssCn0ChartPanel extends JPanel {
             tips.add(new HitTip(cx, cy, String.format(Locale.US,
                     "<html><b>%s</b> &middot; El %.1f&deg;<br/>C/N0 %.1f dB-Hz (&Delta; %+.1f dB)</html>",
                     pt.prnId(), el, pt.cn0DbHz(), pt.deltaCn0DbHz())));
+        }
+        if (tips.isEmpty() && !analysis.elevationScatter().isEmpty()) {
+            g2.setColor(mutedColor);
+            g2.setFont(getFont().deriveFont(Font.PLAIN, 11.0f));
+            String noEph = "Elevation ephemeris unavailable (load TLE or Nav/SP3)";
+            g2.drawString(noEph, px + Math.max(8, (pw - fm.stringWidth(noEph)) / 2), py + ph / 2);
         }
         this.hoverTargets = List.copyOf(tips);
 

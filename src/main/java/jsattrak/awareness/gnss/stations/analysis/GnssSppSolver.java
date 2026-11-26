@@ -191,18 +191,23 @@ public final class GnssSppSolver {
         }
 
         // One robust >30 m outlier rejection pass if enough SVs exist
-        List<MeasObs> inliers = new ArrayList<>(measList.size());
-        for (int i = 0; i < measList.size(); i++) {
+        List<MeasObs> used = attempt.usedMeas();
+        List<MeasObs> inliers = new ArrayList<>(used.size());
+        for (int i = 0; i < used.size(); i++) {
             if (Math.abs(attempt.residuals()[i]) <= OUTLIER_THRESHOLD_METERS) {
-                inliers.add(measList.get(i));
+                inliers.add(used.get(i));
             }
         }
-        if (inliers.size() < measList.size() && inliers.size() >= 4) {
+        if (inliers.size() < used.size() && inliers.size() >= 4) {
             SppSolveAttempt cleanAttempt = runGaussNewtonWithIsb(inliers, monumentEcef);
             if (cleanAttempt != null) {
                 attempt = cleanAttempt;
-                measList = inliers;
+                measList = cleanAttempt.usedMeas();
+            } else {
+                measList = used;
             }
+        } else {
+            measList = used;
         }
 
         double[] solved = attempt.xyz();
@@ -227,11 +232,12 @@ public final class GnssSppSolver {
                 measList.size(), "OK");
     }
 
-    private record SppSolveAttempt(double[] xyz, double cDtMeters, double[] residuals) {
+    private record SppSolveAttempt(double[] xyz, double cDtMeters, double[] residuals, List<MeasObs> usedMeas) {
     }
 
     private static SppSolveAttempt runGaussNewtonWithIsb(List<MeasObs> meas, double[] initEcef) {
-        // Count per-constellation SVs; include ISB states for extra constellations with >=2 SVs when N >= 4 + extraCount
+        // Count per-constellation SVs; include ISB states only for extra constellations with >=2 SVs
+        // so uncalibrated singletons cannot poison WLS when primary or ISB geometry already suffices.
         Map<GnssConstellation, Integer> counts = new LinkedHashMap<>();
         for (MeasObs m : meas) {
             counts.merge(m.sat().constellation(), 1, Integer::sum);
@@ -245,20 +251,38 @@ public final class GnssSppSolver {
                 extraIsbConsts.add(e.getKey());
             }
         }
-        if (meas.size() < 4 + extraIsbConsts.size() + 1) {
-            // Too few measurements for extra ISBs; filter to dominant constellation if >=4, else 4-param
-            if (counts.getOrDefault(refConst, 0) >= 4) {
-                List<MeasObs> single = new ArrayList<>();
-                for (MeasObs m : meas) {
-                    if (m.sat().constellation() == refConst) {
-                        single.add(m);
-                    }
-                }
-                return solveWls(single, List.of(), refConst, initEcef);
-            }
-            extraIsbConsts = List.of();
+        List<MeasObs> eligible = filterByConstellations(meas, refConst, extraIsbConsts);
+        if (!extraIsbConsts.isEmpty() && eligible.size() >= 4 + extraIsbConsts.size() + 1) {
+            return solveWls(eligible, extraIsbConsts, refConst, initEcef);
         }
-        return solveWls(meas, extraIsbConsts, refConst, initEcef);
+        if (counts.getOrDefault(refConst, 0) >= 4) {
+            return solveWls(filterByConstellations(meas, refConst, List.of()), List.of(), refConst, initEcef);
+        }
+        for (Map.Entry<GnssConstellation, Integer> e : counts.entrySet()) {
+            if (e.getValue() >= 4) {
+                return solveWls(filterByConstellations(meas, e.getKey(), List.of()), List.of(), e.getKey(), initEcef);
+            }
+        }
+        if (!extraIsbConsts.isEmpty() && eligible.size() >= 4 + extraIsbConsts.size()) {
+            SppSolveAttempt attempt = solveWls(eligible, extraIsbConsts, refConst, initEcef);
+            if (attempt != null) {
+                return attempt;
+            }
+        }
+        // Minimal 4-SV mixed-constellation fallback only when no single constellation has >=4 SVs
+        return solveWls(meas, List.of(), refConst, initEcef);
+    }
+
+    private static List<MeasObs> filterByConstellations(
+            List<MeasObs> meas, GnssConstellation refConst, List<GnssConstellation> extraConsts) {
+        List<MeasObs> filtered = new ArrayList<>(meas.size());
+        for (MeasObs m : meas) {
+            GnssConstellation c = m.sat().constellation();
+            if (c == refConst || extraConsts.contains(c)) {
+                filtered.add(m);
+            }
+        }
+        return filtered;
     }
 
     private static SppSolveAttempt solveWls(
@@ -347,7 +371,7 @@ public final class GnssSppSolver {
                 break;
             }
         }
-        return new SppSolveAttempt(new double[]{state[0], state[1], state[2]}, state[3], lastRes);
+        return new SppSolveAttempt(new double[]{state[0], state[1], state[2]}, state[3], lastRes, meas);
     }
 
     private static double buildCorrectedPseudorange(

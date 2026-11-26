@@ -63,7 +63,7 @@ public final class RegionalCn0AnomalyDetector {
                 }
                 prnSet.add(sat.prnId());
                 stationRow.put(sat.prnId(), sat.medianDeltaCn0DbHz());
-                if (!Double.isFinite(sat.elevationDeg()) || sat.elevationDeg() >= MIN_ANOMALY_ELEVATION_DEG) {
+                if (Double.isFinite(sat.elevationDeg()) && sat.elevationDeg() >= MIN_ANOMALY_ELEVATION_DEG) {
                     svMedDeltasHighEl.add(sat.medianDeltaCn0DbHz());
                     if (sat.constellation() != null) {
                         constDeltas.computeIfAbsent(sat.constellation(), k -> new ArrayList<>())
@@ -232,7 +232,9 @@ public final class RegionalCn0AnomalyDetector {
         List<Long> epochs = new ArrayList<>();
         Set<Long> seenEpochs = new LinkedHashSet<>();
         for (GnssStationAnalysis.Cn0TimeSample s : samples) {
-            if (s.elevationDeg() >= MIN_ANOMALY_ELEVATION_DEG && Double.isFinite(s.deltaCn0DbHz())) {
+            if (Double.isFinite(s.elevationDeg())
+                    && s.elevationDeg() >= MIN_ANOMALY_ELEVATION_DEG
+                    && Double.isFinite(s.deltaCn0DbHz())) {
                 highByPrn.computeIfAbsent(s.prnId(), k -> new ArrayList<>()).add(s);
                 if (seenEpochs.add(s.epochMillis())) {
                     epochs.add(s.epochMillis());

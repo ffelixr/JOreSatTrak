@@ -81,7 +81,9 @@ public class GnssStationService implements AwarenessFeed {
 
     private final CopyOnWriteArrayList<GnssStationListener> listeners = new CopyOnWriteArrayList<>();
     private final Object lifecycleLock = new Object();
+    private final Object stationsLock = new Object();
     private final AtomicLong inspectionGeneration = new AtomicLong(0L);
+    private final AtomicLong explicitLoadGeneration = new AtomicLong(0L);
     private final AtomicLong scanGeneration = new AtomicLong(0L);
     private final AtomicBoolean refreshing = new AtomicBoolean(false);
 
@@ -89,6 +91,7 @@ public class GnssStationService implements AwarenessFeed {
     private ScheduledFuture<?> periodicFuture;
     private ExecutorService workerPool;
     private ExecutorService regionalFetchPool;
+    private boolean activationRequested;
     private boolean activated;
     private boolean hasSyncedInSession;
     private boolean shutdown;
@@ -102,6 +105,7 @@ public class GnssStationService implements AwarenessFeed {
     private volatile boolean matchSimEpoch = false;
     private volatile long lastSimEpochMillis = System.currentTimeMillis();
     private volatile boolean lastRealTimeMode = true;
+    private volatile long lastAnalyzedSimEpochMillis = Long.MIN_VALUE;
 
     private volatile Map<GnssStationNetwork, Boolean> networksEnabled = defaultNetworkMap();
     private volatile double scanRadiusKm = 250.0;
@@ -109,6 +113,7 @@ public class GnssStationService implements AwarenessFeed {
     private volatile double stationMaskDeg = 10.0;
 
     private volatile long lastSuccessfulSyncMillis = 0L;
+    private volatile boolean dataStale = false;
     private volatile String lastStatusMessage = "Ready (seed / offline)";
     private volatile boolean lastStatusWarning = false;
 
@@ -164,6 +169,14 @@ public class GnssStationService implements AwarenessFeed {
         this.awarenessListener = new GnssStateListener() {
             @Override
             public void onGnssDataChanged() {
+                loadSettingsFromAwareness();
+                boolean shouldActivate;
+                synchronized (lifecycleLock) {
+                    shouldActivate = activationRequested && !activated && !shutdown;
+                }
+                if (shouldActivate) {
+                    ensureActivated();
+                }
                 recomputeLoadedAnalysisInBackground();
             }
 
@@ -228,6 +241,12 @@ public class GnssStationService implements AwarenessFeed {
     }
 
     public void ensureActivated() {
+        synchronized (lifecycleLock) {
+            if (shutdown) {
+                return;
+            }
+            activationRequested = true;
+        }
         AwarenessSettings s = awarenessService.getSettings();
         if (s == null || !s.isGnssFeedEnabled()) {
             return;
@@ -297,8 +316,11 @@ public class GnssStationService implements AwarenessFeed {
     }
 
     public boolean isDataStale() {
-        if (lastSuccessfulSyncMillis <= 0L) {
+        if (dataStale) {
             return true;
+        }
+        if (lastSuccessfulSyncMillis <= 0L) {
+            return false;
         }
         return (clock.millis() - lastSuccessfulSyncMillis) > STALE_AFTER_MILLIS;
     }
@@ -330,9 +352,15 @@ public class GnssStationService implements AwarenessFeed {
                     long now = clock.millis();
                     GnssStationCatalogClient.CatalogSyncResult res = catalogClient.fetchMergedCatalog(
                             getCatalogSources(), getArchiveSources(), now);
+                    if (shutdown) {
+                        return;
+                    }
                     if (res != null && !res.stations().isEmpty()) {
-                        this.stations = res.stations();
+                        synchronized (stationsLock) {
+                            this.stations = res.stations();
+                        }
                         this.lastSuccessfulSyncMillis = now;
+                        this.dataStale = false;
                         synchronized (lifecycleLock) {
                             this.hasSyncedInSession = true;
                         }
@@ -341,6 +369,7 @@ public class GnssStationService implements AwarenessFeed {
                         dispatchCallbacks(GnssStationListener::onStationCatalogChanged);
                     }
                 } catch (IOException | RuntimeException e) {
+                    this.dataStale = true;
                     String msg = "Station catalog sync failed: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
                     updateStatus(msg, true);
                 } finally {
@@ -502,9 +531,25 @@ public class GnssStationService implements AwarenessFeed {
     public void updateSimEpochMillis(long epochMillis, boolean realTimeMode) {
         this.lastSimEpochMillis = epochMillis;
         this.lastRealTimeMode = realTimeMode;
-        if (loadedObsData != null && loadedObsStation != null) {
+        RinexObservationData obs = this.loadedObsData;
+        if (obs != null && loadedObsStation != null && !obs.epochs().isEmpty()) {
             GnssStationAnalysis current = this.latestAnalysis;
-            if (current == null || Math.abs(epochMillis - current.inspectionEpochMillis()) >= 30_000L) {
+            if (current == null) {
+                recomputeLoadedAnalysisInBackground();
+                return;
+            }
+            long firstEpoch = obs.epochs().get(0).epochMillis();
+            long lastEpoch = obs.epochs().get(obs.epochs().size() - 1).epochMillis();
+            long clampedLow = firstEpoch - 7_200_000L;
+            long clampedHigh = lastEpoch + 7_200_000L;
+            long prevSim = this.lastAnalyzedSimEpochMillis;
+            if (current.epochOffsetFlagged() && prevSim != Long.MIN_VALUE
+                    && ((prevSim < clampedLow && epochMillis < clampedLow)
+                            || (prevSim > clampedHigh && epochMillis > clampedHigh))) {
+                return;
+            }
+            if (Math.abs(epochMillis - current.inspectionEpochMillis()) >= 30_000L
+                    && (prevSim == Long.MIN_VALUE || Math.abs(epochMillis - prevSim) >= 30_000L)) {
                 recomputeLoadedAnalysisInBackground();
             }
         }
@@ -549,122 +594,150 @@ public class GnssStationService implements AwarenessFeed {
             updateStatus("Select a GNSS station first", true);
             return;
         }
-        final long gen = inspectionGeneration.incrementAndGet();
+        ExecutorService pool = ensureWorkerPool();
+        if (pool == null) {
+            return;
+        }
+        final long loadGen = explicitLoadGeneration.incrementAndGet();
+        final long inspGen = inspectionGeneration.incrementAndGet();
         final boolean preferLatest = !matchSimEpoch || lastRealTimeMode;
         final long targetEpoch = preferLatest ? clock.millis() : lastSimEpochMillis;
 
         updateStatus("Fetching RINEX observations for " + station.stationId() + "...", false);
-        ensureWorkerPool().execute(() -> {
-            try {
-                GnssReferenceStation resolvedStation = maybeEnrichNoaa(station);
-                GnssObservationSource.ObservationFetchResult fetched = fetchUsingSources(
-                        resolvedStation,
-                        new GnssObservationSource.ObservationQuery(targetEpoch, 60, preferLatest));
-                if (gen != inspectionGeneration.get() || shutdown) {
-                    return;
-                }
-                GnssReferenceStation st = fetched.resolvedStation();
-                upsertStation(st);
-                this.loadedObsStation = st;
-                this.loadedObsData = fetched.observationData();
-                this.loadedObsFormat = fetched.formatLabel();
-                this.loadedObsSourceName = fetched.sourceName();
+        try {
+            pool.execute(() -> {
+                try {
+                    GnssReferenceStation resolvedStation = maybeEnrichNoaa(station);
+                    GnssObservationSource.ObservationFetchResult fetched = fetchUsingSources(
+                            resolvedStation,
+                            new GnssObservationSource.ObservationQuery(targetEpoch, 60, preferLatest));
+                    if (loadGen != explicitLoadGeneration.get() || shutdown) {
+                        return;
+                    }
+                    GnssReferenceStation st = fetched.resolvedStation();
+                    upsertStation(st);
+                    this.loadedObsStation = st;
+                    this.loadedObsData = fetched.observationData();
+                    this.loadedObsFormat = fetched.formatLabel();
+                    this.loadedObsSourceName = fetched.sourceName();
 
-                GnssStationAnalysis analysis = RinexObservationAnalyzer.analyze(
-                        st,
-                        fetched.observationData(),
-                        stationMaskDeg,
-                        targetEpoch,
-                        geometryService.getEphemerisProvider(),
-                        awarenessService);
-                if (gen != inspectionGeneration.get() || shutdown) {
-                    return;
+                    GnssStationAnalysis analysis = RinexObservationAnalyzer.analyze(
+                            st,
+                            fetched.observationData(),
+                            stationMaskDeg,
+                            targetEpoch,
+                            geometryService.getEphemerisProvider(),
+                            awarenessService);
+                    if (loadGen != explicitLoadGeneration.get() || shutdown) {
+                        return;
+                    }
+                    this.lastAnalyzedSimEpochMillis = targetEpoch;
+                    this.latestAnalysis = analysis;
+                    updateStatus("Loaded " + st.stationId() + " (" + fetched.observationData().epochs().size()
+                            + " epochs, " + fetched.formatLabel() + ")", false);
+                    dispatchCallbacks(l -> l.onInspectionUpdated(analysis));
+                } catch (IOException | RuntimeException e) {
+                    if (loadGen == explicitLoadGeneration.get() && !shutdown) {
+                        String msg = "Observation fetch failed for " + station.stationId() + ": " + e.getMessage();
+                        updateStatus(msg, true);
+                    }
                 }
-                this.latestAnalysis = analysis;
-                updateStatus("Loaded " + st.stationId() + " (" + fetched.observationData().epochs().size()
-                        + " epochs, " + fetched.formatLabel() + ")", false);
-                dispatchCallbacks(l -> l.onInspectionUpdated(analysis));
-            } catch (IOException | RuntimeException e) {
-                if (gen == inspectionGeneration.get()) {
-                    String msg = "Observation fetch failed for " + station.stationId() + ": " + e.getMessage();
-                    updateStatus(msg, true);
-                }
-            }
-        });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+        }
     }
 
     public void loadLocalObservationFilesAsync(List<Path> files) {
         if (files == null || files.isEmpty()) {
             return;
         }
-        final long inspGen = inspectionGeneration.incrementAndGet();
+        ExecutorService pool = ensureWorkerPool();
+        if (pool == null) {
+            return;
+        }
+        final long loadGen = explicitLoadGeneration.incrementAndGet();
+        inspectionGeneration.incrementAndGet();
         final long scanGen = scanGeneration.incrementAndGet();
         final long targetEpoch = lastSimEpochMillis;
 
         updateStatus("Loading " + files.size() + " local RINEX observation file(s)...", false);
-        ensureWorkerPool().execute(() -> {
-            try {
-                List<RegionalCn0AnomalyDetector.StationObservationInput> inputs = new ArrayList<>();
-                GnssStationAnalysis firstAnalysis = null;
-                GnssReferenceStation firstStation = null;
-                RinexObservationData firstObs = null;
-                String firstFormat = "";
-                String firstSrc = "";
+        try {
+            pool.execute(() -> {
+                try {
+                    List<RegionalCn0AnomalyDetector.StationObservationInput> inputs = new ArrayList<>();
+                    GnssStationAnalysis firstAnalysis = null;
+                    GnssReferenceStation firstStation = null;
+                    RinexObservationData firstObs = null;
+                    String firstFormat = "";
+                    String firstSrc = "";
 
-                for (Path file : files) {
-                    if (file == null || !Files.isRegularFile(file)) {
-                        continue;
+                    for (Path file : files) {
+                        if (file == null || !Files.isRegularFile(file)) {
+                            continue;
+                        }
+                        GnssObservationSource.ObservationFetchResult res = localRinexSource.fetchFromFile(file, null);
+                        if (loadGen != explicitLoadGeneration.get() || shutdown) {
+                            return;
+                        }
+                        GnssReferenceStation st = mergeLocalObservationStation(res.resolvedStation());
+                        upsertStation(st);
+                        GnssStationAnalysis analysis = RinexObservationAnalyzer.analyze(
+                                st, res.observationData(), stationMaskDeg, targetEpoch,
+                                geometryService.getEphemerisProvider(), awarenessService);
+                        inputs.add(new RegionalCn0AnomalyDetector.StationObservationInput(st, analysis, 0.0));
+                        if (firstAnalysis == null) {
+                            firstAnalysis = analysis;
+                            firstStation = st;
+                            firstObs = res.observationData();
+                            firstFormat = res.formatLabel();
+                            firstSrc = res.sourceName();
+                        }
                     }
-                    GnssObservationSource.ObservationFetchResult res = localRinexSource.fetchFromFile(file, null);
-                    GnssReferenceStation st = res.resolvedStation();
-                    upsertStation(st);
-                    GnssStationAnalysis analysis = RinexObservationAnalyzer.analyze(
-                            st, res.observationData(), stationMaskDeg, targetEpoch,
-                            geometryService.getEphemerisProvider(), awarenessService);
-                    inputs.add(new RegionalCn0AnomalyDetector.StationObservationInput(st, analysis, 0.0));
-                    if (firstAnalysis == null) {
-                        firstAnalysis = analysis;
-                        firstStation = st;
-                        firstObs = res.observationData();
-                        firstFormat = res.formatLabel();
-                        firstSrc = res.sourceName();
+                    if (firstAnalysis == null || loadGen != explicitLoadGeneration.get() || shutdown) {
+                        return;
+                    }
+                    this.selectedStationId = firstStation.stationId();
+                    this.loadedObsStation = firstStation;
+                    this.loadedObsData = firstObs;
+                    this.loadedObsFormat = firstFormat;
+                    this.loadedObsSourceName = firstSrc;
+                    this.lastAnalyzedSimEpochMillis = targetEpoch;
+                    this.latestAnalysis = firstAnalysis;
+
+                    final String selId = firstStation.stationId();
+                    final GnssStationAnalysis finalAnalysis = firstAnalysis;
+                    dispatchCallbacks(GnssStationListener::onStationCatalogChanged);
+                    dispatchCallbacks(l -> l.onSelectedStationChanged(selId));
+                    dispatchCallbacks(l -> l.onInspectionUpdated(finalAnalysis));
+
+                    if (inputs.size() >= 2 && scanGen == scanGeneration.get()) {
+                        RegionalScanReport report = RegionalCn0AnomalyDetector.evaluate(inputs);
+                        this.latestRegionalReport = report;
+                        dispatchCallbacks(l -> l.onRegionalScanUpdated(report));
+                        updateStatus(report.diagnosis(),
+                                report.severity() != RegionalScanReport.RegionalEventSeverity.NOMINAL);
+                    } else {
+                        updateStatus("Loaded local RINEX: " + firstStation.stationId(), false);
+                    }
+                } catch (IOException | RuntimeException e) {
+                    if (loadGen == explicitLoadGeneration.get() && !shutdown) {
+                        updateStatus("Local RINEX import failed: " + e.getMessage(), true);
                     }
                 }
-                if (firstAnalysis == null || inspGen != inspectionGeneration.get() || shutdown) {
-                    return;
-                }
-                this.selectedStationId = firstStation.stationId();
-                this.loadedObsStation = firstStation;
-                this.loadedObsData = firstObs;
-                this.loadedObsFormat = firstFormat;
-                this.loadedObsSourceName = firstSrc;
-                this.latestAnalysis = firstAnalysis;
-
-                final String selId = firstStation.stationId();
-                final GnssStationAnalysis finalAnalysis = firstAnalysis;
-                dispatchCallbacks(GnssStationListener::onStationCatalogChanged);
-                dispatchCallbacks(l -> l.onSelectedStationChanged(selId));
-                dispatchCallbacks(l -> l.onInspectionUpdated(finalAnalysis));
-
-                if (inputs.size() >= 2 && scanGen == scanGeneration.get()) {
-                    RegionalScanReport report = RegionalCn0AnomalyDetector.evaluate(inputs);
-                    this.latestRegionalReport = report;
-                    dispatchCallbacks(l -> l.onRegionalScanUpdated(report));
-                    updateStatus(report.diagnosis(),
-                            report.severity() != RegionalScanReport.RegionalEventSeverity.NOMINAL);
-                } else {
-                    updateStatus("Loaded local RINEX: " + firstStation.stationId(), false);
-                }
-            } catch (IOException | RuntimeException e) {
-                updateStatus("Local RINEX import failed: " + e.getMessage(), true);
-            }
-        });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+        }
     }
 
     public void scanRegionalInterferenceAsync(String centerStationId) {
         GnssReferenceStation center = findStationById(centerStationId != null ? centerStationId : selectedStationId);
         if (center == null) {
             updateStatus("Select a center station before running Regional Scan", true);
+            return;
+        }
+        ExecutorService outerPool = ensureWorkerPool();
+        ExecutorService fetchPool = ensureRegionalFetchPool();
+        if (outerPool == null || fetchPool == null) {
             return;
         }
         final long gen = scanGeneration.incrementAndGet();
@@ -687,54 +760,56 @@ public class GnssStationService implements AwarenessFeed {
         final List<GnssReferenceStation> scanTargets = candidates;
         updateStatus("Scanning " + scanTargets.size() + " stations within " + Math.round(maxRadius) + " km...", false);
 
-        ensureWorkerPool().execute(() -> {
-            ExecutorService pool = ensureRegionalFetchPool();
-            List<Future<RegionalCn0AnomalyDetector.StationObservationInput>> futures = new ArrayList<>();
-            for (GnssReferenceStation st : scanTargets) {
-                if (shutdown) {
-                    return;
-                }
-                try {
-                    futures.add(pool.submit(() -> {
-                        GnssReferenceStation enriched = maybeEnrichNoaa(st);
-                        GnssObservationSource.ObservationFetchResult fetched = fetchUsingSources(
-                                enriched,
-                                new GnssObservationSource.ObservationQuery(targetEpoch, 60, preferLatest));
-                        GnssStationAnalysis analysis = RinexObservationAnalyzer.analyze(
-                                fetched.resolvedStation(),
-                                fetched.observationData(),
-                                stationMaskDeg,
-                                targetEpoch,
-                                geometryService.getEphemerisProvider(),
-                                awarenessService);
-                        double dist = center.distanceKmTo(enriched.latDeg(), enriched.lonDeg());
-                        return new RegionalCn0AnomalyDetector.StationObservationInput(
-                                fetched.resolvedStation(), analysis, dist);
-                    }));
-                } catch (java.util.concurrent.RejectedExecutionException ignored) {
-                    return;
-                }
-            }
-
-            List<RegionalCn0AnomalyDetector.StationObservationInput> completed = new ArrayList<>();
-            for (Future<RegionalCn0AnomalyDetector.StationObservationInput> f : futures) {
-                try {
-                    RegionalCn0AnomalyDetector.StationObservationInput res = f.get();
-                    if (res != null) {
-                        completed.add(res);
+        try {
+            outerPool.execute(() -> {
+                List<Future<RegionalCn0AnomalyDetector.StationObservationInput>> futures = new ArrayList<>();
+                for (GnssReferenceStation st : scanTargets) {
+                    if (shutdown || gen != scanGeneration.get()) {
+                        return;
                     }
-                } catch (Exception ignored) {
+                    try {
+                        futures.add(fetchPool.submit(() -> {
+                            GnssReferenceStation enriched = maybeEnrichNoaa(st);
+                            GnssObservationSource.ObservationFetchResult fetched = fetchUsingSources(
+                                    enriched,
+                                    new GnssObservationSource.ObservationQuery(targetEpoch, 60, preferLatest));
+                            GnssStationAnalysis analysis = RinexObservationAnalyzer.analyze(
+                                    fetched.resolvedStation(),
+                                    fetched.observationData(),
+                                    stationMaskDeg,
+                                    targetEpoch,
+                                    geometryService.getEphemerisProvider(),
+                                    awarenessService);
+                            double dist = center.distanceKmTo(enriched.latDeg(), enriched.lonDeg());
+                            return new RegionalCn0AnomalyDetector.StationObservationInput(
+                                    fetched.resolvedStation(), analysis, dist);
+                        }));
+                    } catch (java.util.concurrent.RejectedExecutionException ignored) {
+                        return;
+                    }
                 }
-            }
-            if (gen != scanGeneration.get() || shutdown) {
-                return;
-            }
-            RegionalScanReport report = RegionalCn0AnomalyDetector.evaluate(completed);
-            this.latestRegionalReport = report;
-            updateStatus(report.diagnosis(),
-                    report.severity() == RegionalScanReport.RegionalEventSeverity.POTENTIAL_INTERFERENCE);
-            dispatchCallbacks(l -> l.onRegionalScanUpdated(report));
-        });
+
+                List<RegionalCn0AnomalyDetector.StationObservationInput> completed = new ArrayList<>();
+                for (Future<RegionalCn0AnomalyDetector.StationObservationInput> f : futures) {
+                    try {
+                        RegionalCn0AnomalyDetector.StationObservationInput res = f.get();
+                        if (res != null) {
+                            completed.add(res);
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+                if (gen != scanGeneration.get() || shutdown) {
+                    return;
+                }
+                RegionalScanReport report = RegionalCn0AnomalyDetector.evaluate(completed);
+                this.latestRegionalReport = report;
+                updateStatus(report.diagnosis(),
+                        report.severity() == RegionalScanReport.RegionalEventSeverity.POTENTIAL_INTERFERENCE);
+                dispatchCallbacks(l -> l.onRegionalScanUpdated(report));
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+        }
     }
 
     // ---- Helpers ----
@@ -745,20 +820,31 @@ public class GnssStationService implements AwarenessFeed {
         if (st == null || data == null || shutdown) {
             return;
         }
+        ExecutorService pool = ensureWorkerPool();
+        if (pool == null) {
+            return;
+        }
         final long gen = inspectionGeneration.incrementAndGet();
+        final long expectedLoadGen = explicitLoadGeneration.get();
         final long epoch = this.lastSimEpochMillis;
-        ensureWorkerPool().execute(() -> {
-            if (gen != inspectionGeneration.get() || shutdown) {
-                return;
-            }
-            GnssStationAnalysis updated = RinexObservationAnalyzer.analyze(
-                    st, data, stationMaskDeg, epoch,
-                    geometryService.getEphemerisProvider(), awarenessService);
-            if (gen == inspectionGeneration.get() && !shutdown) {
-                this.latestAnalysis = updated;
-                dispatchCallbacks(l -> l.onInspectionUpdated(updated));
-            }
-        });
+        try {
+            pool.execute(() -> {
+                if (gen != inspectionGeneration.get() || expectedLoadGen != explicitLoadGeneration.get() || shutdown) {
+                    return;
+                }
+                GnssStationAnalysis updated = RinexObservationAnalyzer.analyze(
+                        st, data, stationMaskDeg, epoch,
+                        geometryService.getEphemerisProvider(), awarenessService);
+                if (gen == inspectionGeneration.get()
+                        && expectedLoadGen == explicitLoadGeneration.get()
+                        && !shutdown) {
+                    this.lastAnalyzedSimEpochMillis = epoch;
+                    this.latestAnalysis = updated;
+                    dispatchCallbacks(l -> l.onInspectionUpdated(updated));
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+        }
     }
 
     private GnssObservationSource.ObservationFetchResult fetchUsingSources(
@@ -804,20 +890,41 @@ public class GnssStationService implements AwarenessFeed {
         return st;
     }
 
+    private GnssReferenceStation mergeLocalObservationStation(GnssReferenceStation localSt) {
+        if (localSt == null) {
+            return null;
+        }
+        synchronized (stationsLock) {
+            for (GnssReferenceStation existing : this.stations) {
+                if (existing == null) {
+                    continue;
+                }
+                if (existing.stationId().equalsIgnoreCase(localSt.stationId())
+                        || (existing.shortCode().equalsIgnoreCase(localSt.shortCode())
+                                && existing.distanceKmTo(localSt.latDeg(), localSt.lonDeg()) <= 5.0)) {
+                    return existing.mergeWith(localSt);
+                }
+            }
+        }
+        return localSt;
+    }
+
     private void upsertStation(GnssReferenceStation updated) {
         if (updated == null) {
             return;
         }
-        List<GnssReferenceStation> current = new ArrayList<>(this.stations);
-        for (int i = 0; i < current.size(); i++) {
-            if (current.get(i).stationId().equalsIgnoreCase(updated.stationId())) {
-                current.set(i, updated);
-                this.stations = List.copyOf(current);
-                return;
+        synchronized (stationsLock) {
+            List<GnssReferenceStation> current = new ArrayList<>(this.stations);
+            for (int i = 0; i < current.size(); i++) {
+                if (current.get(i).stationId().equalsIgnoreCase(updated.stationId())) {
+                    current.set(i, updated);
+                    this.stations = List.copyOf(current);
+                    return;
+                }
             }
+            current.add(updated);
+            this.stations = List.copyOf(current);
         }
-        current.add(updated);
-        this.stations = List.copyOf(current);
     }
 
     private List<DataSourceConfig> getCatalogSources() {
@@ -941,6 +1048,9 @@ public class GnssStationService implements AwarenessFeed {
 
     private ExecutorService ensureWorkerPool() {
         synchronized (lifecycleLock) {
+            if (shutdown) {
+                return null;
+            }
             if (workerPool == null || workerPool.isShutdown()) {
                 workerPool = Executors.newFixedThreadPool(2, r -> {
                     Thread t = new Thread(r, "gnss-stations-worker");
@@ -954,6 +1064,9 @@ public class GnssStationService implements AwarenessFeed {
 
     private ExecutorService ensureRegionalFetchPool() {
         synchronized (lifecycleLock) {
+            if (shutdown) {
+                return null;
+            }
             if (regionalFetchPool == null || regionalFetchPool.isShutdown()) {
                 regionalFetchPool = Executors.newFixedThreadPool(4, r -> {
                     Thread t = new Thread(r, "gnss-regional-fetch");

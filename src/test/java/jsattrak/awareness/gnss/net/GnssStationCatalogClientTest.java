@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -236,6 +237,66 @@ class GnssStationCatalogClientTest {
         assertTrue(nets.getOrDefault("IGS", false));
         assertTrue(nets.getOrDefault("EUREF", false));
         assertTrue(nets.getOrDefault("NOAA_CORS", false));
+    }
+
+    @Test
+    void deduplicationPreservesSurveyedEcefAndParsesEcefOnlyJsonStations(@TempDir Path tmpDir) throws Exception {
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        String ecefOnlyJson = """
+                [
+                  {
+                    "id": "BRUX00BEL",
+                    "name": "Brussels ECEF Only",
+                    "country": "BEL",
+                    "x": 4027881.123,
+                    "y": 307045.456,
+                    "z": 4919498.789,
+                    "receiver_type": "SEPT POLARX5",
+                    "satelliteSystem": "G,E"
+                  }
+                ]
+                """;
+        server.createContext("/ecef.json", ex -> respondText(ex, 200, "application/json", ecefOnlyJson));
+        server.start();
+        try {
+            String base = "http://127.0.0.1:" + server.getAddress().getPort();
+            DataSourceConfig cat = new DataSourceConfig(
+                    "ecef-cat", DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG, "IGS", "ECEF JSON",
+                    base + "/ecef.json", true, 1, AuthMode.NONE, "", "", "", 1440, false);
+            GnssStationCatalogClient.CatalogSyncResult res = new GnssStationCatalogClient().fetchMergedCatalog(
+                    List.of(cat), List.of(), Instant.parse("2026-11-25T19:00:00Z").toEpochMilli());
+            GnssReferenceStation brux = res.stations().stream()
+                    .filter(s -> "BRUX00BEL".equals(s.stationId())).findFirst().orElseThrow();
+            assertTrue(brux.latDeg() > 50.0 && brux.latDeg() < 51.5);
+            assertTrue(brux.lonDeg() > 4.0 && brux.lonDeg() < 5.0);
+        } finally {
+            server.stop(0);
+        }
+
+        // 4-char derived geodetic merges with 9-char surveyed XYZ + later 4-char alias -> surveyed XYZ wins cleanly
+        GnssReferenceStation derivedFirst = new GnssReferenceStation(
+                "AB02", "AB02", "Derived", "USA", GnssStationNetwork.NOAA_CORS,
+                EnumSet.of(GnssStationNetwork.NOAA_CORS), 40.4292, -4.2497, 829.5, null,
+                "", "", "", "", EnumSet.of(GnssConstellation.GPS), List.of(), 0L, -1, Double.NaN, GnssStationStatus.UNKNOWN, "");
+        double[] surveyedXyz = {4849202.333, -360328.999, 4114913.222};
+        GnssReferenceStation surveyedSecond = new GnssReferenceStation(
+                "AB0200USA", "AB02", "Surveyed", "USA", GnssStationNetwork.IGS,
+                EnumSet.of(GnssStationNetwork.IGS), 40.4292, -4.2497, 829.5, surveyedXyz,
+                "TRIMBLE NETR9", "", "", "", EnumSet.of(GnssConstellation.GPS, GnssConstellation.GALILEO),
+                List.of(), 0L, 10, Double.NaN, GnssStationStatus.ONLINE, "");
+        GnssReferenceStation aliasThird = new GnssReferenceStation(
+                "AB02", "AB02", "Alias", "USA", GnssStationNetwork.EUREF,
+                EnumSet.of(GnssStationNetwork.EUREF), 40.4292, -4.2497, 829.5, null,
+                "", "", "", "", EnumSet.of(GnssConstellation.GLONASS), List.of(), 0L, 5, Double.NaN, GnssStationStatus.ONLINE, "");
+
+        List<GnssReferenceStation> merged = GnssStationCatalogClient.deduplicateStations(
+                List.of(derivedFirst, surveyedSecond, aliasThird));
+        assertEquals(1, merged.size());
+        GnssReferenceStation result = merged.get(0);
+        assertEquals("AB0200USA", result.stationId());
+        assertEquals(surveyedXyz[0], result.monumentEcef()[0], 1e-3);
+        assertEquals(3, result.networks().size());
     }
 
     private static void respondText(com.sun.net.httpserver.HttpExchange ex, int code, String contentType, String body)

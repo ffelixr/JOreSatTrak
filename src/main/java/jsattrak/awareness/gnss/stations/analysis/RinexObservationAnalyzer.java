@@ -27,10 +27,16 @@ public final class RinexObservationAnalyzer {
 
     private static final double SPEED_OF_LIGHT = 299_792_458.0;
     private static final long TWO_HOURS_MILLIS = 2L * 3600L * 1000L;
+    private static final long TWENTY_MINUTES_MILLIS = 20L * 60_000L;
+    private static final long TEN_MINUTES_MILLIS = 10L * 60_000L;
+    private static final long FIVE_MINUTES_MILLIS = 5L * 60_000L;
     private static final long GF_SLIP_MAX_GAP_MILLIS = 30_000L;
     private static final double GF_SLIP_THRESHOLD_METERS = 0.05;
     private static final long MP_ARC_MAX_GAP_MILLIS = 60_000L;
     private static final int MP_MIN_ARC_SAMPLES = 10;
+
+    private record EpochSkyBucket(long epochMillis, Map<String, SatelliteSkyPoint> skyByPrn) {
+    }
 
     private record SvArcSample(
             long epochMillis,
@@ -83,16 +89,36 @@ public final class RinexObservationAnalyzer {
                 ? ephemerisProvider.resolveSatellitesAtEpoch(inspectionEpoch, awarenessService)
                 : new GnssEphemerisProvider.ResolvedEpochSnapshot(List.of(),
                         jsattrak.awareness.gnss.geometry.GnssOrbitSource.Summary.fromCounts(0, 0, 0, false, ""));
-        GnssDopSolution dopSol = GnssDopCalculator.computePointDop(
-                inspectionEpoch, observer, elevationMaskDeg, false, predSnap.candidates());
 
-        Map<String, SatelliteSkyPoint> skyByPrn = new LinkedHashMap<>();
+        Map<String, SatelliteSkyPoint> skyByPrn = buildSkyMap(
+                inspectionEpoch, observer, elevationMaskDeg, predSnap.candidates());
         Set<String> predictedOperationalAboveMask = new LinkedHashSet<>();
-        for (SatelliteSkyPoint sp : dopSol.skyPoints()) {
-            skyByPrn.put(sp.prnId(), sp);
+        for (SatelliteSkyPoint sp : skyByPrn.values()) {
             if (sp.aboveMask() && sp.status() == GnssDisplayStatus.OPERATIONAL) {
                 predictedOperationalAboveMask.add(sp.prnId());
             }
+        }
+
+        // For multi-hour / 24h observation files, sample azimuth/elevation across coarse buckets
+        // instead of holding a single-epoch elevation fixed for the whole day.
+        List<EpochSkyBucket> skyBuckets = new ArrayList<>();
+        skyBuckets.add(new EpochSkyBucket(inspectionEpoch, skyByPrn));
+        long spanMillis = lastEpoch - firstEpoch;
+        if (ephemerisProvider != null && spanMillis > TWENTY_MINUTES_MILLIS) {
+            int bucketCount = Math.min(24, (int) Math.max(2L, spanMillis / TEN_MINUTES_MILLIS));
+            long step = spanMillis / bucketCount;
+            for (int b = 0; b <= bucketCount; b++) {
+                long bucketEpoch = Math.min(lastEpoch, firstEpoch + b * step);
+                if (Math.abs(bucketEpoch - inspectionEpoch) < FIVE_MINUTES_MILLIS) {
+                    continue;
+                }
+                GnssEphemerisProvider.ResolvedEpochSnapshot bSnap =
+                        ephemerisProvider.resolveSatellitesAtEpoch(bucketEpoch, awarenessService);
+                skyBuckets.add(new EpochSkyBucket(
+                        bucketEpoch,
+                        buildSkyMap(bucketEpoch, observer, elevationMaskDeg, bSnap.candidates())));
+            }
+            skyBuckets.sort((a, b) -> Long.compare(a.epochMillis(), b.epochMillis()));
         }
 
         // 2. Gather per-PRN session stats across all epochs
@@ -126,16 +152,19 @@ public final class RinexObservationAnalyzer {
         int totalSlips = 0;
         Map<String, Integer> slipsByPrn = new LinkedHashMap<>();
 
-        // Resolve orbit positions once at inspection epoch for Az/El fallback across nearby hourly span
+        // Use nearest sampled geometry bucket per epoch; do not synthesize 30 deg when ephemeris is unavailable
         for (RinexObservationData.EpochRecord rec : epochs) {
+            Map<String, SatelliteSkyPoint> epochSky = skyBuckets.size() == 1
+                    ? skyByPrn
+                    : nearestSkyMap(skyBuckets, rec.epochMillis());
             for (Map.Entry<String, RinexObservationData.SatelliteObsSample> e : rec.satellites().entrySet()) {
                 String prn = e.getKey();
                 RinexObservationData.SatelliteObsSample sample = e.getValue();
                 constByPrn.putIfAbsent(prn, sample.constellation());
                 totalObsSamples++;
 
-                SatelliteSkyPoint sky = skyByPrn.get(prn);
-                double elDeg = sky != null ? sky.elevationDeg() : 30.0;
+                SatelliteSkyPoint sky = epochSky.get(prn);
+                double elDeg = sky != null ? sky.elevationDeg() : Double.NaN;
                 double cn0 = sample.primaryCn0DbHz(sample.constellation());
                 boolean hasLli = sample.hasLossOfLock();
                 if (hasLli) {
@@ -144,12 +173,16 @@ public final class RinexObservationAnalyzer {
                     slipsByPrn.merge(prn, 1, Integer::sum);
                 }
 
-                double delta = Double.isFinite(cn0) ? (cn0 - expectedCn0DbHz(elDeg)) : Double.NaN;
+                double delta = (Double.isFinite(cn0) && Double.isFinite(elDeg))
+                        ? (cn0 - expectedCn0DbHz(elDeg))
+                        : Double.NaN;
                 if (Double.isFinite(cn0)) {
                     cn0ByPrn.computeIfAbsent(prn, k -> new ArrayList<>()).add(cn0);
-                    deltaByPrn.computeIfAbsent(prn, k -> new ArrayList<>()).add(delta);
                     allCn0.add(cn0);
-                    allDeltas.add(delta);
+                    if (Double.isFinite(delta)) {
+                        deltaByPrn.computeIfAbsent(prn, k -> new ArrayList<>()).add(delta);
+                        allDeltas.add(delta);
+                    }
                     timeSeries.add(new GnssStationAnalysis.Cn0TimeSample(
                             rec.epochMillis(), prn, sample.constellation(), elDeg, cn0, delta));
                     if (rec.epochMillis() == inspRecord.epochMillis()) {
@@ -286,6 +319,35 @@ public final class RinexObservationAnalyzer {
                 satSummaries,
                 scatter,
                 timeSeries);
+    }
+
+    private static Map<String, SatelliteSkyPoint> buildSkyMap(
+            long epochMillis,
+            GnssObserverPosition observer,
+            double elevationMaskDeg,
+            List<GnssDopCalculator.CandidateSatellite> candidates) {
+        GnssDopSolution sol = GnssDopCalculator.computePointDop(
+                epochMillis, observer, elevationMaskDeg, false, candidates);
+        Map<String, SatelliteSkyPoint> map = new LinkedHashMap<>();
+        for (SatelliteSkyPoint sp : sol.skyPoints()) {
+            map.put(sp.prnId(), sp);
+        }
+        return map;
+    }
+
+    private static Map<String, SatelliteSkyPoint> nearestSkyMap(
+            List<EpochSkyBucket> buckets, long epochMillis) {
+        EpochSkyBucket best = buckets.get(0);
+        long bestDiff = Math.abs(best.epochMillis() - epochMillis);
+        for (int i = 1; i < buckets.size(); i++) {
+            EpochSkyBucket b = buckets.get(i);
+            long diff = Math.abs(b.epochMillis() - epochMillis);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                best = b;
+            }
+        }
+        return best.skyByPrn();
     }
 
     private static void flushMpArc(

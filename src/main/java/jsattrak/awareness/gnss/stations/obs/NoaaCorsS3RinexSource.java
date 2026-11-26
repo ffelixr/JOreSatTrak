@@ -95,18 +95,6 @@ public class NoaaCorsS3RinexSource implements GnssObservationSource {
             throw new IOException("No enabled NOAA CORS S3 archive configured");
         }
 
-        if (preferLatest && diskCache != null) {
-            String cachedUri = lastResolvedUriByStation.get(station.stationId());
-            if (cachedUri != null) {
-                byte[] cached = diskCache.get(cachedUri, nowMillis);
-                if (cached != null) {
-                    RinexObservationData obs = RinexObservationLoader.parse(cached, extractFileName(cachedUri));
-                    return new ObservationFetchResult(
-                            station, obs, getDisplayName(), cachedUri, nowMillis, "RINEX 2/3 .gz");
-                }
-            }
-        }
-
         ZonedDateTime targetUtc = Instant.ofEpochMilli(targetMillis).atZone(ZoneOffset.UTC);
         int daysToTry = preferLatest ? 2 : 1;
         String codeLower = station.shortCode().toLowerCase(Locale.US);
@@ -146,6 +134,19 @@ public class NoaaCorsS3RinexSource implements GnssObservationSource {
                             station, obs, src.getDisplayName(), fileUrl, nowMillis, "NOAA S3 " + fname);
                 } catch (IOException | RuntimeException e) {
                     lastFailure = (e instanceof IOException io) ? io : new IOException(e.getMessage(), e);
+                }
+            }
+        }
+        // Offline fallback: only serve previously cached latest URI if S3 requests failed
+        if (lastFailure != null && preferLatest && diskCache != null) {
+            String cachedUri = lastResolvedUriByStation.get(station.stationId());
+            if (cachedUri != null) {
+                byte[] cached = diskCache.get(cachedUri, nowMillis);
+                if (cached != null) {
+                    String fname = extractFileName(cachedUri);
+                    RinexObservationData obs = RinexObservationLoader.parse(cached, fname);
+                    return new ObservationFetchResult(
+                            station, obs, getDisplayName(), cachedUri, nowMillis, "NOAA S3 " + fname);
                 }
             }
         }
