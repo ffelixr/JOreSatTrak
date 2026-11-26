@@ -44,6 +44,10 @@ import jsattrak.awareness.gnss.geometry.GnssGeometryListener;
 import jsattrak.awareness.gnss.geometry.GnssGeometryService;
 import jsattrak.awareness.gnss.gui.GnssAwarenessTab;
 import jsattrak.awareness.gnss.gui.GnssGeometryTab;
+import jsattrak.awareness.gnss.gui.GnssStationsTab;
+import jsattrak.awareness.gnss.stations.GnssStationListener;
+import jsattrak.awareness.gnss.stations.GnssStationService;
+import jsattrak.awareness.gnss.stations.analysis.RegionalScanReport;
 import jsattrak.objects.GroundStation;
 
 /**
@@ -55,16 +59,19 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
     private final LiveAwarenessService service;
     private final GnssAwarenessService gnssService;
     private final GnssGeometryService geometryService;
+    private final GnssStationService stationService;
     private final JTabbedPane feedTabbedPane;
     private final LaunchesAwarenessTab launchesTab;
     private final GnssAwarenessTab gnssTab;
     private final GnssGeometryTab gnssGeometryTab;
+    private final GnssStationsTab gnssStationsTab;
     private final JLabel syncStatusLabel;
     private final JButton refreshButton;
     private final JButton sourcesButton;
     private final AwarenessStateListener serviceListener;
     private final GnssStateListener gnssListener;
     private final GnssGeometryListener geometryListener;
+    private final GnssStationListener stationListener;
     private final List<AwarenessFeed> feeds = new ArrayList<>();
     private final List<Boolean> lastTabOverlayStates = new ArrayList<>();
 
@@ -118,10 +125,29 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
             Runnable onOpenSources,
             Consumer<GnssSatelliteState> onAddGnssToObjectList,
             Predicate<GnssSatelliteState> isGnssInObjectList) {
+        this(service, gnssService, geometryService, null, groundStationsSupplier,
+                onJumpToT0, onCenterMaps, onImportTles, onOpenSatBrowser, onOpenSources,
+                onAddGnssToObjectList, isGnssInObjectList);
+    }
+
+    public LiveAwarenessInternalFrame(
+            LiveAwarenessService service,
+            GnssAwarenessService gnssService,
+            GnssGeometryService geometryService,
+            GnssStationService stationService,
+            Supplier<Collection<GroundStation>> groundStationsSupplier,
+            Consumer<Long> onJumpToT0,
+            BiConsumer<Double, Double> onCenterMaps,
+            Consumer<LaunchRecord> onImportTles,
+            Runnable onOpenSatBrowser,
+            Runnable onOpenSources,
+            Consumer<GnssSatelliteState> onAddGnssToObjectList,
+            Predicate<GnssSatelliteState> isGnssInObjectList) {
         super("Live Awareness", true, true, true, true);
         this.service = Objects.requireNonNull(service, "service");
         this.gnssService = gnssService;
         this.geometryService = geometryService;
+        this.stationService = stationService;
         setDefaultCloseOperation(HIDE_ON_CLOSE);
         Icon frameIcon = loadIcon("/icons/logo/JSatTrakLogo_16.png");
         if (frameIcon != null) {
@@ -150,7 +176,9 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         refreshButton.setToolTipText("Fetch latest data for the active feed");
         refreshButton.addActionListener(e -> {
             AwarenessFeed active = activeFeed();
-            if ((active == gnssService || active == geometryService) && gnssService != null) {
+            if (active == stationService && stationService != null) {
+                stationService.refreshNowAsync();
+            } else if ((active == gnssService || active == geometryService) && gnssService != null) {
                 gnssService.refreshNowAsync();
             } else {
                 service.refreshNowAsync();
@@ -193,6 +221,16 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
             addFeedTab(geometryService, gnssGeometryTab);
         } else {
             gnssGeometryTab = null;
+        }
+        if (stationService != null) {
+            gnssStationsTab = new GnssStationsTab(
+                    stationService,
+                    geometryService,
+                    () -> selectFeedTab(GnssGeometryService.FEED_ID),
+                    onCenterMaps);
+            addFeedTab(stationService, gnssStationsTab);
+        } else {
+            gnssStationsTab = null;
         }
         feedTabbedPane.addChangeListener(e -> updateHeaderAndTabs());
         addComponentListener(new ComponentAdapter() {
@@ -284,6 +322,41 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
             this.geometryListener = null;
         }
 
+        if (stationService != null) {
+            this.stationListener = new GnssStationListener() {
+                @Override
+                public void onStationCatalogChanged() {
+                    runOnEdt(LiveAwarenessInternalFrame.this::updateHeaderAndTabs);
+                }
+
+                @Override
+                public void onSelectedStationChanged(String selectedStationId) {
+                }
+
+                @Override
+                public void onInspectionUpdated(jsattrak.awareness.gnss.stations.analysis.GnssStationAnalysis analysis) {
+                }
+
+                @Override
+                public void onRegionalScanUpdated(RegionalScanReport report) {
+                    runOnEdt(LiveAwarenessInternalFrame.this::updateHeaderAndTabs);
+                }
+
+                @Override
+                public void onStationStatusMessage(String message, boolean isWarning) {
+                    runOnEdt(LiveAwarenessInternalFrame.this::updateHeaderAndTabs);
+                }
+
+                @Override
+                public void onMapOverlayStateChanged(boolean enabled) {
+                    runOnEdt(LiveAwarenessInternalFrame.this::updateHeaderAndTabs);
+                }
+            };
+            stationService.addListener(this.stationListener);
+        } else {
+            this.stationListener = null;
+        }
+
         updateHeaderAndTabs();
     }
 
@@ -320,6 +393,9 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         if (gnssGeometryTab != null) {
             gnssGeometryTab.refreshDisplay(simEpochMillis, realTimeMode, this.lastDisplayTz);
         }
+        if (gnssStationsTab != null) {
+            gnssStationsTab.refreshDisplay(simEpochMillis, realTimeMode, this.lastDisplayTz);
+        }
         updateHeaderAndTabs();
     }
 
@@ -334,12 +410,18 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
             geometryService.removeListener(geometryListener);
             geometryService.setGeometryTabVisible(false);
         }
+        if (stationService != null && stationListener != null) {
+            stationService.removeListener(stationListener);
+        }
         launchesTab.dispose();
         if (gnssTab != null) {
             gnssTab.dispose();
         }
         if (gnssGeometryTab != null) {
             gnssGeometryTab.dispose();
+        }
+        if (gnssStationsTab != null) {
+            gnssStationsTab.dispose();
         }
         super.dispose();
     }
@@ -354,6 +436,10 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
 
     public GnssGeometryTab getGnssGeometryTab() {
         return gnssGeometryTab;
+    }
+
+    public GnssStationsTab getGnssStationsTab() {
+        return gnssStationsTab;
     }
 
     public void selectFeedTab(String feedId) {
@@ -414,11 +500,19 @@ public class LiveAwarenessInternalFrame extends JInternalFrame {
         if (geometryService != null) {
             geometryService.setGeometryTabVisible(active == geometryService && !disposed);
         }
+        if (stationService != null && active == stationService && !disposed) {
+            stationService.ensureActivated();
+        }
+        boolean isStationsActive = (active == stationService) && stationService != null;
         boolean isGnssActive = (active == gnssService || active == geometryService) && gnssService != null;
-        boolean refreshing = isGnssActive ? gnssService.isRefreshing() : service.isRefreshing();
-        boolean stale = isGnssActive ? gnssService.isDataStale() : service.isDataStale();
-        long lastSync = isGnssActive ? gnssService.getLastSuccessfulSyncMillis() : service.getLastSuccessfulSyncMillis();
-        String lastErr = isGnssActive ? gnssService.getLastErrorMessage() : service.getLastErrorMessage();
+        boolean refreshing = isStationsActive ? stationService.isRefreshing()
+                : (isGnssActive ? gnssService.isRefreshing() : service.isRefreshing());
+        boolean stale = isStationsActive ? stationService.isDataStale()
+                : (isGnssActive ? gnssService.isDataStale() : service.isDataStale());
+        long lastSync = isStationsActive ? stationService.getLastSuccessfulSyncMillis()
+                : (isGnssActive ? gnssService.getLastSuccessfulSyncMillis() : service.getLastSuccessfulSyncMillis());
+        String lastErr = isStationsActive ? stationService.getLastStatusMessage()
+                : (isGnssActive ? gnssService.getLastErrorMessage() : service.getLastErrorMessage());
 
         if (refreshButton.isEnabled() == refreshing) {
             refreshButton.setEnabled(!refreshing);
