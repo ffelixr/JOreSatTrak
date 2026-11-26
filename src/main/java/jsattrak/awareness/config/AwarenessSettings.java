@@ -138,11 +138,11 @@ public class AwarenessSettings {
                 false
         ));
         list.add(new DataSourceConfig(
-                "noaa-cors-stations",
+                "noaa-ufcors-stations",
                 DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG,
                 "NOAA_CORS",
-                "NOAA CORS Station List",
-                "https://geodesy.noaa.gov/CORS/All_CORS.txt",
+                "NOAA CORS Site List (UFCORS)",
+                "https://geodesy.noaa.gov/CORS/UFCORS_site_list.txt",
                 true,
                 3,
                 AuthMode.NONE,
@@ -153,11 +153,11 @@ public class AwarenessSettings {
                 false
         ));
         list.add(new DataSourceConfig(
-                "noaa-ufcors-stations",
+                "noaa-cors-s3-coords",
                 DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG,
                 "NOAA_CORS",
-                "NOAA CORS Site List (UFCORS Fallback)",
-                "https://geodesy.noaa.gov/CORS/UFCORS_site_list.txt",
+                "NOAA CORS ITRF2020 Coordinates (AWS S3)",
+                "https://noaa-cors-pds.s3.amazonaws.com/coord/coord_20/itrf2020_geo.comp.txt",
                 true,
                 4,
                 AuthMode.NONE,

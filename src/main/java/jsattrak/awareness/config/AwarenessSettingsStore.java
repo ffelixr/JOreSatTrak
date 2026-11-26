@@ -91,9 +91,29 @@ public class AwarenessSettingsStore {
             }
         }
         settings.setSchemaVersion(AwarenessSettings.CURRENT_SCHEMA_VERSION);
+        boolean hasUfCors = sources.stream().anyMatch(s ->
+                s.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG
+                        && s.getEndpointUrl() != null
+                        && s.getEndpointUrl().toLowerCase(java.util.Locale.US).contains("ufcors_site_list.txt"));
         for (DataSourceConfig source : sources) {
             if (source.getProviderScope() == null) {
                 source.setProviderScope("");
+            }
+            if (source.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG
+                    && source.getEndpointUrl() != null
+                    && source.getEndpointUrl().trim().equalsIgnoreCase("https://geodesy.noaa.gov/CORS/All_CORS.txt")) {
+                if (hasUfCors) {
+                    source.setEndpointUrl("https://noaa-cors-pds.s3.amazonaws.com/coord/coord_20/itrf2020_geo.comp.txt");
+                    if ("NOAA CORS Station List".equals(source.getDisplayName())) {
+                        source.setDisplayName("NOAA CORS ITRF2020 Coordinates (AWS S3)");
+                    }
+                } else {
+                    source.setEndpointUrl("https://geodesy.noaa.gov/CORS/UFCORS_site_list.txt");
+                    if ("NOAA CORS Station List".equals(source.getDisplayName())) {
+                        source.setDisplayName("NOAA CORS Site List (UFCORS)");
+                    }
+                    hasUfCors = true;
+                }
             }
         }
         settings.setSources(sources);

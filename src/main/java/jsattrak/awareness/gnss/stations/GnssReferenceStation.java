@@ -217,6 +217,7 @@ public record GnssReferenceStation(
         GnssStationStatus bestStatus = statusPriority(this.status) >= statusPriority(other.status)
                 ? this.status : other.status;
 
+        double bestAlt = Double.isFinite(this.altMeters) ? this.altMeters : other.altMeters;
         return new GnssReferenceStation(
                 bestId,
                 preferNonBlank(this.shortCode, other.shortCode),
@@ -226,8 +227,8 @@ public record GnssReferenceStation(
                 mergedNets,
                 Double.isFinite(this.latDeg) ? this.latDeg : other.latDeg,
                 Double.isFinite(this.lonDeg) ? this.lonDeg : other.lonDeg,
-                Double.isFinite(this.altMeters) ? this.altMeters : other.altMeters,
-                bestEcef,
+                bestAlt,
+                bestExplicitEcef ? bestEcef : null,
                 preferNonBlank(this.receiverModel, other.receiverModel),
                 preferNonBlank(this.receiverFirmware, other.receiverFirmware),
                 preferNonBlank(this.antennaModel, other.antennaModel),

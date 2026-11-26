@@ -395,18 +395,32 @@ public class GnssStationCatalogClient {
 
         String id = firstNonBlank(
                 str(obj, "id"), str(obj, "stationId"), str(obj, "nineCharacterId"),
-                str(props, "id"), str(props, "name"), keyId);
+                str(props, "id"), str(props, "GNSS Station ID"), str(props, "name"), keyId);
         if (id.isBlank()) {
             return null;
         }
         String siteName = firstNonBlank(
-                str(props, "name"), str(props, "siteName"), str(props, "city"), str(props, "stationName"), id);
-        String country = firstNonBlank(str(props, "country"), str(props, "countryCode"),
+                str(props, "name"), str(props, "siteName"), str(props, "City"), str(props, "city"), str(props, "stationName"), id);
+        String country = firstNonBlank(str(props, "country"), str(props, "countryCode"), str(props, "Country/Region"),
                 id.length() == 9 ? id.substring(6, 9) : "");
 
         double lat = firstFinite(dbl(props, "lat"), dbl(props, "latitude"), dbl(props, "latDeg"), Double.NaN);
         double lon = firstFinite(dbl(props, "lon"), dbl(props, "longitude"), dbl(props, "lonDeg"), Double.NaN);
         double alt = firstFinite(dbl(props, "height"), dbl(props, "alt"), dbl(props, "elevation"), Double.NaN);
+
+        if (!Double.isFinite(lat) || !Double.isFinite(lon)) {
+            String latLonHeight = str(props, "Lat/Lon/Height");
+            if (!latLonHeight.isBlank()) {
+                String[] llh = latLonHeight.split("/");
+                if (llh.length >= 2) {
+                    lat = parseDoubleSafe(llh[0].trim(), Double.NaN);
+                    lon = parseDoubleSafe(llh[1].trim(), Double.NaN);
+                    if (llh.length >= 3 && !Double.isFinite(alt)) {
+                        alt = parseDoubleSafe(llh[2].trim(), Double.NaN);
+                    }
+                }
+            }
+        }
 
         if ((!Double.isFinite(lat) || !Double.isFinite(lon))
                 && rawObj.has("geometry") && rawObj.get("geometry").isJsonObject()) {
@@ -447,10 +461,21 @@ public class GnssStationCatalogClient {
             alt = 0.0;
         }
 
-        String rxModel = firstNonBlank(str(props, "receiver_type"), str(props, "receiverType"), str(props, "receiver"));
+        String rxModel = firstNonBlank(
+                str(props, "receiver_type"), str(props, "receiverType"), str(props, "receiver"),
+                str(props, "GNSS Receiver (Current)"));
         String rxFw = firstNonBlank(str(props, "receiver_firmware"), str(props, "firmwareVersion"));
-        String antModel = firstNonBlank(str(props, "antenna_type"), str(props, "antennaType"), str(props, "antenna"));
+        String antModel = firstNonBlank(
+                str(props, "antenna_type"), str(props, "antennaType"), str(props, "antenna"),
+                str(props, "GNSS Antenna (Current)"));
         String radome = firstNonBlank(str(props, "radome_type"), str(props, "radome"), str(props, "radomeCode"));
+        if (radome.isBlank() && antModel.contains(" ")) {
+            String[] antParts = antModel.trim().split("\\s+");
+            if (antParts.length >= 2) {
+                antModel = antParts[0];
+                radome = antParts[antParts.length - 1];
+            }
+        }
 
         EnumSet<GnssConstellation> consts = EnumSet.noneOf(GnssConstellation.class);
         if (props.has("constellations")) {
@@ -465,39 +490,90 @@ public class GnssStationCatalogClient {
                 addConstellationToken(ce.getAsString(), consts);
             }
         } else {
-            String sys = firstNonBlank(str(props, "satelliteSystem"), str(props, "systems"));
+            String sys = firstNonBlank(
+                    str(props, "satelliteSystem"), str(props, "systems"),
+                    str(props, "Satellite Constellation (Current)"));
             if (!sys.isBlank()) {
                 addConstellationToken(sys, consts);
             }
         }
 
+        String rawStatus = firstNonBlank(str(props, "Station Status"), str(props, "status")).toLowerCase(Locale.US);
+        GnssStationStatus stStatus = (rawStatus.contains("inactive")
+                || rawStatus.contains("decommission")
+                || rawStatus.contains("retired"))
+                ? GnssStationStatus.OFFLINE
+                : GnssStationStatus.UNKNOWN;
+
         return new GnssReferenceStation(
                 id, null, siteName, country, network, EnumSet.of(network),
                 lat, lon, alt, ecef, rxModel, rxFw, antModel, radome,
-                consts, List.of(), 0L, -1, Double.NaN, GnssStationStatus.UNKNOWN, "");
+                consts, List.of(), 0L, -1, Double.NaN, stStatus, "");
     }
+
+    private static final Pattern UFCORS_ID_PATTERN = Pattern.compile("^[A-Za-z0-9]{4}$");
+    private static final Pattern COMPACT_LAT_DMS_PATTERN = Pattern.compile("^([NS])(\\d{2})(\\d{2})(\\d{2}(?:\\.\\d+)?)$");
+    private static final Pattern COMPACT_LON_DMS_PATTERN = Pattern.compile("^([EW])(\\d{3})(\\d{2})(\\d{2}(?:\\.\\d+)?)$");
+    private static final Pattern S3_ITRF_COORD_PATTERN = Pattern.compile(
+            "^([A-Za-z0-9]{4})\\s+\\d{4}\\.\\d+\\s+(\\d{1,2})\\s+(\\d{1,2})\\s+(\\d{1,2}(?:\\.\\d+)?)\\s+([NS])\\s+(\\d{1,3})\\s+(\\d{1,2})\\s+(\\d{1,2}(?:\\.\\d+)?)\\s+([EW])\\s+(-?\\d+(?:\\.\\d+)?)\\s+.*?\\s+([A-Za-z]{2,3})\\s+([A-Za-z0-9-]{1,6})\\s+(Operational|Active|Non-Operational|Decommissioned|Retired|Inactive)$",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern LEGACY_NOAA_DECIMAL_PATTERN = Pattern.compile(
+            "^([A-Za-z0-9]{4})\\s+(.+?)\\s+(Operational|Active|Non-Operational|Decommissioned|Retired|Inactive)\\s+(-?\\d+(?:\\.\\d+)?)\\s+(-?\\d+(?:\\.\\d+)?)(?:\\s+(-?\\d+(?:\\.\\d+)?))?.*$",
+            Pattern.CASE_INSENSITIVE);
 
     private static List<GnssReferenceStation> parseNoaaCorsTable(String text) {
         List<GnssReferenceStation> out = new ArrayList<>();
         String[] lines = text.split("\\r?\\n");
         for (String line : lines) {
             String trimmed = line.trim();
-            if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("SITE")) {
+            if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("SITE") || trimmed.startsWith("_")) {
                 continue;
             }
-            // Match tokens at start (4-char ID) and trailing status + lat lon [alt]
-            Matcher m = Pattern.compile(
-                    "^([A-Za-z0-9]{4})\\s+(.+?)\\s+(Operational|Active|Non-Operational|Decommissioned|Retired|Inactive)\\s+(-?\\d+(?:\\.\\d+)?)\\s+(-?\\d+(?:\\.\\d+)?)(?:\\s+(-?\\d+(?:\\.\\d+)?))?.*$",
-                    Pattern.CASE_INSENSITIVE).matcher(trimmed);
-            if (!m.matches()) {
+            if (trimmed.contains("|")) {
+                GnssReferenceStation ufcors = parseUfcorsLine(trimmed);
+                if (ufcors != null) {
+                    out.add(ufcors);
+                }
                 continue;
             }
-            String code = m.group(1).toUpperCase(Locale.US);
-            String desc = m.group(2).trim().replaceAll("\\s{2,}", " ");
-            String statusWord = m.group(3).toLowerCase(Locale.US);
-            double lat = Double.parseDouble(m.group(4));
-            double lon = Double.parseDouble(m.group(5));
-            double alt = m.group(6) != null ? Double.parseDouble(m.group(6)) : 0.0;
+            Matcher s3Matcher = S3_ITRF_COORD_PATTERN.matcher(trimmed);
+            if (s3Matcher.matches()) {
+                String code = s3Matcher.group(1).toUpperCase(Locale.US);
+                double lat = dmsToDecimal(
+                        Double.parseDouble(s3Matcher.group(2)),
+                        Double.parseDouble(s3Matcher.group(3)),
+                        Double.parseDouble(s3Matcher.group(4)),
+                        s3Matcher.group(5).toUpperCase(Locale.US).charAt(0));
+                double lon = dmsToDecimal(
+                        Double.parseDouble(s3Matcher.group(6)),
+                        Double.parseDouble(s3Matcher.group(7)),
+                        Double.parseDouble(s3Matcher.group(8)),
+                        s3Matcher.group(9).toUpperCase(Locale.US).charAt(0));
+                double alt = Double.parseDouble(s3Matcher.group(10));
+                String rawCountry = s3Matcher.group(11).toUpperCase(Locale.US);
+                String country = "US".equals(rawCountry) ? "USA" : rawCountry;
+                String state = s3Matcher.group(12).toUpperCase(Locale.US);
+                String statusWord = s3Matcher.group(13).toLowerCase(Locale.US);
+                boolean active = statusWord.equals("operational") || statusWord.equals("active");
+                GnssStationStatus stStatus = active ? GnssStationStatus.UNKNOWN : GnssStationStatus.OFFLINE;
+                out.add(new GnssReferenceStation(
+                        code, code, code + " (" + state + ", " + country + ")", country,
+                        GnssStationNetwork.NOAA_CORS, EnumSet.of(GnssStationNetwork.NOAA_CORS),
+                        lat, lon, alt, null, "", "", "", "", EnumSet.of(GnssConstellation.GPS),
+                        List.of("RINEX 2/3 .gz"), 0L, -1, Double.NaN, stStatus, ""));
+                continue;
+            }
+            // Fallback: legacy decimal summary table
+            Matcher legacy = LEGACY_NOAA_DECIMAL_PATTERN.matcher(trimmed);
+            if (!legacy.matches()) {
+                continue;
+            }
+            String code = legacy.group(1).toUpperCase(Locale.US);
+            String desc = legacy.group(2).trim().replaceAll("\\s{2,}", " ");
+            String statusWord = legacy.group(3).toLowerCase(Locale.US);
+            double lat = Double.parseDouble(legacy.group(4));
+            double lon = Double.parseDouble(legacy.group(5));
+            double alt = legacy.group(6) != null ? Double.parseDouble(legacy.group(6)) : 0.0;
             boolean active = statusWord.equals("operational") || statusWord.equals("active");
             GnssStationStatus stStatus = active ? GnssStationStatus.UNKNOWN : GnssStationStatus.OFFLINE;
             out.add(new GnssReferenceStation(
@@ -506,6 +582,58 @@ public class GnssStationCatalogClient {
                     List.of("RINEX 2/3 .gz"), 0L, -1, Double.NaN, stStatus, ""));
         }
         return out;
+    }
+
+    private static GnssReferenceStation parseUfcorsLine(String trimmed) {
+        String[] parts = trimmed.split("\\|", -1);
+        if (parts.length < 10) {
+            return null;
+        }
+        String rawCode = parts[0].trim();
+        if (!UFCORS_ID_PATTERN.matcher(rawCode).matches()) {
+            return null;
+        }
+        String code = rawCode.toUpperCase(Locale.US);
+        double lat = parseCompactDms(parts[8].trim(), true);
+        double lon = parseCompactDms(parts[9].trim(), false);
+        if (!Double.isFinite(lat) || !Double.isFinite(lon)) {
+            return null;
+        }
+        EnumSet<GnssConstellation> consts = EnumSet.noneOf(GnssConstellation.class);
+        addConstellationToken(parts[1], consts);
+        if (consts.isEmpty()) {
+            consts.add(GnssConstellation.GPS);
+        }
+        String agency = parts[4].trim();
+        String siteName = !agency.isBlank() ? agency : code;
+        String statusWord = parts[7].trim().toLowerCase(Locale.US);
+        boolean active = statusWord.equals("operational") || statusWord.equals("active");
+        GnssStationStatus stStatus = active ? GnssStationStatus.UNKNOWN : GnssStationStatus.OFFLINE;
+        return new GnssReferenceStation(
+                code, code, siteName, "USA", GnssStationNetwork.NOAA_CORS, EnumSet.of(GnssStationNetwork.NOAA_CORS),
+                lat, lon, Double.NaN, null, "", "", "", "", consts,
+                List.of("RINEX 2/3 .gz"), 0L, -1, Double.NaN, stStatus, "");
+    }
+
+    private static double parseCompactDms(String token, boolean latitude) {
+        if (token == null || token.isBlank()) {
+            return Double.NaN;
+        }
+        Pattern pat = latitude ? COMPACT_LAT_DMS_PATTERN : COMPACT_LON_DMS_PATTERN;
+        Matcher m = pat.matcher(token.trim().toUpperCase(Locale.US));
+        if (!m.matches()) {
+            return Double.NaN;
+        }
+        return dmsToDecimal(
+                Double.parseDouble(m.group(2)),
+                Double.parseDouble(m.group(3)),
+                Double.parseDouble(m.group(4)),
+                m.group(1).charAt(0));
+    }
+
+    private static double dmsToDecimal(double deg, double min, double sec, char hemi) {
+        double abs = deg + (min / 60.0) + (sec / 3600.0);
+        return (hemi == 'S' || hemi == 'W') ? -abs : abs;
     }
 
     private static List<GnssReferenceStation> parseCsvStations(String text, GnssStationNetwork network) {
@@ -778,18 +906,22 @@ public class GnssStationCatalogClient {
         if (token == null || token.isBlank()) {
             return;
         }
-        String norm = token.trim().toUpperCase(Locale.US);
-        if (norm.equals("G") || norm.contains("GPS")) {
-            out.add(GnssConstellation.GPS);
-        }
-        if (norm.equals("E") || norm.contains("GAL")) {
-            out.add(GnssConstellation.GALILEO);
-        }
-        if (norm.equals("R") || norm.contains("GLO")) {
-            out.add(GnssConstellation.GLONASS);
-        }
-        if (norm.equals("C") || norm.contains("BDS") || norm.contains("BEI")) {
-            out.add(GnssConstellation.BEIDOU);
+        for (String piece : token.trim().toUpperCase(Locale.US).split("[+,;:/\\s]+")) {
+            if (piece.isEmpty()) {
+                continue;
+            }
+            if (piece.equals("G") || piece.contains("GPS")) {
+                out.add(GnssConstellation.GPS);
+            }
+            if (piece.equals("E") || piece.contains("GAL")) {
+                out.add(GnssConstellation.GALILEO);
+            }
+            if (piece.equals("R") || piece.contains("GLO")) {
+                out.add(GnssConstellation.GLONASS);
+            }
+            if (piece.equals("C") || piece.contains("BDS") || piece.contains("BEI")) {
+                out.add(GnssConstellation.BEIDOU);
+            }
         }
     }
 

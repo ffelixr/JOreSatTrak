@@ -299,6 +299,160 @@ class GnssStationCatalogClientTest {
         assertEquals(3, result.networks().size());
     }
 
+    @Test
+    void parsesLiveNoaaUfcorsS3CoordsM3gGeoJsonAndMigratesRetiredAllCorsUrl(@TempDir Path tmpDir)
+            throws Exception {
+        // 1. Default settings must use UFCORS + S3 coords rather than retired All_CORS.txt
+        AwarenessSettings defaults = AwarenessSettings.createDefaults();
+        assertTrue(defaults.getSources().stream().noneMatch(
+                s -> s.getEndpointUrl() != null && s.getEndpointUrl().contains("All_CORS.txt")));
+        assertTrue(defaults.getSources().stream().anyMatch(
+                s -> s.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG
+                        && s.getEndpointUrl().contains("UFCORS_site_list.txt")));
+        assertTrue(defaults.getSources().stream().anyMatch(
+                s -> s.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG
+                        && s.getEndpointUrl().contains("itrf2020_geo.comp.txt")));
+
+        // 2. UFCORS pipe-delimited + AWS S3 itrf2020_geo.comp.txt parsing and height merge
+        String ufcors = """
+                1LSU|GPS:GAL:GLO|2003-04-23 00:00:00.0|null|Louisiana State University|30|60|Operational|N302426.72859|W0911048.94791|LASU
+                AB02|GPS:GAL|2011-04-05 00:00:00.0|null|UNAVCO-PBO|15|1440|Operational|N525814.17078|W1685116.81658|UNAVPB
+                AB12|GPS|2010-03-17 00:00:00.0|null|UNAVCO-PBO|15|1440|Non-Operational|N585702.85433|W1614446.54662|UNAVPB
+                """;
+        List<GnssReferenceStation> ufcorsStations = GnssStationCatalogClient.parseCatalogPayload(
+                ufcors, GnssStationNetwork.NOAA_CORS);
+        assertEquals(3, ufcorsStations.size());
+        GnssReferenceStation lsu = ufcorsStations.get(0);
+        assertEquals("1LSU", lsu.stationId());
+        assertEquals(30.4074246, lsu.latDeg(), 1e-5);
+        assertEquals(-91.1802633, lsu.lonDeg(), 1e-5);
+        assertEquals(EnumSet.of(GnssConstellation.GPS, GnssConstellation.GALILEO, GnssConstellation.GLONASS),
+                lsu.supportedConstellations());
+        assertEquals(GnssStationStatus.UNKNOWN, lsu.status());
+        assertEquals(GnssStationStatus.OFFLINE, ufcorsStations.get(2).status());
+
+        String s3Coord = """
+                November 25, 2026
+
+                ITRF2020 Geod. CORS Pos. Ant. Ref. Point (ARP) [GRS80 Ellip.] Computed Vels.
+                ____________________________________________________________________________________________________________________
+                 SITE   EPOCH       Latitude          Longitude     Ellip. Ht.   Vn      Ve      Vu    Ctry.  State      Site
+                ____________________________________________________________________________________________________________________
+                AB02  2020.00  52 58 14.17078 N  168 51 16.81658 W   192.814   -19.4    -9.1     1.8    US      AK      Operational
+                """;
+        List<GnssReferenceStation> s3Stations = GnssStationCatalogClient.parseCatalogPayload(
+                s3Coord, GnssStationNetwork.NOAA_CORS);
+        assertEquals(1, s3Stations.size());
+        assertEquals(192.814, s3Stations.get(0).altMeters(), 1e-3);
+
+        List<GnssReferenceStation> mergedNoaa = GnssStationCatalogClient.deduplicateStations(
+                List.of(ufcorsStations.get(1), s3Stations.get(0)));
+        assertEquals(1, mergedNoaa.size());
+        assertEquals(192.814, mergedNoaa.get(0).altMeters(), 1e-3);
+        assertTrue(mergedNoaa.get(0).supportedConstellations().contains(GnssConstellation.GALILEO));
+
+        // 3. Live M3G GeoJSON feature properties mapping
+        String m3gGeoJson = """
+                {
+                  "features": [
+                    {
+                      "type": "Feature",
+                      "properties": {
+                        "GNSS Station ID": "AAER00FRA",
+                        "Country/Region": "FRA",
+                        "City": "CHARLEVILLE-MEZIERES",
+                        "Lat/Lon/Height": "49.78247/4.64265/199.3",
+                        "GNSS Antenna (Current)": "TRM57971.00     NONE",
+                        "GNSS Receiver (Current)": "SEPT POLARX5",
+                        "Satellite Constellation (Current)": "GPS+GLO+GAL+BDS+SBAS",
+                        "Station Status": "Active"
+                      }
+                    }
+                  ]
+                }
+                """;
+        List<GnssReferenceStation> m3gStations = GnssStationCatalogClient.parseCatalogPayload(
+                m3gGeoJson, GnssStationNetwork.EUREF);
+        assertEquals(1, m3gStations.size());
+        GnssReferenceStation aaer = m3gStations.get(0);
+        assertEquals("AAER00FRA", aaer.stationId());
+        assertEquals("CHARLEVILLE-MEZIERES", aaer.siteName());
+        assertEquals("FRA", aaer.countryCode());
+        assertEquals(49.78247, aaer.latDeg(), 1e-5);
+        assertEquals(4.64265, aaer.lonDeg(), 1e-5);
+        assertEquals(199.3, aaer.altMeters(), 1e-2);
+        assertEquals("SEPT POLARX5", aaer.receiverModel());
+        assertEquals("TRM57971.00", aaer.antennaModel());
+        assertEquals("NONE", aaer.radomeCode());
+        assertEquals(4, aaer.supportedConstellations().size());
+
+        // 4. Schema v3 store auto-migrates retired All_CORS.txt (both with and without UFCORS present)
+        Path fileWithUf = tmpDir.resolve("settings-with-ufcors.json");
+        Files.writeString(fileWithUf, """
+                {
+                  "schemaVersion": 3,
+                  "autoFetchOnStartup": false,
+                  "defaultHorizonDays": 7,
+                  "sources": [
+                    {
+                      "id": "noaa-cors-stations",
+                      "feedCategory": "GNSS_STATION_CATALOG",
+                      "providerScope": "NOAA_CORS",
+                      "displayName": "NOAA CORS Station List",
+                      "endpointUrl": "https://geodesy.noaa.gov/CORS/All_CORS.txt",
+                      "enabled": true,
+                      "priority": 3,
+                      "authMode": "NONE",
+                      "refreshIntervalMinutes": 1440
+                    },
+                    {
+                      "id": "noaa-ufcors-stations",
+                      "feedCategory": "GNSS_STATION_CATALOG",
+                      "providerScope": "NOAA_CORS",
+                      "displayName": "NOAA CORS Site List (UFCORS Fallback)",
+                      "endpointUrl": "https://geodesy.noaa.gov/CORS/UFCORS_site_list.txt",
+                      "enabled": true,
+                      "priority": 4,
+                      "authMode": "NONE",
+                      "refreshIntervalMinutes": 1440
+                    }
+                  ]
+                }
+                """, StandardCharsets.UTF_8);
+        AwarenessSettings migratedWithUf = new AwarenessSettingsStore(fileWithUf).load();
+        assertTrue(migratedWithUf.getSources().stream().noneMatch(
+                s -> s.getEndpointUrl().contains("All_CORS.txt")));
+        assertTrue(migratedWithUf.getSources().stream().anyMatch(
+                s -> s.getEndpointUrl().contains("itrf2020_geo.comp.txt")));
+        assertTrue(migratedWithUf.getSources().stream().anyMatch(
+                s -> s.getEndpointUrl().contains("UFCORS_site_list.txt")));
+
+        Path fileOnlyAllCors = tmpDir.resolve("settings-only-allcors.json");
+        Files.writeString(fileOnlyAllCors, """
+                {
+                  "schemaVersion": 3,
+                  "autoFetchOnStartup": false,
+                  "defaultHorizonDays": 7,
+                  "sources": [
+                    {
+                      "id": "noaa-cors-stations",
+                      "feedCategory": "GNSS_STATION_CATALOG",
+                      "providerScope": "NOAA_CORS",
+                      "displayName": "NOAA CORS Station List",
+                      "endpointUrl": "https://geodesy.noaa.gov/CORS/All_CORS.txt",
+                      "enabled": true,
+                      "priority": 3,
+                      "authMode": "NONE",
+                      "refreshIntervalMinutes": 1440
+                    }
+                  ]
+                }
+                """, StandardCharsets.UTF_8);
+        AwarenessSettings migratedSingle = new AwarenessSettingsStore(fileOnlyAllCors).load();
+        assertEquals("https://geodesy.noaa.gov/CORS/UFCORS_site_list.txt",
+                migratedSingle.getSources().get(0).getEndpointUrl());
+    }
+
     private static void respondText(com.sun.net.httpserver.HttpExchange ex, int code, String contentType, String body)
             throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
