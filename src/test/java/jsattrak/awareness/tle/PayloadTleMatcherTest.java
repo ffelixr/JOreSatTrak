@@ -212,6 +212,20 @@ public class PayloadTleMatcherTest {
         }
     }
 
+    @Test
+    public void testOmmCsvPreservesDecimalPointOnSignedLeadingDotNumbers() throws Exception {
+        String csv = ""
+                + "OBJECT_NAME,OBJECT_ID,EPOCH,MEAN_MOTION,ECCENTRICITY,INCLINATION,RA_OF_ASC_NODE,ARG_OF_PERICENTER,MEAN_ANOMALY,EPHEMERIS_TYPE,CLASSIFICATION_TYPE,NORAD_CAT_ID,ELEMENT_SET_NO,REV_AT_EPOCH,BSTAR,MEAN_MOTION_DOT,MEAN_MOTION_DDOT\n"
+                + "STARLINK-38230,2026-244B,2026-11-26T06:00:02.000160,15.45914417,.00041615,69.9989,137.8630,273.6892,4.0559,0,U,101201,999,605,-.62960181E-1,-.2696791E-1,0\n"
+                + "STARLINK-38504,2026-244A,2026-11-26T04:35:02.996160,15.51667880,.0002521,70.0020,137.9745,273.0790,87.0108,0,U,101200,999,471,+.49584667E-3,+.29532E-3,0\n";
+
+        List<TLE> parsed = jsattrak.utilities.OmmDataLoader.parseOmmCsv(new java.io.StringReader(csv));
+        assertEq(2, parsed.size());
+        assertEq(101201, PayloadTleMatcher.extractNoradId(parsed.get(0)));
+        assertEq("2026-244", PayloadTleMatcher.extractDesignatorPrefix(parsed.get(0)));
+        assertEq(101200, PayloadTleMatcher.extractNoradId(parsed.get(1)));
+    }
+
     private static LaunchRecord launchWithCospar(String cosparId, String missionName, boolean orbital, String outcome) {
         return LaunchRecord.builder()
                 .id("launch-" + missionName)
