@@ -94,7 +94,7 @@ public class GnssStationService implements AwarenessFeed {
     private boolean activationRequested;
     private boolean activated;
     private boolean hasSyncedInSession;
-    private boolean shutdown;
+    private volatile boolean shutdown;
 
     private final GnssStateListener awarenessListener;
     private final GnssGeometryListener geometryListener;
@@ -394,7 +394,7 @@ public class GnssStationService implements AwarenessFeed {
             }
             boolean netMatch = false;
             for (GnssStationNetwork n : st.networks()) {
-                if (n == GnssStationNetwork.LOCAL || networksEnabled.getOrDefault(n.name(), Boolean.TRUE)) {
+                if (n == GnssStationNetwork.LOCAL || networksEnabled.getOrDefault(n, Boolean.TRUE)) {
                     netMatch = true;
                     break;
                 }
@@ -441,7 +441,13 @@ public class GnssStationService implements AwarenessFeed {
 
         GnssReferenceStation st = findStationById(stationId);
         if (st != null && st.networks().contains(GnssStationNetwork.NOAA_CORS) && st.receiverModel().isBlank()) {
-            ensureWorkerPool().execute(() -> enrichStationQuietly(st));
+            ExecutorService pool = ensureWorkerPool();
+            if (pool != null) {
+                try {
+                    pool.execute(() -> enrichStationQuietly(st));
+                } catch (java.util.concurrent.RejectedExecutionException ignored) {
+                }
+            }
         }
     }
 
@@ -454,7 +460,7 @@ public class GnssStationService implements AwarenessFeed {
     }
 
     public boolean isNetworkEnabled(GnssStationNetwork net) {
-        return net != null && networksEnabled.getOrDefault(net.name(), Boolean.TRUE);
+        return net != null && networksEnabled.getOrDefault(net, Boolean.TRUE);
     }
 
     public void setNetworkEnabled(GnssStationNetwork net, boolean enabled) {
@@ -599,7 +605,6 @@ public class GnssStationService implements AwarenessFeed {
             return;
         }
         final long loadGen = explicitLoadGeneration.incrementAndGet();
-        final long inspGen = inspectionGeneration.incrementAndGet();
         final boolean preferLatest = !matchSimEpoch || lastRealTimeMode;
         final long targetEpoch = preferLatest ? clock.millis() : lastSimEpochMillis;
 
@@ -620,6 +625,7 @@ public class GnssStationService implements AwarenessFeed {
                     this.loadedObsData = fetched.observationData();
                     this.loadedObsFormat = fetched.formatLabel();
                     this.loadedObsSourceName = fetched.sourceName();
+                    inspectionGeneration.incrementAndGet();
 
                     GnssStationAnalysis analysis = RinexObservationAnalyzer.analyze(
                             st,
@@ -701,6 +707,7 @@ public class GnssStationService implements AwarenessFeed {
                     this.loadedObsData = firstObs;
                     this.loadedObsFormat = firstFormat;
                     this.loadedObsSourceName = firstSrc;
+                    inspectionGeneration.incrementAndGet();
                     this.lastAnalyzedSimEpochMillis = targetEpoch;
                     this.latestAnalysis = firstAnalysis;
 
@@ -837,6 +844,8 @@ public class GnssStationService implements AwarenessFeed {
                         geometryService.getEphemerisProvider(), awarenessService);
                 if (gen == inspectionGeneration.get()
                         && expectedLoadGen == explicitLoadGeneration.get()
+                        && st == this.loadedObsStation
+                        && data == this.loadedObsData
                         && !shutdown) {
                     this.lastAnalyzedSimEpochMillis = epoch;
                     this.latestAnalysis = updated;

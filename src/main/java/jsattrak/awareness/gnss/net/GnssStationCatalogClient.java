@@ -406,7 +406,7 @@ public class GnssStationCatalogClient {
 
         double lat = firstFinite(dbl(props, "lat"), dbl(props, "latitude"), dbl(props, "latDeg"), Double.NaN);
         double lon = firstFinite(dbl(props, "lon"), dbl(props, "longitude"), dbl(props, "lonDeg"), Double.NaN);
-        double alt = firstFinite(dbl(props, "height"), dbl(props, "alt"), dbl(props, "elevation"), 0.0);
+        double alt = firstFinite(dbl(props, "height"), dbl(props, "alt"), dbl(props, "elevation"), Double.NaN);
 
         if ((!Double.isFinite(lat) || !Double.isFinite(lon))
                 && rawObj.has("geometry") && rawObj.get("geometry").isJsonObject()) {
@@ -442,6 +442,9 @@ public class GnssStationCatalogClient {
 
         if (!Double.isFinite(lat) || !Double.isFinite(lon)) {
             return null;
+        }
+        if (!Double.isFinite(alt)) {
+            alt = 0.0;
         }
 
         String rxModel = firstNonBlank(str(props, "receiver_type"), str(props, "receiverType"), str(props, "receiver"));

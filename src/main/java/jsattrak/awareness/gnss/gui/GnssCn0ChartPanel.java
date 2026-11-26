@@ -233,8 +233,9 @@ public class GnssCn0ChartPanel extends JPanel {
         if (tips.isEmpty() && !analysis.elevationScatter().isEmpty()) {
             g2.setColor(mutedColor);
             g2.setFont(getFont().deriveFont(Font.PLAIN, 11.0f));
+            FontMetrics noEphFm = g2.getFontMetrics();
             String noEph = "Elevation ephemeris unavailable (load TLE or Nav/SP3)";
-            g2.drawString(noEph, px + Math.max(8, (pw - fm.stringWidth(noEph)) / 2), py + ph / 2);
+            g2.drawString(noEph, px + Math.max(8, (pw - noEphFm.stringWidth(noEph)) / 2), py + ph / 2);
         }
         this.hoverTargets = List.copyOf(tips);
 
