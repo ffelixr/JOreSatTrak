@@ -42,7 +42,9 @@ public final class RinexObservationData {
             antennaType = antennaType != null ? antennaType.trim() : "";
             approxEcef = (approxEcef != null && approxEcef.length == 3) ? approxEcef.clone() : new double[3];
             signalStrengthUnit = signalStrengthUnit != null ? signalStrengthUnit.trim() : "";
-            typeObs = typeObs != null ? Collections.unmodifiableMap(new EnumMap<>(typeObs)) : Map.of();
+            typeObs = (typeObs != null && !typeObs.isEmpty())
+                    ? Collections.unmodifiableMap(new EnumMap<>(typeObs))
+                    : Map.of();
             glonassChannels = glonassChannels != null ? List.copyOf(glonassChannels) : List.of();
         }
     }

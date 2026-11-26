@@ -691,22 +691,29 @@ public class GnssStationService implements AwarenessFeed {
             ExecutorService pool = ensureRegionalFetchPool();
             List<Future<RegionalCn0AnomalyDetector.StationObservationInput>> futures = new ArrayList<>();
             for (GnssReferenceStation st : scanTargets) {
-                futures.add(pool.submit(() -> {
-                    GnssReferenceStation enriched = maybeEnrichNoaa(st);
-                    GnssObservationSource.ObservationFetchResult fetched = fetchUsingSources(
-                            enriched,
-                            new GnssObservationSource.ObservationQuery(targetEpoch, 60, preferLatest));
-                    GnssStationAnalysis analysis = RinexObservationAnalyzer.analyze(
-                            fetched.resolvedStation(),
-                            fetched.observationData(),
-                            stationMaskDeg,
-                            targetEpoch,
-                            geometryService.getEphemerisProvider(),
-                            awarenessService);
-                    double dist = center.distanceKmTo(enriched.latDeg(), enriched.lonDeg());
-                    return new RegionalCn0AnomalyDetector.StationObservationInput(
-                            fetched.resolvedStation(), analysis, dist);
-                }));
+                if (shutdown) {
+                    return;
+                }
+                try {
+                    futures.add(pool.submit(() -> {
+                        GnssReferenceStation enriched = maybeEnrichNoaa(st);
+                        GnssObservationSource.ObservationFetchResult fetched = fetchUsingSources(
+                                enriched,
+                                new GnssObservationSource.ObservationQuery(targetEpoch, 60, preferLatest));
+                        GnssStationAnalysis analysis = RinexObservationAnalyzer.analyze(
+                                fetched.resolvedStation(),
+                                fetched.observationData(),
+                                stationMaskDeg,
+                                targetEpoch,
+                                geometryService.getEphemerisProvider(),
+                                awarenessService);
+                        double dist = center.distanceKmTo(enriched.latDeg(), enriched.lonDeg());
+                        return new RegionalCn0AnomalyDetector.StationObservationInput(
+                                fetched.resolvedStation(), analysis, dist);
+                    }));
+                } catch (java.util.concurrent.RejectedExecutionException ignored) {
+                    return;
+                }
             }
 
             List<RegionalCn0AnomalyDetector.StationObservationInput> completed = new ArrayList<>();

@@ -163,6 +163,7 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
         showUpcomingLaunchesCheckBox.setSelected(threeDPanel.isShowUpcomingLaunches());
         showGnssConstellationsCheckBox.setSelected(threeDPanel.isShowGnssConstellations());
         showGnssDopHeatmapCheckBox.setSelected(threeDPanel.isShowGnssDopHeatmap());
+        showGnssStationsCheckBox.setSelected(threeDPanel.isShowGnssStations());
 
 
     } // JThreeDViewPropPanel
@@ -228,6 +229,7 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
         showUpcomingLaunchesCheckBox = new javax.swing.JCheckBox();
         showGnssConstellationsCheckBox = new javax.swing.JCheckBox();
         showGnssDopHeatmapCheckBox = new javax.swing.JCheckBox();
+        showGnssStationsCheckBox = new javax.swing.JCheckBox();
 
         buttonGroup1.add(earthViewRadioButton);
         buttonGroup1.add(modelViewRadioButton);
@@ -606,6 +608,9 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
         showGnssDopHeatmapCheckBox.setSelected(true);
         showGnssDopHeatmapCheckBox.setText("Show GNSS DOP Heatmap");
 
+        showGnssStationsCheckBox.setSelected(true);
+        showGnssStationsCheckBox.setText("Show GNSS Reference Stations");
+
         javax.swing.GroupLayout jPanel6Layout = new javax.swing.GroupLayout(jPanel6);
         jPanel6.setLayout(jPanel6Layout);
         jPanel6Layout.setHorizontalGroup(
@@ -615,7 +620,8 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
                 .addGroup(jPanel6Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                     .addComponent(showUpcomingLaunchesCheckBox)
                     .addComponent(showGnssConstellationsCheckBox)
-                    .addComponent(showGnssDopHeatmapCheckBox))
+                    .addComponent(showGnssDopHeatmapCheckBox)
+                    .addComponent(showGnssStationsCheckBox))
                 .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
         );
         jPanel6Layout.setVerticalGroup(
@@ -625,7 +631,9 @@ public class JThreeDViewPropPanel extends javax.swing.JPanel
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(showGnssConstellationsCheckBox)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addComponent(showGnssDopHeatmapCheckBox))
+                .addComponent(showGnssDopHeatmapCheckBox)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(showGnssStationsCheckBox))
         );
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(this);
@@ -866,6 +874,7 @@ private void gridColorLabelMouseClicked(java.awt.event.MouseEvent evt)//GEN-FIRS
     private javax.swing.JCheckBox showUpcomingLaunchesCheckBox;
     private javax.swing.JCheckBox showGnssConstellationsCheckBox;
     private javax.swing.JCheckBox showGnssDopHeatmapCheckBox;
+    private javax.swing.JCheckBox showGnssStationsCheckBox;
     private javax.swing.JComboBox modeViewComboBox;
     private javax.swing.JTextField modelFarTextField;
     private javax.swing.JTextField modelNearTextField;
@@ -984,6 +993,7 @@ private void gridColorLabelMouseClicked(java.awt.event.MouseEvent evt)//GEN-FIRS
         threeDPanel.setShowUpcomingLaunches(showUpcomingLaunchesCheckBox.isSelected());
         threeDPanel.setShowGnssConstellations(showGnssConstellationsCheckBox.isSelected());
         threeDPanel.setShowGnssDopHeatmap(showGnssDopHeatmapCheckBox.isSelected());
+        threeDPanel.setShowGnssStations(showGnssStationsCheckBox.isSelected());
 
 
         return updateMapData;
