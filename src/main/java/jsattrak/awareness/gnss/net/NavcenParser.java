@@ -30,6 +30,11 @@ public final class NavcenParser {
     private static final Pattern STOP_TIME_PATTERN = Pattern.compile("STOP\\s+TIME:\\s*(\\d{4})\\s+(\\d{3})\\s+(\\d{4})", Pattern.CASE_INSENSITIVE);
     private static final Pattern SUBJ_PATTERN = Pattern.compile("SUBJ:\\s*(.+)");
 
+    private static final Pattern JDAY_RANGE_PATTERN = Pattern.compile(
+            "JDAY\\s*(\\d{1,3})/(\\d{4})(?:\\s*-\\s*JDAY\\s*(\\d{1,3})/(\\d{4}))?",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern NNU_LINK_PATTERN = Pattern.compile("(\\d{6,8})\\.nnu", Pattern.CASE_INSENSITIVE);
+
     private NavcenParser() {
     }
 
@@ -51,7 +56,11 @@ public final class NavcenParser {
                 continue;
             }
             String upperLine = line.toUpperCase(Locale.ROOT);
-            if (upperLine.startsWith("PRN,") || (upperLine.contains("PRN") && (upperLine.contains("SVN") || upperLine.contains("STATUS")))) {
+            if (upperLine.startsWith("PRN,")
+                    || (!PRN_PATTERN.matcher(line).find()
+                            && !SVN_PATTERN.matcher(line).find()
+                            && upperLine.contains("PRN")
+                            && (upperLine.contains("SVN") || upperLine.contains("STATUS")))) {
                 tableHasPrnColumn = true;
                 continue;
             }
@@ -106,7 +115,23 @@ public final class NavcenParser {
         Matcher trMatcher = TR_BLOCK_PATTERN.matcher(content);
         List<String> trRows = new ArrayList<>();
         while (trMatcher.find()) {
-            String inner = trMatcher.group(1)
+            String rawRow = trMatcher.group(1);
+            if (rawRow.contains("<td") && rawRow.contains("views-field-field-gps-prn")) {
+                String prnText = extractCellByClass(rawRow, "views-field-field-gps-prn");
+                String svnText = extractCellByClass(rawRow, "views-field-field-gps-svn");
+                String nanuType = extractCellByClass(rawRow, "views-field-field-nanu-type");
+                String nanuSubj = extractCellByClass(rawRow, "views-field-field-nanu-subject");
+                String activeFlag = extractCellByClass(rawRow, "nanu-active-check");
+                if (!prnText.isEmpty()) {
+                    if ("0".equals(activeFlag)) {
+                        trRows.add("PRN" + prnText + " SVN" + svnText + " OPERATIONAL");
+                    } else {
+                        trRows.add("PRN" + prnText + " SVN" + svnText + " " + nanuType + " " + nanuSubj);
+                    }
+                    continue;
+                }
+            }
+            String inner = rawRow
                     .replaceAll("(?i)<t[dh][^>]*>", " ")
                     .replaceAll("<[^>]+>", " ")
                     .replaceAll("\\s+", " ")
@@ -124,6 +149,138 @@ public final class NavcenParser {
             lines.add(line);
         }
         return lines;
+    }
+
+    /**
+     * Parses NANU summary entries embedded in NAVCEN's Drupal {@code /gps-constellation} HTML table.
+     */
+    public static List<GnssOutageNotice> parseHtmlTableNanus(String html) {
+        if (html == null || !html.contains("views-field-field-nanu-subject")) {
+            return List.of();
+        }
+        List<GnssOutageNotice> raw = new ArrayList<>();
+        Matcher trMatcher = TR_BLOCK_PATTERN.matcher(html);
+        while (trMatcher.find()) {
+            String rawRow = trMatcher.group(1);
+            if (!rawRow.contains("<td") || !rawRow.contains("views-field-field-nanu-subject")) {
+                continue;
+            }
+            Matcher nnuMatcher = NNU_LINK_PATTERN.matcher(rawRow);
+            if (!nnuMatcher.find()) {
+                continue;
+            }
+            String nanuNum = nnuMatcher.group(1);
+            String prnText = extractCellByClass(rawRow, "views-field-field-gps-prn");
+            String svnText = extractCellByClass(rawRow, "views-field-field-gps-svn");
+            String nanuType = extractCellByClass(rawRow, "views-field-field-nanu-type").toUpperCase(Locale.ROOT);
+            String nanuSubj = extractCellByClass(rawRow, "views-field-field-nanu-subject");
+            String activeFlag = extractCellByClass(rawRow, "nanu-active-check");
+
+            String prnId = normalizeGpsPrn(prnText);
+            if (prnId.isEmpty()) {
+                Matcher pm = PRN_PATTERN.matcher(nanuSubj);
+                if (pm.find()) {
+                    prnId = normalizeGpsPrn(pm.group(1));
+                }
+            }
+            if (prnId.isEmpty()) {
+                continue;
+            }
+
+            String svn = normalizeSvn(svnText);
+            String noticeType = nanuType.isEmpty() ? "NANU" : nanuType;
+            int year = parseYearFromNanuNum(nanuNum);
+            long startMillis = 0L;
+            long endMillis = 0L;
+            Matcher jday = JDAY_RANGE_PATTERN.matcher(nanuSubj);
+            if (jday.find() && year > 0) {
+                int startDoy = Integer.parseInt(jday.group(1));
+                startMillis = parseDoyHhmm(year, startDoy, jday.group(2));
+                if (jday.group(3) != null && jday.group(4) != null) {
+                    int stopDoy = Integer.parseInt(jday.group(3));
+                    int stopYear = stopDoy < startDoy ? year + 1 : year;
+                    endMillis = parseDoyHhmm(stopYear, stopDoy, jday.group(4));
+                }
+            }
+            if ("0".equals(activeFlag) && endMillis <= 0L) {
+                continue;
+            }
+            boolean isCancel = noticeType.contains("CANC");
+            boolean planned = noticeType.startsWith("FCST") && !isCancel;
+            raw.add(new GnssOutageNotice(
+                    "NANU " + nanuNum,
+                    GnssConstellation.GPS,
+                    prnId,
+                    svn,
+                    noticeType,
+                    planned,
+                    isCancel,
+                    startMillis,
+                    endMillis,
+                    nanuSubj.isEmpty() ? noticeType : nanuSubj,
+                    "NAVCEN"));
+        }
+        return applyCancellations(raw);
+    }
+
+    private static String extractCellByClass(String rowHtml, String cssClass) {
+        Pattern p = Pattern.compile(
+                "<td\\b[^>]*class\\s*=\\s*[\"'][^\"']*\\b" + Pattern.quote(cssClass)
+                        + "\\b[^\"']*[\"'][^>]*>(.*?)</td>",
+                Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher m = p.matcher(rowHtml);
+        if (!m.find()) {
+            return "";
+        }
+        return m.group(1).replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    private static String normalizeGpsPrn(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        try {
+            int prnNum = Integer.parseInt(raw.trim());
+            return (prnNum >= 1 && prnNum <= 32) ? String.format("G%02d", prnNum) : "";
+        } catch (NumberFormatException e) {
+            return "";
+        }
+    }
+
+    private static String normalizeSvn(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        String digits = raw.replaceAll("[^0-9]", "");
+        if (digits.isEmpty()) {
+            return "";
+        }
+        return "G" + (digits.length() == 2 ? "0" + digits : digits);
+    }
+
+    private static int parseYearFromNanuNum(String nanuNum) {
+        if (nanuNum != null && nanuNum.length() >= 4) {
+            try {
+                return Integer.parseInt(nanuNum.substring(0, 4));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 0;
+    }
+
+    private static long parseDoyHhmm(int year, int rawDoy, String hhmm) {
+        try {
+            int maxDoy = java.time.Year.isLeap(year) ? 366 : 365;
+            int doy = Math.max(1, Math.min(maxDoy, rawDoy));
+            int hour = Integer.parseInt(hhmm.substring(0, 2));
+            int minute = Integer.parseInt(hhmm.substring(2, 4));
+            return LocalDate.ofYearDay(year, doy)
+                    .atTime(hour % 24, minute % 60)
+                    .toInstant(ZoneOffset.UTC)
+                    .toEpochMilli() + (hour >= 24 ? 86_400_000L : 0L);
+        } catch (RuntimeException e) {
+            return 0L;
+        }
     }
 
     /**

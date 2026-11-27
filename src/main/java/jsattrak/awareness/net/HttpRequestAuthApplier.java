@@ -48,7 +48,7 @@ public final class HttpRequestAuthApplier {
             builder = HttpRequest.newBuilder()
                     .uri(uri)
                     .timeout(effectiveTimeout)
-                    .header("User-Agent", "JOreSatTrak/0.1")
+                    .header("User-Agent", "Mozilla/5.0 (compatible; JOreSatTrak/0.1)")
                     .GET();
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(redactSecretFromError(e.getMessage(), mode, source));

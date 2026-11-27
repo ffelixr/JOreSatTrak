@@ -95,6 +95,9 @@ import jsattrak.awareness.gnss.geometry.GnssDopGrid;
 import jsattrak.awareness.gnss.geometry.GnssGeometryListener;
 import jsattrak.awareness.gnss.geometry.GnssGeometryService;
 import jsattrak.awareness.gnss.geometry.GnssObserverPosition;
+import jsattrak.awareness.gnss.stations.GnssStationListener;
+import jsattrak.awareness.gnss.stations.GnssStationService;
+import jsattrak.awareness.gnss.stations.analysis.RegionalScanReport;
 import jsattrak.awareness.gui.LiveAwarenessInternalFrame;
 import jsattrak.awareness.gui.LiveDataSourcesDialog;
 import jsattrak.awareness.gui.PayloadTleImportDialog;
@@ -167,6 +170,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     private transient LiveAwarenessService liveAwarenessService;
     private transient GnssAwarenessService gnssAwarenessService;
     private transient GnssGeometryService gnssGeometryService;
+    private transient GnssStationService gnssStationService;
     private transient LiveAwarenessInternalFrame liveAwarenessFrame;
     private transient JGroundStationBrowser openGsBrowser;
     private transient JInternalFrame openGsBrowserFrame;
@@ -175,6 +179,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
     private transient AwarenessStateListener liveAwarenessListener;
     private transient GnssStateListener gnssAwarenessListener;
     private transient GnssGeometryListener gnssGeometryListener;
+    private transient GnssStationListener gnssStationListener;
     private transient long lastGnssEpochMillis = Long.MIN_VALUE;
     private transient Thread liveAwarenessShutdownHook;
 
@@ -318,6 +323,8 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                 awarenessSettingsStore, this.groundStationCatalogRepository);
         this.gnssAwarenessService = GnssAwarenessService.createDefault(awarenessSettingsStore);
         this.gnssGeometryService = new GnssGeometryService(this.gnssAwarenessService, awarenessSettingsStore);
+        this.gnssStationService = new GnssStationService(
+                this.gnssAwarenessService, this.gnssGeometryService, awarenessSettingsStore);
         this.lastLaunchPadEntries = loadLaunchApiPadsQuietly();
 
         // // TEST
@@ -653,7 +660,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         jMenuItem2.setText("jMenuItem2");
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
-        setTitle("JSatTrak"); // NOI18N
+        setTitle("JOreSatTrak"); // NOI18N
 
         jPanel3.setLayout(new java.awt.BorderLayout());
 
@@ -1837,6 +1844,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         if (gnssGeometryService != null) {
             newPanel.setGnssGeometryService(gnssGeometryService);
         }
+        if (gnssStationService != null) {
+            newPanel.setGnssStationService(gnssStationService);
+        }
 
         twoDWindowCount++;
         String windowName = "2D Earth Window - " + twoDWindowCount;
@@ -1876,6 +1886,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         }
         if (gnssGeometryService != null) {
             newPanel.setGnssGeometryService(gnssGeometryService);
+        }
+        if (gnssStationService != null) {
+            newPanel.setGnssStationService(gnssStationService);
         }
 
         twoDPolarWindowCount++;
@@ -1951,6 +1964,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         if (gnssGeometryService != null) {
             newPanel.setGnssGeometryService(gnssGeometryService);
         }
+        if (gnssStationService != null) {
+            newPanel.setGnssStationService(gnssStationService);
+        }
         threeDInternalWindowVec.add(newPanel); // add to vector
 
         // frame size
@@ -1999,6 +2015,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         }
         if (gnssGeometryService != null) {
             newPanel.setGnssGeometryService(gnssGeometryService);
+        }
+        if (gnssStationService != null) {
+            newPanel.setGnssStationService(gnssStationService);
         }
         threeDWindowVec.add(newPanel); // add to vector
 
@@ -2120,6 +2139,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
 
         // update times in 3D windows
         long simEpochMillis = currentJulianDate.getTimeInMillis();
+        if (gnssStationService != null) {
+            gnssStationService.updateSimEpochMillis(simEpochMillis, isRealTimeMode());
+        }
         boolean refresh3dGnss = gnssAwarenessService != null
                 && (lastGnssEpochMillis == Long.MIN_VALUE
                 || gnssAwarenessService.hasCrossedNoticeBoundary(lastGnssEpochMillis, simEpochMillis));
@@ -2665,6 +2687,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
             closedEarthPanel.setAwarenessService(null);
             closedEarthPanel.setGnssAwarenessService(null);
             closedEarthPanel.setGnssGeometryService(null);
+            closedEarthPanel.setGnssStationService(null);
             twoDWindowVec.remove(closedEarthPanel);
             return;
         }
@@ -2672,6 +2695,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
             closedPolarPanel.setAwarenessService(null);
             closedPolarPanel.setGnssAwarenessService(null);
             closedPolarPanel.setGnssGeometryService(null);
+            closedPolarPanel.setGnssStationService(null);
             twoDPolarWindowVec.remove(closedPolarPanel);
             return;
         }
@@ -2685,6 +2709,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         if (contentPane instanceof J3DEarthInternalPanel closed3dPanel) {
             closed3dPanel.setGnssAwarenessService(null);
             closed3dPanel.setGnssGeometryService(null);
+            closed3dPanel.setGnssStationService(null);
             closed3dPanel.dispose();
             threeDInternalWindowVec.remove(closed3dPanel);
             System.gc();
@@ -3281,6 +3306,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                         if (gnssGeometryService != null) {
                             newPanel.setGnssGeometryService(gnssGeometryService);
                         }
+                        if (gnssStationService != null) {
+                            newPanel.setGnssStationService(gnssStationService);
+                        }
                     }
 
                     // create all the needed 2D Polar windows:
@@ -3294,6 +3322,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                             }
                             if (gnssGeometryService != null) {
                                 newPanel.setGnssGeometryService(gnssGeometryService);
+                            }
+                            if (gnssStationService != null) {
+                                newPanel.setGnssStationService(gnssStationService);
                             }
                         }
                     }
@@ -3343,6 +3374,10 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                             newPanel.setGnssGeometryService(gnssGeometryService);
                             newPanel.refreshGnssDopHeatmap(currentJulianDate.getTimeInMillis());
                         }
+                        if (gnssStationService != null) {
+                            newPanel.setGnssStationService(gnssStationService);
+                            newPanel.refreshGnssStationsOverlay();
+                        }
                     }
                     // create all 3D internal windows needed
                     for (J3DEarthlPanelSave j3dp : openClass.getThreeDWindowSaveVec()) {
@@ -3362,6 +3397,10 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                         if (gnssGeometryService != null) {
                             newPanel.setGnssGeometryService(gnssGeometryService);
                             newPanel.refreshGnssDopHeatmap(currentJulianDate.getTimeInMillis());
+                        }
+                        if (gnssStationService != null) {
+                            newPanel.setGnssStationService(gnssStationService);
+                            newPanel.refreshGnssStationsOverlay();
                         }
                     }
 
@@ -3517,6 +3556,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
             if (contentPane instanceof J3DEarthPanel closedEarthPanel) {
                 closedEarthPanel.setGnssAwarenessService(null);
                 closedEarthPanel.setGnssGeometryService(null);
+                closedEarthPanel.setGnssStationService(null);
                 closedEarthPanel.dispose();
                 threeDWindowVec.remove(closedEarthPanel); // remove from Vector
                 System.gc(); // force garbage collection after getting rid of that window
@@ -3583,7 +3623,10 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         messageTimer.restart();
 
         // so this shows up in console
-        System.out.println(msg);
+        if (msg != null && !msg.isBlank()) {
+            String prefixed = msg.startsWith("[JOreSatTrak]") ? msg : "[JOreSatTrak] " + msg;
+            System.out.println(prefixed);
+        }
     }
 
     /**
@@ -3881,6 +3924,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
      *             script runme.bsh and save output to the satLog.txt file)
      */
     public static void main(final String args[]) {
+        jsattrak.utilities.Console.install();
 
         try {
             System.out.println("[JOreSatTrak] Starting Orekit initialization...");
@@ -4074,6 +4118,41 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
             };
             gnssGeometryService.addListener(gnssGeometryListener);
         }
+        if (gnssStationService != null) {
+            this.gnssStationListener = new GnssStationListener() {
+                @Override
+                public void onStationCatalogChanged() {
+                    forceRepainting();
+                }
+
+                @Override
+                public void onSelectedStationChanged(String selectedStationId) {
+                    if (selectedStationId != null && !selectedStationId.isBlank()) {
+                        setStatusMessage("GNSS Station selected: " + selectedStationId);
+                    }
+                    forceRepainting();
+                }
+
+                @Override
+                public void onRegionalScanUpdated(RegionalScanReport report) {
+                    forceRepainting();
+                }
+
+                @Override
+                public void onStationStatusMessage(String message, boolean isWarning) {
+                    if (message != null && !message.isBlank()) {
+                        setStatusMessage(message);
+                    }
+                }
+
+                @Override
+                public void onMapOverlayStateChanged(boolean enabled) {
+                    forceRepainting();
+                }
+            };
+            gnssStationService.addListener(gnssStationListener);
+            gnssStationService.initializeAtStartup();
+        }
     }
 
     private void shutdownLiveAwareness() {
@@ -4097,25 +4176,32 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         if (gnssGeometryService != null && gnssGeometryListener != null) {
             gnssGeometryService.removeListener(gnssGeometryListener);
         }
+        if (gnssStationService != null && gnssStationListener != null) {
+            gnssStationService.removeListener(gnssStationListener);
+        }
         if (SwingUtilities.isEventDispatchThread()) {
             for (J2DEarthPanel panel : twoDWindowVec) {
                 panel.setAwarenessService(null);
                 panel.setGnssAwarenessService(null);
                 panel.setGnssGeometryService(null);
+                panel.setGnssStationService(null);
             }
             for (J2DPolarEarthPanel panel : twoDPolarWindowVec) {
                 panel.setAwarenessService(null);
                 panel.setGnssAwarenessService(null);
                 panel.setGnssGeometryService(null);
+                panel.setGnssStationService(null);
             }
             for (J3DEarthPanel panel : threeDWindowVec) {
                 panel.setGnssAwarenessService(null);
                 panel.setGnssGeometryService(null);
+                panel.setGnssStationService(null);
                 panel.dispose();
             }
             for (J3DEarthInternalPanel panel : threeDInternalWindowVec) {
                 panel.setGnssAwarenessService(null);
                 panel.setGnssGeometryService(null);
+                panel.setGnssStationService(null);
                 panel.dispose();
             }
             if (liveAwarenessFrame != null) {
@@ -4125,6 +4211,9 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         }
         if (liveAwarenessService != null) {
             liveAwarenessService.shutdown();
+        }
+        if (gnssStationService != null) {
+            gnssStationService.shutdown();
         }
         if (gnssGeometryService != null) {
             gnssGeometryService.shutdown();
@@ -4207,6 +4296,10 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
         return gnssGeometryService;
     }
 
+    public GnssStationService getGnssStationService() {
+        return gnssStationService;
+    }
+
     public void openOrFocusLiveAwareness(String preferredFeedId) {
         if (liveAwarenessService == null) {
             return;
@@ -4221,6 +4314,7 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                     liveAwarenessService,
                     gnssAwarenessService,
                     gnssGeometryService,
+                    gnssStationService,
                     () -> gsHash.values(),
                     this::jumpToEpochMillis,
                     this::centerAllMapsOn,
@@ -4315,6 +4409,13 @@ public class JSatTrak extends javax.swing.JFrame implements InternalFrameListene
                   <li><b>Polar Skyplot &amp; 24h Profile</b>: Plots azimuth/elevation tracks, exclusion reasons, and a 24h DOP timeline
                   (click any sample to jump the Sim Clock).</li>
                   <li><b>Global DOP Heatmap</b>: Toggleable global grid overlay across 2D, Polar, and 3D views (5\u00b0 / 2.5\u00b0 resolution).</li>
+                </ul>
+                <h3>Layer 3: Ground Reference Stations &amp; Real GNSS Measurements</h3>
+                <ul>
+                  <li><b>Reference Networks</b>: Aggregates <b>IGS</b>, <b>EUREF Permanent Network (EPN)</b>, and <b>NOAA CORS</b> permanent geodetic receivers (plus local RINEX 2/3/4 and Hatanaka CRX files) with hardware, antenna, constellation, latency, and availability metadata.</li>
+                  <li><b>Map Overlay</b>: Toggle <b>Show Stations on maps</b> inside the <b>GNSS Stations</b> tab to render clustered beacon pins (#3FBF6A online, #FA8C16 delayed, #E5484D offline/alert) and active regional RF interference rings across 2D, Polar, and 3D maps.</li>
+                  <li><b>Measurement Inspector</b>: Compares predicted vs. actually tracked satellites in a C/N0-colored Polar Skyplot, charts C/N0 distribution &amp; elevation-normalized <b>&Delta;C/N0</b>, detects LLI + geometry-free cycle slips, computes <b>MP1 / MP2</b> multipath RMS, and runs local weighted Gauss-Newton <b>SPP verification</b> against surveyed monument coordinates when matching BRDC/SP3 clocks are loaded.</li>
+                  <li><b>Regional Interference Scan</b>: Evaluates nearby stations around a selected center site to surface synchronized high-elevation C/N0 drops, missing satellites, and potential RF interference across shared constellations.</li>
                 </ul>
                 </body></html>
                 """;

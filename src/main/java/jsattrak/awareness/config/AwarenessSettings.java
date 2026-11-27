@@ -14,7 +14,7 @@ import jsattrak.awareness.gnss.GnssDisplayStatus;
  */
 public class AwarenessSettings {
 
-    public static final int CURRENT_SCHEMA_VERSION = 2;
+    public static final int CURRENT_SCHEMA_VERSION = 3;
 
     private int schemaVersion;
     private boolean autoFetchOnStartup;
@@ -31,6 +31,10 @@ public class AwarenessSettings {
     private Double gnssObserverLatDeg = 40.4168;
     private Double gnssObserverLonDeg = -3.7038;
     private Double gnssObserverAltMeters = 650.0;
+    private Map<String, Boolean> gnssStationNetworksEnabled = defaultStationNetworksMap();
+    private Double gnssRegionalScanRadiusKm = 250.0;
+    private Integer gnssRegionalScanMaxStations = 6;
+    private Double gnssStationMaskDeg = 10.0;
     private List<DataSourceConfig> sources = new ArrayList<>();
 
     public AwarenessSettings() {
@@ -68,7 +72,7 @@ public class AwarenessSettings {
                 "celestrak-tle-new",
                 DataSourceConfig.FeedCategory.TLE,
                 "CelesTrak Last 30 Days",
-                "https://celestrak.org/NORAD/elements/gp.php?GROUP=last-30-days&FORMAT=tle",
+                "https://celestrak.org/NORAD/elements/gp.php?GROUP=last-30-days&FORMAT=csv",
                 true,
                 1,
                 AuthMode.NONE,
@@ -93,8 +97,130 @@ public class AwarenessSettings {
                 false
         ));
         defaults.addAll(createDefaultGnssSources());
+        defaults.addAll(createDefaultGnssStationSources());
         settings.setSources(defaults);
         return settings;
+    }
+
+    /**
+     * Builds the default public, no-auth Layer-3 GNSS reference station catalogs and observation archives.
+     */
+    public static List<DataSourceConfig> createDefaultGnssStationSources() {
+        List<DataSourceConfig> list = new ArrayList<>();
+        list.add(new DataSourceConfig(
+                "m3g-epn-stations",
+                DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG,
+                "EUREF",
+                "EUREF Permanent Network (M3G)",
+                "https://gnss-metadata.eu/v1/sitelog/gnss-metadata?network=EPN&format=metadata-json",
+                true,
+                1,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                1440,
+                false
+        ));
+        list.add(new DataSourceConfig(
+                "m3g-igs-stations",
+                DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG,
+                "IGS",
+                "IGS Station Metadata (M3G)",
+                "https://gnss-metadata.eu/v1/sitelog/gnss-metadata?network=IGS&format=metadata-json",
+                true,
+                2,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                1440,
+                false
+        ));
+        list.add(new DataSourceConfig(
+                "noaa-ufcors-stations",
+                DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG,
+                "NOAA_CORS",
+                "NOAA CORS Site List (UFCORS)",
+                "https://geodesy.noaa.gov/CORS/UFCORS_site_list.txt",
+                true,
+                3,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                1440,
+                false
+        ));
+        list.add(new DataSourceConfig(
+                "noaa-cors-s3-coords",
+                DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG,
+                "NOAA_CORS",
+                "NOAA CORS ITRF2020 Coordinates (AWS S3)",
+                "https://noaa-cors-pds.s3.amazonaws.com/coord/coord_20/itrf2020_geo.comp.txt",
+                true,
+                4,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                1440,
+                false
+        ));
+        list.add(new DataSourceConfig(
+                "bkg-igs-nrt-obs",
+                DataSourceConfig.FeedCategory.GNSS_OBSERVATION_ARCHIVE,
+                "IGS",
+                "BKG IGS NRT RINEX Archive",
+                "https://igs.bkg.bund.de/root_ftp/IGS/nrt/",
+                true,
+                1,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                15,
+                false
+        ));
+        list.add(new DataSourceConfig(
+                "bkg-euref-nrt-obs",
+                DataSourceConfig.FeedCategory.GNSS_OBSERVATION_ARCHIVE,
+                "EUREF",
+                "BKG EUREF NRT RINEX Archive",
+                "https://igs.bkg.bund.de/root_ftp/EUREF/nrt/",
+                true,
+                2,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                15,
+                false
+        ));
+        list.add(new DataSourceConfig(
+                "noaa-cors-s3-obs",
+                DataSourceConfig.FeedCategory.GNSS_OBSERVATION_ARCHIVE,
+                "NOAA_CORS",
+                "NOAA CORS S3 RINEX Archive",
+                "https://noaa-cors-pds.s3.amazonaws.com/",
+                true,
+                3,
+                AuthMode.NONE,
+                "",
+                "",
+                "",
+                15,
+                false
+        ));
+        return list;
+    }
+
+    public static Map<String, Boolean> defaultStationNetworksMap() {
+        Map<String, Boolean> map = new LinkedHashMap<>();
+        map.put("IGS", Boolean.TRUE);
+        map.put("EUREF", Boolean.TRUE);
+        map.put("NOAA_CORS", Boolean.TRUE);
+        return map;
     }
 
     /**
@@ -167,7 +293,7 @@ public class AwarenessSettings {
                 DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS,
                 "GPS_NANU",
                 "NAVCEN GPS NANU Archive",
-                "https://www.navcen.uscg.gov/sites/default/files/gps/nanu/",
+                "https://www.navcen.uscg.gov/gps-constellation",
                 true,
                 1,
                 AuthMode.NONE,
@@ -197,7 +323,7 @@ public class AwarenessSettings {
                 DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS,
                 "GALILEO_NAGU",
                 "GSC Galileo NAGU Feed",
-                "https://www.gsc-europa.eu/system-service-status/nagu-information",
+                "https://www.gsc-europa.eu/system-status/user-notifications",
                 true,
                 1,
                 AuthMode.NONE,
@@ -364,6 +490,45 @@ public class AwarenessSettings {
 
     public void setGnssObserverAltMeters(double gnssObserverAltMeters) {
         this.gnssObserverAltMeters = gnssObserverAltMeters;
+    }
+
+    public Map<String, Boolean> getGnssStationNetworksEnabled() {
+        if (gnssStationNetworksEnabled == null) {
+            gnssStationNetworksEnabled = defaultStationNetworksMap();
+        }
+        return gnssStationNetworksEnabled;
+    }
+
+    public void setGnssStationNetworksEnabled(Map<String, Boolean> gnssStationNetworksEnabled) {
+        this.gnssStationNetworksEnabled = gnssStationNetworksEnabled != null
+                ? new LinkedHashMap<>(gnssStationNetworksEnabled)
+                : defaultStationNetworksMap();
+    }
+
+    public double getGnssRegionalScanRadiusKm() {
+        return (gnssRegionalScanRadiusKm != null && gnssRegionalScanRadiusKm > 0.0)
+                ? gnssRegionalScanRadiusKm : 250.0;
+    }
+
+    public void setGnssRegionalScanRadiusKm(double gnssRegionalScanRadiusKm) {
+        this.gnssRegionalScanRadiusKm = gnssRegionalScanRadiusKm;
+    }
+
+    public int getGnssRegionalScanMaxStations() {
+        return (gnssRegionalScanMaxStations != null && gnssRegionalScanMaxStations > 0)
+                ? gnssRegionalScanMaxStations : 6;
+    }
+
+    public void setGnssRegionalScanMaxStations(int gnssRegionalScanMaxStations) {
+        this.gnssRegionalScanMaxStations = gnssRegionalScanMaxStations;
+    }
+
+    public double getGnssStationMaskDeg() {
+        return gnssStationMaskDeg != null ? gnssStationMaskDeg : 10.0;
+    }
+
+    public void setGnssStationMaskDeg(double gnssStationMaskDeg) {
+        this.gnssStationMaskDeg = gnssStationMaskDeg;
     }
 
     /**

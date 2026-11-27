@@ -99,6 +99,7 @@ import jsattrak.coverage.CoverageAnalyzer;
 import jsattrak.objects.AbstractSatellite;
 import jsattrak.utilities.ECEFModelRenderable;
 import jsattrak.awareness.gnss.geometry.GnssGeometryService;
+import jsattrak.awareness.gnss.stations.GnssStationService;
 import jsattrak.utilities.J3DEarthComponent;
 import jsattrak.utilities.OrbitModelRenderable;
 import name.gano.file.SaveImageFile;
@@ -111,6 +112,7 @@ import name.gano.worldwind.layers.Earth.ECIRenderableLayer;
 import name.gano.worldwind.layers.Earth.EcefTimeDepRenderableLayer;
 import name.gano.worldwind.layers.Earth.GnssConstellationLayer;
 import name.gano.worldwind.layers.Earth.GnssDopHeatmapLayer;
+import name.gano.worldwind.layers.Earth.GnssStationsLayer;
 import name.gano.worldwind.layers.Earth.GroundStationHudLayer;
 import name.gano.worldwind.layers.Earth.LaunchSitesLayer;
 import name.gano.worldwind.sunshader.CustomSunPositionProvider;
@@ -180,6 +182,8 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
     private GnssConstellationLayer.ViewCoordinator gnssCoordinator;
     private GnssDopHeatmapLayer gnssDopHeatmapLayer;
     private GnssDopHeatmapLayer.ViewCoordinator gnssDopCoordinator;
+    private GnssStationsLayer gnssStationsLayer;
+    private GnssStationsLayer.ViewCoordinator gnssStationsCoordinator;
     private boolean smoothViewChanges = true; // for 3D view smoothing (only is set after model/earth view has been changed -needs to be fixed)
     // near/far clipping plane distances for 3d windows (can effect render speed and if full orbit is shown)
     private double farClippingPlaneDistOrbit = -1;//200000000d; // good out to geo, but slow for LEO, using AutoClipping plane view I made works better
@@ -369,6 +373,12 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
                 wwd,
                 gnssConstellationLayer,
                 LaunchSitesLayer.mjdToEpochMillis(currentMJD));
+
+        gnssStationsLayer = new GnssStationsLayer(null);
+        m.getLayers().add(gnssStationsLayer);
+        gnssStationsCoordinator = new GnssStationsLayer.ViewCoordinator(
+                wwd,
+                gnssStationsLayer);
         
         // add the WWJ status bar at the bottom
         statusBar = new StatusBar();
@@ -415,6 +425,10 @@ public class J3DEarthInternalPanel extends javax.swing.JPanel implements J3DEart
                     if (launchCoordinator != null)
                     {
                         launchCoordinator.onViewMoved();
+                    }
+                    if (gnssStationsCoordinator != null)
+                    {
+                        gnssStationsCoordinator.onViewMoved();
                     }
                 }
             }
@@ -1319,6 +1333,10 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
         {
             gnssDopCoordinator.reattachPickListener();
         }
+        if (gnssStationsCoordinator != null)
+        {
+            gnssStationsCoordinator.reattachSelectListener();
+        }
         
     } // setupView
 
@@ -1799,6 +1817,10 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
         {
             gnssDopCoordinator.setGnssGeometryService(service);
         }
+        if (gnssStationsCoordinator != null)
+        {
+            gnssStationsCoordinator.setPickSuppressionCheck(suppress);
+        }
     }
 
     @Override
@@ -1826,6 +1848,39 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
     }
 
     @Override
+    public void setGnssStationService(GnssStationService service)
+    {
+        if (gnssStationsCoordinator != null)
+        {
+            gnssStationsCoordinator.setStationService(service);
+        }
+    }
+
+    @Override
+    public boolean isShowGnssStations()
+    {
+        return gnssStationsCoordinator != null && gnssStationsCoordinator.isShowGnssStations();
+    }
+
+    @Override
+    public void setShowGnssStations(boolean enabled)
+    {
+        if (gnssStationsCoordinator != null)
+        {
+            gnssStationsCoordinator.setShowGnssStations(enabled);
+        }
+    }
+
+    @Override
+    public void refreshGnssStationsOverlay()
+    {
+        if (gnssStationsCoordinator != null)
+        {
+            gnssStationsCoordinator.refreshGnssStationsOverlay();
+        }
+    }
+
+    @Override
     public void dispose()
     {
         if (launchCoordinator != null)
@@ -1839,6 +1894,10 @@ private void fullScreenButtonActionPerformed(java.awt.event.ActionEvent evt) {//
         if (gnssDopCoordinator != null)
         {
             gnssDopCoordinator.dispose();
+        }
+        if (gnssStationsCoordinator != null)
+        {
+            gnssStationsCoordinator.dispose();
         }
     }
     

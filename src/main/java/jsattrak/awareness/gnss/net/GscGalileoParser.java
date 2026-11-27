@@ -7,10 +7,14 @@ import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.io.StringReader;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -32,6 +36,48 @@ import org.xml.sax.InputSource;
 public final class GscGalileoParser {
 
     private static final Pattern GALILEO_PRN_PATTERN = Pattern.compile("\\bE(\\d{2})\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern TR_PATTERN = Pattern.compile("<tr\\b[^>]*>(.*?)</tr>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern TD_PATTERN = Pattern.compile("<td\\b[^>]*>(.*?)</td>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final DateTimeFormatter GSC_UTC_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.US);
+    private static final Map<String, String> GSAT_TO_PRN = Map.ofEntries(
+            Map.entry("GSAT0101", "E11"),
+            Map.entry("GSAT0102", "E12"),
+            Map.entry("GSAT0103", "E19"),
+            Map.entry("GSAT0104", "E20"),
+            Map.entry("GSAT0201", "E18"),
+            Map.entry("GSAT0202", "E14"),
+            Map.entry("GSAT0203", "E26"),
+            Map.entry("GSAT0204", "E22"),
+            Map.entry("GSAT0205", "E24"),
+            Map.entry("GSAT0206", "E30"),
+            Map.entry("GSAT0207", "E07"),
+            Map.entry("GSAT0208", "E08"),
+            Map.entry("GSAT0209", "E09"),
+            Map.entry("GSAT0210", "E01"),
+            Map.entry("GSAT0211", "E02"),
+            Map.entry("GSAT0212", "E03"),
+            Map.entry("GSAT0213", "E04"),
+            Map.entry("GSAT0214", "E05"),
+            Map.entry("GSAT0215", "E21"),
+            Map.entry("GSAT0216", "E25"),
+            Map.entry("GSAT0217", "E27"),
+            Map.entry("GSAT0218", "E31"),
+            Map.entry("GSAT0219", "E36"),
+            Map.entry("GSAT0220", "E13"),
+            Map.entry("GSAT0221", "E15"),
+            Map.entry("GSAT0222", "E33"),
+            Map.entry("GSAT0223", "E34"),
+            Map.entry("GSAT0224", "E10"),
+            Map.entry("GSAT0225", "E29"),
+            Map.entry("GSAT0226", "E23"),
+            Map.entry("GSAT0227", "E06"),
+            Map.entry("GSAT0228", "E24"),
+            Map.entry("GSAT0229", "E17"),
+            Map.entry("GSAT0230", "E28"),
+            Map.entry("GSAT0231", "E17"),
+            Map.entry("GSAT0232", "E16"),
+            Map.entry("GSAT0233", "E28"),
+            Map.entry("GSAT0234", "E32"));
 
     private GscGalileoParser() {
     }
@@ -67,6 +113,11 @@ public final class GscGalileoParser {
         }
         String trimmed = content.stripLeading();
         if (looksLikeHtml(trimmed)) {
+            if (trimmed.contains("edit-active-nagu")
+                    || trimmed.contains("notice-advisory-to-galileo-users-nagu-")
+                    || trimmed.contains("field_nagu_number")) {
+                return parseNaguHtmlTable(trimmed);
+            }
             throw new IOException("GSC NAGU returned an HTML portal page instead of machine-readable notices");
         }
         if (trimmed.startsWith("<")) {
@@ -76,6 +127,63 @@ public final class GscGalileoParser {
             return parseNaguJson(trimmed);
         }
         throw new IOException("Unsupported GSC NAGU format");
+    }
+
+    private static List<GnssOutageNotice> parseNaguHtmlTable(String html) throws IOException {
+        List<GnssOutageNotice> out = new ArrayList<>();
+        Matcher trMatcher = TR_PATTERN.matcher(html);
+        boolean sawRow = false;
+        while (trMatcher.find()) {
+            String row = trMatcher.group(1);
+            if (!row.contains("<td")) {
+                continue;
+            }
+            List<String> cells = new ArrayList<>();
+            Matcher tdMatcher = TD_PATTERN.matcher(row);
+            while (tdMatcher.find()) {
+                cells.add(tdMatcher.group(1).replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim());
+            }
+            if (cells.size() < 6) {
+                continue;
+            }
+            sawRow = true;
+            String naguNum = cells.get(0);
+            String satToken = cells.get(1);
+            String startStr = cells.get(2);
+            String rawType = cells.get(4);
+            String subject = cells.get(5);
+            String prn = normalizeGalileoPrn(satToken);
+            if (naguNum.isEmpty() || prn.isEmpty()) {
+                continue;
+            }
+            String typeUpper = rawType.toUpperCase(Locale.ROOT);
+            if (!typeUpper.contains("UNUSABLE")
+                    && !typeUpper.contains("UNAVAILABLE")
+                    && !typeUpper.contains("OUTAGE")
+                    && (typeUpper.contains("USABLE") || typeUpper.contains("AVAILABILITY") || typeUpper.contains("EOM_END"))) {
+                continue;
+            }
+            boolean planned = (!typeUpper.contains("UNPLANNED") && typeUpper.contains("PLANNED"))
+                    || typeUpper.contains("PLN_");
+            boolean cancelled = typeUpper.contains("CANCEL");
+            long start = parseGscTimestamp(startStr);
+            out.add(new GnssOutageNotice(
+                    "NAGU " + naguNum,
+                    GnssConstellation.GALILEO,
+                    prn,
+                    satToken.toUpperCase(Locale.ROOT).startsWith("GSAT") ? satToken.toUpperCase(Locale.ROOT) : "",
+                    rawType.isEmpty() ? "NAGU" : rawType,
+                    planned,
+                    cancelled,
+                    start,
+                    0L,
+                    subject.isEmpty() ? rawType : subject,
+                    "GSC"));
+        }
+        if (!sawRow && !html.contains("edit-active-nagu")) {
+            throw new IOException("GSC NAGU HTML page did not contain a notifications table");
+        }
+        return List.copyOf(out);
     }
 
     private static List<OperatorStatusRecord> tryParseStatusXml(String xml, long fetchedAtMillis) {
@@ -312,6 +420,10 @@ public final class GscGalileoParser {
             return "";
         }
         String upper = raw.trim().toUpperCase(Locale.ROOT);
+        String gsatMapped = GSAT_TO_PRN.get(upper);
+        if (gsatMapped != null) {
+            return gsatMapped;
+        }
         if (upper.matches("E\\d{2}")) {
             return upper;
         }
@@ -320,6 +432,18 @@ public final class GscGalileoParser {
         }
         Matcher m = GALILEO_PRN_PATTERN.matcher(upper);
         return m.find() ? "E" + m.group(1) : "";
+    }
+
+    private static long parseGscTimestamp(String text) {
+        if (text == null || text.isBlank()) {
+            return 0L;
+        }
+        String trimmed = text.trim();
+        try {
+            return LocalDateTime.parse(trimmed, GSC_UTC_FORMAT).toInstant(ZoneOffset.UTC).toEpochMilli();
+        } catch (Exception ignored) {
+        }
+        return parseIsoMillis(trimmed);
     }
 
     private static boolean looksLikeHtml(String text) {

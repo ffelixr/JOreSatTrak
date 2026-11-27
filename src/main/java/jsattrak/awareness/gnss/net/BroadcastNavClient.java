@@ -30,7 +30,7 @@ public class BroadcastNavClient {
     private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(30);
     private static final Pattern HREF_PATTERN = Pattern.compile("href\\s*=\\s*[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE);
     private static final Pattern NAV_FILE_PATTERN = Pattern.compile(
-            ".*(?:\\.rnx(?:\\.gz)?|brdc.*\\.(?:gz|rnx|p|n)|brdm.*\\.(?:gz|rnx|p))$",
+            ".*(?:\\.rnx(?:\\.gz|\\.z)?|brdc.*\\.(?:gz|z|rnx|p|n)|brdm.*\\.(?:gz|z|rnx|p))$",
             Pattern.CASE_INSENSITIVE);
 
     private final HttpClient httpClient;
@@ -105,7 +105,7 @@ public class BroadcastNavClient {
         byte[] firstBytes = sendGetBytes(source.getEndpointUrl(), source);
         String resolvedUrl = source.getEndpointUrl().trim();
 
-        if (!isGzip(firstBytes) && looksLikeHtml(firstBytes)) {
+        if (!isCompressed(firstBytes) && looksLikeHtml(firstBytes)) {
             String html = new String(firstBytes, StandardCharsets.UTF_8);
             String newestHref = findNewestNavLink(html);
             if (newestHref == null) {
@@ -113,7 +113,7 @@ public class BroadcastNavClient {
             }
             resolvedUrl = URI.create(resolvedUrl).resolve(newestHref).toString();
             firstBytes = sendGetBytes(resolvedUrl, source);
-            if (!isGzip(firstBytes) && looksLikeHtml(firstBytes)) {
+            if (!isCompressed(firstBytes) && looksLikeHtml(firstBytes)) {
                 throw new IOException("Resolved navigation link returned HTML from " + sourceLabel(source));
             }
         }
@@ -179,8 +179,10 @@ public class BroadcastNavClient {
         return candidates.get(0);
     }
 
-    private static boolean isGzip(byte[] bytes) {
-        return bytes != null && bytes.length >= 2 && (bytes[0] & 0xFF) == 0x1F && (bytes[1] & 0xFF) == 0x8B;
+    private static boolean isCompressed(byte[] bytes) {
+        return bytes != null && bytes.length >= 2
+                && (bytes[0] & 0xFF) == 0x1F
+                && ((bytes[1] & 0xFF) == 0x8B || (bytes[1] & 0xFF) == 0x9D);
     }
 
     private static boolean looksLikeHtml(byte[] bytes) {

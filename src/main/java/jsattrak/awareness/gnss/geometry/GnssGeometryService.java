@@ -162,6 +162,13 @@ public class GnssGeometryService implements AwarenessFeed {
         return observer;
     }
 
+    /**
+     * Exposes the shared Layer-2 {@link GnssEphemerisProvider} for Layer-3 observation analytics and SPP.
+     */
+    public GnssEphemerisProvider getEphemerisProvider() {
+        return ephemerisProvider;
+    }
+
     public void setObserver(GnssObserverPosition newObserver) {
         if (newObserver == null) {
             return;

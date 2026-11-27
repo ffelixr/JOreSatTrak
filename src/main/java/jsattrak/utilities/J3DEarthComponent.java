@@ -27,6 +27,7 @@ import java.awt.Point;
 import jsattrak.awareness.LiveAwarenessService;
 import jsattrak.awareness.gnss.GnssAwarenessService;
 import jsattrak.awareness.gnss.geometry.GnssGeometryService;
+import jsattrak.awareness.gnss.stations.GnssStationService;
 import jsattrak.gui.JSatTrak;
 import name.gano.worldwind.geom.ECIRadialGrid;
 import name.gano.worldwind.layers.Earth.EcefTimeDepRenderableLayer;
@@ -104,6 +105,11 @@ public interface  J3DEarthComponent
     public default boolean isShowGnssDopHeatmap() { return false; }
     public default void setShowGnssDopHeatmap(boolean enabled) {}
     public default void refreshGnssDopHeatmap(long simEpochMillis) {}
+    // Live Awareness GNSS reference stations overlay (Layer 3)
+    public default void setGnssStationService(GnssStationService service) {}
+    public default boolean isShowGnssStations() { return false; }
+    public default void setShowGnssStations(boolean enabled) {}
+    public default void refreshGnssStationsOverlay() {}
     public void dispose();
 
 }

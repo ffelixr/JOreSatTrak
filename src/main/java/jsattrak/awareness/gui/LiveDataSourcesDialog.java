@@ -55,14 +55,17 @@ import jsattrak.awareness.config.DataSourceConfig;
 import jsattrak.awareness.gnss.GnssAwarenessService;
 import jsattrak.awareness.gnss.net.BroadcastNavClient;
 import jsattrak.awareness.gnss.net.GnssCatalogClient;
+import jsattrak.awareness.gnss.net.GnssStationCatalogClient;
 import jsattrak.awareness.gnss.net.OperatorStatusClient;
 import jsattrak.awareness.net.ConnectionTestResult;
 import jsattrak.awareness.net.LaunchApiClient;
 import jsattrak.awareness.tle.TleFeedClient;
 
 /**
- * Configuration dialog for Launch and New-Launch TLE data sources, authentication credentials,
- * failover priority ordering, refresh interval, companion GS sync, and non-blocking connectivity testing.
+ * Configuration dialog for Launch and New-Launch TLE data sources,
+ * authentication credentials,
+ * failover priority ordering, refresh interval, companion GS sync, and
+ * non-blocking connectivity testing.
  */
 public class LiveDataSourcesDialog extends JDialog {
 
@@ -176,6 +179,7 @@ public class LiveDataSourcesDialog extends JDialog {
         private final GnssCatalogClient gnssCatalogClient;
         private final BroadcastNavClient broadcastNavClient;
         private final OperatorStatusClient operatorStatusClient;
+        private final GnssStationCatalogClient gnssStationCatalogClient;
         private final Runnable onClose;
         private final int preservedDefaultHorizonDays;
         private final boolean preservedGnssShowOrbitRings3d;
@@ -189,14 +193,18 @@ public class LiveDataSourcesDialog extends JDialog {
         private final double preservedGnssObserverLatDeg;
         private final double preservedGnssObserverLonDeg;
         private final double preservedGnssObserverAltMeters;
+        private final Map<String, Boolean> preservedGnssStationNetworksEnabled;
+        private final double preservedGnssRegionalScanRadiusKm;
+        private final int preservedGnssRegionalScanMaxStations;
+        private final double preservedGnssStationMaskDeg;
 
         private final JCheckBox autoFetchCheckBox;
         private final JCheckBox gnssFeedEnabledCheckBox;
         private final JTabbedPane categoryTabs;
-        private final EnumMap<DataSourceConfig.FeedCategory, DefaultListModel<DataSourceConfig>> categoryModels =
-                new EnumMap<>(DataSourceConfig.FeedCategory.class);
-        private final EnumMap<DataSourceConfig.FeedCategory, JList<DataSourceConfig>> categoryLists =
-                new EnumMap<>(DataSourceConfig.FeedCategory.class);
+        private final EnumMap<DataSourceConfig.FeedCategory, DefaultListModel<DataSourceConfig>> categoryModels = new EnumMap<>(
+                DataSourceConfig.FeedCategory.class);
+        private final EnumMap<DataSourceConfig.FeedCategory, JList<DataSourceConfig>> categoryLists = new EnumMap<>(
+                DataSourceConfig.FeedCategory.class);
         private final DefaultListModel<DataSourceConfig> launchSourcesModel;
         private final DefaultListModel<DataSourceConfig> tleSourcesModel;
         private final JList<DataSourceConfig> launchSourcesList;
@@ -261,7 +269,9 @@ public class LiveDataSourcesDialog extends JDialog {
             this.tleFeedClient = tleFeedClient != null ? tleFeedClient : new TleFeedClient();
             this.gnssCatalogClient = gnssCatalogClient != null ? gnssCatalogClient : new GnssCatalogClient();
             this.broadcastNavClient = broadcastNavClient != null ? broadcastNavClient : new BroadcastNavClient();
-            this.operatorStatusClient = operatorStatusClient != null ? operatorStatusClient : new OperatorStatusClient();
+            this.operatorStatusClient = operatorStatusClient != null ? operatorStatusClient
+                    : new OperatorStatusClient();
+            this.gnssStationCatalogClient = new GnssStationCatalogClient();
             this.onClose = onClose;
 
             setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -275,7 +285,8 @@ public class LiveDataSourcesDialog extends JDialog {
                     : initial;
             this.preservedDefaultHorizonDays = initial.getDefaultHorizonDays();
             this.preservedGnssShowOrbitRings3d = gnssInitial.isGnssShowOrbitRings3d();
-            this.preservedGnssConstellationEnabled = new java.util.LinkedHashMap<>(gnssInitial.getGnssConstellationEnabled());
+            this.preservedGnssConstellationEnabled = new java.util.LinkedHashMap<>(
+                    gnssInitial.getGnssConstellationEnabled());
             this.preservedGnssStatusFilter = new java.util.LinkedHashMap<>(gnssInitial.getGnssStatusFilter());
             this.preservedGnssElevationMaskDeg = gnssInitial.getGnssElevationMaskDeg();
             this.preservedGnssIncludeNonOperationalInDop = gnssInitial.isGnssIncludeNonOperationalInDop();
@@ -285,6 +296,11 @@ public class LiveDataSourcesDialog extends JDialog {
             this.preservedGnssObserverLatDeg = gnssInitial.getGnssObserverLatDeg();
             this.preservedGnssObserverLonDeg = gnssInitial.getGnssObserverLonDeg();
             this.preservedGnssObserverAltMeters = gnssInitial.getGnssObserverAltMeters();
+            this.preservedGnssStationNetworksEnabled = new java.util.LinkedHashMap<>(
+                    gnssInitial.getGnssStationNetworksEnabled());
+            this.preservedGnssRegionalScanRadiusKm = gnssInitial.getGnssRegionalScanRadiusKm();
+            this.preservedGnssRegionalScanMaxStations = gnssInitial.getGnssRegionalScanMaxStations();
+            this.preservedGnssStationMaskDeg = gnssInitial.getGnssStationMaskDeg();
 
             // Top: global startup + GNSS feed preferences
             JPanel topPanel = new JPanel(new BorderLayout(12, 4));
@@ -367,9 +383,9 @@ public class LiveDataSourcesDialog extends JDialog {
             showSecretCheckBox = new JCheckBox("Show");
             refreshIntervalCombo = new JComboBox<>(STANDARD_INTERVALS);
             companionGsSyncCheckBox = new JCheckBox("Sync fixed launch pads to Ground Station catalog");
-            providerScopeLabel = new JLabel("Operator Scope:");
+            providerScopeLabel = new JLabel("Provider / Network Scope:");
             providerScopeCombo = new JComboBox<>(new String[] {
-                    "", "GPS_STATUS", "GPS_NANU", "GALILEO_STATUS", "GALILEO_NAGU"
+                    "", "GPS_STATUS", "GPS_NANU", "GALILEO_STATUS", "GALILEO_NAGU", "IGS", "EUREF", "NOAA_CORS"
             });
             providerScopeCombo.setEditable(true);
 
@@ -514,6 +530,18 @@ public class LiveDataSourcesDialog extends JDialog {
             settings.setGnssObserverAltMeters(liveGnss != null
                     ? liveGnss.getGnssObserverAltMeters()
                     : preservedGnssObserverAltMeters);
+            settings.setGnssStationNetworksEnabled(liveGnss != null
+                    ? liveGnss.getGnssStationNetworksEnabled()
+                    : preservedGnssStationNetworksEnabled);
+            settings.setGnssRegionalScanRadiusKm(liveGnss != null
+                    ? liveGnss.getGnssRegionalScanRadiusKm()
+                    : preservedGnssRegionalScanRadiusKm);
+            settings.setGnssRegionalScanMaxStations(liveGnss != null
+                    ? liveGnss.getGnssRegionalScanMaxStations()
+                    : preservedGnssRegionalScanMaxStations);
+            settings.setGnssStationMaskDeg(liveGnss != null
+                    ? liveGnss.getGnssStationMaskDeg()
+                    : preservedGnssStationMaskDeg);
 
             List<DataSourceConfig> combined = new ArrayList<>();
             for (DataSourceConfig.FeedCategory cat : TAB_CATEGORIES) {
@@ -569,8 +597,8 @@ public class LiveDataSourcesDialog extends JDialog {
         }
 
         public void selectRefreshIntervalMinutes(int minutes) {
-            DefaultComboBoxModel<RefreshIntervalOption> model =
-                    (DefaultComboBoxModel<RefreshIntervalOption>) refreshIntervalCombo.getModel();
+            DefaultComboBoxModel<RefreshIntervalOption> model = (DefaultComboBoxModel<RefreshIntervalOption>) refreshIntervalCombo
+                    .getModel();
             for (int i = 0; i < model.getSize(); i++) {
                 RefreshIntervalOption opt = model.getElementAt(i);
                 if (opt.minutes() == minutes) {
@@ -698,6 +726,8 @@ public class LiveDataSourcesDialog extends JDialog {
                 case GNSS_ORBITS_TLE -> "GNSS TLE Orbits";
                 case GNSS_BROADCAST_NAV -> "GNSS Broadcast Nav (BKG)";
                 case GNSS_OPERATOR_STATUS -> "GNSS Operator Status";
+                case GNSS_STATION_CATALOG -> "GNSS Station Catalogs";
+                case GNSS_OBSERVATION_ARCHIVE -> "GNSS Observation Archives";
             };
         }
 
@@ -708,8 +738,8 @@ public class LiveDataSourcesDialog extends JDialog {
             if (settings == null || settings.getSources() == null) {
                 return;
             }
-            EnumMap<DataSourceConfig.FeedCategory, List<DataSourceConfig>> grouped =
-                    new EnumMap<>(DataSourceConfig.FeedCategory.class);
+            EnumMap<DataSourceConfig.FeedCategory, List<DataSourceConfig>> grouped = new EnumMap<>(
+                    DataSourceConfig.FeedCategory.class);
             for (DataSourceConfig.FeedCategory cat : TAB_CATEGORIES) {
                 grouped.put(cat, new ArrayList<>());
             }
@@ -763,9 +793,9 @@ public class LiveDataSourcesDialog extends JDialog {
             try {
                 boolean hasSelection = src != null;
                 setEditorEnabled(hasSelection);
-                boolean isOpCategory = activeCategory() == DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS;
-                providerScopeLabel.setVisible(isOpCategory);
-                providerScopeCombo.setVisible(isOpCategory);
+                boolean usesScope = usesProviderScope(activeCategory());
+                providerScopeLabel.setVisible(usesScope);
+                providerScopeCombo.setVisible(usesScope);
                 if (!hasSelection) {
                     enabledCheckBox.setSelected(false);
                     displayNameField.setText("");
@@ -787,9 +817,9 @@ public class LiveDataSourcesDialog extends JDialog {
                 enabledCheckBox.setSelected(src.isEnabled());
                 displayNameField.setText(nonNull(src.getDisplayName()));
                 endpointUrlField.setText(nonNull(src.getEndpointUrl()));
-                boolean isOperator = src.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS;
-                providerScopeLabel.setVisible(isOperator);
-                providerScopeCombo.setVisible(isOperator);
+                usesScope = usesProviderScope(src.getFeedCategory());
+                providerScopeLabel.setVisible(usesScope);
+                providerScopeCombo.setVisible(usesScope);
                 providerScopeCombo.setSelectedItem(nonNull(src.getProviderScope()));
                 AuthMode mode = src.getAuthMode() != null ? src.getAuthMode() : AuthMode.NONE;
                 authModeCombo.setSelectedItem(mode);
@@ -819,7 +849,7 @@ public class LiveDataSourcesDialog extends JDialog {
             src.setEnabled(enabledCheckBox.isSelected());
             src.setDisplayName(displayNameField.getText().trim());
             src.setEndpointUrl(endpointUrlField.getText().trim());
-            if (src.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS) {
+            if (usesProviderScope(src.getFeedCategory())) {
                 Object scopeVal = providerScopeCombo.getSelectedItem();
                 src.setProviderScope(scopeVal != null ? scopeVal.toString().trim() : "");
             }
@@ -922,7 +952,8 @@ public class LiveDataSourcesDialog extends JDialog {
             DefaultListModel<DataSourceConfig> model = activeModel();
             String id = generateUniqueSourceId(category);
             int defaultInterval = (category == DataSourceConfig.FeedCategory.GNSS_CATALOG
-                    || category == DataSourceConfig.FeedCategory.GNSS_ORBITS_TLE) ? 1440 : 15;
+                    || category == DataSourceConfig.FeedCategory.GNSS_ORBITS_TLE
+                    || category == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG) ? 1440 : 15;
             String defaultName = switch (category) {
                 case LAUNCH -> "Custom Launch Source";
                 case TLE -> "Custom TLE Feed";
@@ -930,6 +961,8 @@ public class LiveDataSourcesDialog extends JDialog {
                 case GNSS_ORBITS_TLE -> "Custom GNSS TLE Feed";
                 case GNSS_BROADCAST_NAV -> "Custom Broadcast Nav";
                 case GNSS_OPERATOR_STATUS -> "Custom Operator Status";
+                case GNSS_STATION_CATALOG -> "Custom Station Catalog";
+                case GNSS_OBSERVATION_ARCHIVE -> "Custom Obs Archive";
             };
             DataSourceConfig created = new DataSourceConfig(
                     id,
@@ -1012,6 +1045,8 @@ public class LiveDataSourcesDialog extends JDialog {
                         case GNSS_CATALOG -> gnssCatalogClient.testConnection(snapshot);
                         case GNSS_BROADCAST_NAV -> broadcastNavClient.testConnection(snapshot);
                         case GNSS_OPERATOR_STATUS -> operatorStatusClient.testConnection(snapshot);
+                        case GNSS_STATION_CATALOG, GNSS_OBSERVATION_ARCHIVE ->
+                            gnssStationCatalogClient.testConnection(snapshot);
                     };
                 }
 
@@ -1124,6 +1159,8 @@ public class LiveDataSourcesDialog extends JDialog {
                 case GNSS_ORBITS_TLE -> "custom-gnss-tle-";
                 case GNSS_BROADCAST_NAV -> "custom-gnss-nav-";
                 case GNSS_OPERATOR_STATUS -> "custom-gnss-op-";
+                case GNSS_STATION_CATALOG -> "custom-gnss-stcat-";
+                case GNSS_OBSERVATION_ARCHIVE -> "custom-gnss-obs-";
             };
             String candidate;
             do {
@@ -1139,6 +1176,12 @@ public class LiveDataSourcesDialog extends JDialog {
                     item.setPriority(i + 1);
                 }
             }
+        }
+
+        private static boolean usesProviderScope(DataSourceConfig.FeedCategory category) {
+            return category == DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS
+                    || category == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG
+                    || category == DataSourceConfig.FeedCategory.GNSS_OBSERVATION_ARCHIVE;
         }
 
         private static JList<DataSourceConfig> createSourceList(DefaultListModel<DataSourceConfig> model) {

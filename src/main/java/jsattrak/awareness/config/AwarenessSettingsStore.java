@@ -70,16 +70,60 @@ public class AwarenessSettingsStore {
 
     private static AwarenessSettings migrateAndNormalize(AwarenessSettings settings) {
         List<DataSourceConfig> sources = new ArrayList<>(settings.getSources());
-        boolean isPreGnssSchema = settings.getSchemaVersion() < AwarenessSettings.CURRENT_SCHEMA_VERSION;
+        int schemaVersion = settings.getSchemaVersion();
+        boolean isPreGnssSchema = schemaVersion < 2;
+        boolean isPreGnssStationsSchema = schemaVersion < AwarenessSettings.CURRENT_SCHEMA_VERSION;
         boolean hasAnyGnssSource = sources.stream().anyMatch(s -> s.getFeedCategory() != null
                 && s.getFeedCategory().name().startsWith("GNSS_"));
         if (isPreGnssSchema && !hasAnyGnssSource) {
             sources.addAll(AwarenessSettings.createDefaultGnssSources());
         }
+        boolean hasStationCatalog = sources.stream().anyMatch(s ->
+                s.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG);
+        boolean hasObsArchive = sources.stream().anyMatch(s ->
+                s.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_OBSERVATION_ARCHIVE);
+        if (isPreGnssStationsSchema && (!hasStationCatalog || !hasObsArchive)) {
+            for (DataSourceConfig def : AwarenessSettings.createDefaultGnssStationSources()) {
+                if ((def.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG && !hasStationCatalog)
+                        || (def.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_OBSERVATION_ARCHIVE && !hasObsArchive)) {
+                    sources.add(def);
+                }
+            }
+        }
         settings.setSchemaVersion(AwarenessSettings.CURRENT_SCHEMA_VERSION);
+        boolean hasUfCors = sources.stream().anyMatch(s ->
+                s.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG
+                        && s.getEndpointUrl() != null
+                        && s.getEndpointUrl().toLowerCase(java.util.Locale.US).contains("ufcors_site_list.txt"));
         for (DataSourceConfig source : sources) {
             if (source.getProviderScope() == null) {
                 source.setProviderScope("");
+            }
+            if (source.getEndpointUrl() != null) {
+                String trimmedUrl = source.getEndpointUrl().trim();
+                if (trimmedUrl.equalsIgnoreCase("https://celestrak.org/NORAD/elements/gp.php?GROUP=last-30-days&FORMAT=tle")) {
+                    source.setEndpointUrl("https://celestrak.org/NORAD/elements/gp.php?GROUP=last-30-days&FORMAT=csv");
+                } else if (trimmedUrl.equalsIgnoreCase("https://www.navcen.uscg.gov/sites/default/files/gps/nanu/")) {
+                    source.setEndpointUrl("https://www.navcen.uscg.gov/gps-constellation");
+                } else if (trimmedUrl.equalsIgnoreCase("https://www.gsc-europa.eu/system-service-status/nagu-information")) {
+                    source.setEndpointUrl("https://www.gsc-europa.eu/system-status/user-notifications");
+                }
+            }
+            if (source.getFeedCategory() == DataSourceConfig.FeedCategory.GNSS_STATION_CATALOG
+                    && source.getEndpointUrl() != null
+                    && source.getEndpointUrl().trim().equalsIgnoreCase("https://geodesy.noaa.gov/CORS/All_CORS.txt")) {
+                if (hasUfCors) {
+                    source.setEndpointUrl("https://noaa-cors-pds.s3.amazonaws.com/coord/coord_20/itrf2020_geo.comp.txt");
+                    if ("NOAA CORS Station List".equals(source.getDisplayName())) {
+                        source.setDisplayName("NOAA CORS ITRF2020 Coordinates (AWS S3)");
+                    }
+                } else {
+                    source.setEndpointUrl("https://geodesy.noaa.gov/CORS/UFCORS_site_list.txt");
+                    if ("NOAA CORS Station List".equals(source.getDisplayName())) {
+                        source.setDisplayName("NOAA CORS Site List (UFCORS)");
+                    }
+                    hasUfCors = true;
+                }
             }
         }
         settings.setSources(sources);

@@ -60,6 +60,7 @@ public class TwoDPolarViewPropertiesPanel extends JPanel implements Serializable
     private JCheckBox showUpcomingLaunchesCheckBox;
     private JCheckBox showGnssConstellationsCheckBox;
     private JCheckBox showGnssDopHeatmapCheckBox;
+    private JCheckBox showGnssStationsCheckBox;
 
     private JPanel bgColorPanel;
     private JPanel discColorPanel;
@@ -180,6 +181,15 @@ public class TwoDPolarViewPropertiesPanel extends JPanel implements Serializable
         gbc.gridy = row;
         gbc.gridwidth = 2;
         leftCol.add(showGnssDopHeatmapCheckBox, gbc);
+        gbc.gridwidth = 1;
+        row++;
+
+        // GNSS Reference Stations Overlay
+        showGnssStationsCheckBox = new JCheckBox("Show GNSS Reference Stations", true);
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.gridwidth = 2;
+        leftCol.add(showGnssStationsCheckBox, gbc);
         gbc.gridwidth = 1;
         row++;
 
@@ -488,6 +498,7 @@ public class TwoDPolarViewPropertiesPanel extends JPanel implements Serializable
         showUpcomingLaunchesCheckBox.setSelected(polarPanel.isShowUpcomingLaunches());
         showGnssConstellationsCheckBox.setSelected(polarPanel.isShowGnssConstellations());
         showGnssDopHeatmapCheckBox.setSelected(polarPanel.isShowGnssDopHeatmap());
+        showGnssStationsCheckBox.setSelected(polarPanel.isShowGnssStations());
 
         bgColorPanel.setBackground(polarPanel.getBackgroundColor());
         discColorPanel.setBackground(polarPanel.getDiscBackgroundColor());
@@ -559,6 +570,7 @@ public class TwoDPolarViewPropertiesPanel extends JPanel implements Serializable
         polarPanel.setShowUpcomingLaunches(showUpcomingLaunchesCheckBox.isSelected());
         polarPanel.setShowGnssConstellations(showGnssConstellationsCheckBox.isSelected());
         polarPanel.setShowGnssDopHeatmap(showGnssDopHeatmapCheckBox.isSelected());
+        polarPanel.setShowGnssStations(showGnssStationsCheckBox.isSelected());
         polarPanel.setBackgroundColor(bgColorPanel.getBackground());
         polarPanel.setDiscBackgroundColor(discColorPanel.getBackground());
         polarPanel.setGridColor(gridColorPanel.getBackground());

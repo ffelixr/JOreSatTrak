@@ -206,9 +206,9 @@ public class OmmDataLoader {
         if (s.startsWith(".")) {
             s = "0" + s;
         } else if (s.startsWith("-.")) {
-            s = "-0" + s.substring(2);
+            s = "-0" + s.substring(1);
         } else if (s.startsWith("+.")) {
-            s = "+0" + s.substring(2);
+            s = "+0" + s.substring(1);
         }
         return Double.parseDouble(s);
     }

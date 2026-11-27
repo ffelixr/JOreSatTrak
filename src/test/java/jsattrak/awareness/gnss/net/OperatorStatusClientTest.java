@@ -202,6 +202,81 @@ public class OperatorStatusClientTest {
         assertThrows(IOException.class, () -> GscGalileoParser.parseNagus("<div><a href=\"/login\">Login</a></div>"));
     }
 
+    @Test
+    void parsesLiveDrupalNavcenViewsTableAndGscActiveNaguHtmlTable() throws Exception {
+        String navcenDrupalHtml = """
+                <html><body>
+                <table class="views-table">
+                  <thead><tr><th>Plane</th><th>Slot</th><th>SVN</th><th>PRN</th><th>NANU Type</th><th>NANU Subject</th><th></th></tr></thead>
+                  <tbody>
+                    <tr>
+                      <td class="views-field views-field-field-gps-con-plane">F</td>
+                      <td class="views-field views-field-field-gps-con-slot">1</td>
+                      <td class="views-field views-field-field-gps-svn">70</td>
+                      <td class="views-field views-field-field-gps-prn">32</td>
+                      <td class="views-field views-field-field-nanu-type">FCSTSUMM</td>
+                      <td class="views-field views-field-field-nanu-subject"><a href="/sites/default/files/gps/nanu/2026/2026047.nnu">SVN70 (PRN32) FORECAST OUTAGE SUMMARY JDAY 182/2130 - JDAY 183/0930</a></td>
+                      <td class="nanu-active-check views-field views-field-field-nanu-subject">0</td>
+                    </tr>
+                    <tr>
+                      <td class="views-field views-field-field-gps-con-plane">A</td>
+                      <td class="views-field views-field-field-gps-con-slot">3</td>
+                      <td class="views-field views-field-field-gps-svn">68</td>
+                      <td class="views-field views-field-field-gps-prn">09</td>
+                      <td class="views-field views-field-field-nanu-type">FCSTDV</td>
+                      <td class="views-field views-field-field-nanu-subject"><a href="/sites/default/files/gps/nanu/2026/2026080.nnu">SVN68 (PRN09) FORECAST OUTAGE JDAY 330/0800 - JDAY 330/1400</a></td>
+                      <td class="nanu-active-check views-field views-field-field-nanu-subject">1</td>
+                    </tr>
+                  </tbody>
+                </table>
+                </body></html>
+                """;
+        List<OperatorStatusRecord> gpsStatuses = NavcenParser.parseConstellationStatus(navcenDrupalHtml, 1_000L);
+        assertEquals(2, gpsStatuses.size());
+        assertEquals(OperatorStatusRecord.OperatorHealth.USABLE,
+                gpsStatuses.stream().filter(r -> "G32".equals(r.prnId())).findFirst().orElseThrow().status());
+
+        List<GnssOutageNotice> tableNanus = NavcenParser.parseHtmlTableNanus(navcenDrupalHtml);
+        assertEquals(2, tableNanus.size());
+        GnssOutageNotice n80 = tableNanus.stream()
+                .filter(n -> "NANU 2026080".equals(n.noticeId()))
+                .findFirst().orElseThrow();
+        assertEquals("G09", n80.prnId());
+        assertTrue(n80.planned());
+        assertTrue(n80.endEpochMillis() > n80.startEpochMillis());
+
+        String gscNaguTableHtml = """
+                <html><body>
+                <table id="edit-active-nagu">
+                  <tbody>
+                    <tr>
+                      <td><a href="/notice-advisory-to-galileo-users-nagu-2026051">2026051</a></td>
+                      <td>ALL</td>
+                      <td>2026-11-24 15:25:00</td>
+                      <td>2026-11-25 13:15:00</td>
+                      <td>OSNMA USABLE</td>
+                      <td>OSNMA SiS USABLE FROM 2026-11-24</td>
+                    </tr>
+                    <tr>
+                      <td><a href="/notice-advisory-to-galileo-users-nagu-2026048">2026048</a></td>
+                      <td>GSAT0209</td>
+                      <td>2026-11-17 14:01:00</td>
+                      <td>2026-11-17 15:00:00</td>
+                      <td>UNPLANNED UNAVAILABLE UNTIL FURTHER NOTICE</td>
+                      <td>UNAVAILABLE FROM 2026-11-17 UNTIL FURTHER NOTICE</td>
+                    </tr>
+                  </tbody>
+                </table>
+                </body></html>
+                """;
+        List<GnssOutageNotice> nagus = GscGalileoParser.parseNagus(gscNaguTableHtml);
+        assertEquals(1, nagus.size());
+        assertEquals("E09", nagus.get(0).prnId());
+        assertEquals("NAGU 2026048", nagus.get(0).noticeId());
+        assertFalse(nagus.get(0).planned());
+        assertTrue(nagus.get(0).startEpochMillis() > 0L);
+    }
+
     private static DataSourceConfig src(String id, String scope, String url) {
         return new DataSourceConfig(
                 id, DataSourceConfig.FeedCategory.GNSS_OPERATOR_STATUS, scope,
